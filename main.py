@@ -72,13 +72,69 @@ if __name__ == "__main__":
 }""",
             False,
         ),
+        (
+            "Variable con tipo",
+            """fn main() -> i32 {
+    let x: i32 = 10;
+    return x + 20;
+}""",
+            True,
+        ),
+        (
+            "Variable sin tipo explícito",
+            """fn main() -> i32 {
+    let x = 10;
+    return x;
+}""",
+            True,
+        ),
+        (
+            "Variable mutable y asignación",
+            """fn main() -> i32 {
+    let mut x: i32 = 10;
+    x = x + 5;
+    return x;
+}""",
+            True,
+        ),
+        (
+            "Operaciones y paréntesis",
+            """fn main() -> i32 {
+    let x = (10 + 20) * 2 - 8 / 4;
+    return x % 7;
+}""",
+            True,
+        ),
+        (
+            "Número negativo",
+            """fn main() -> i32 {
+    let x = -10;
+    return x;
+}""",
+            True,
+        ),
+        (
+            "Falta nombre de variable",
+            """fn main() -> i32 {
+    let : i32 = 10;
+    return 0;
+}""",
+            False,
+        ),
+        (
+            "Falta expresión después del igual",
+            """fn main() -> i32 {
+    let x = ;
+    return 0;
+}""",
+            False,
+        ),
     ]
 
     aprobadas = 0
 
     for nombre, codigo, esperado in pruebas:
         print(f"\n--- {nombre} ---")
-
         resultado = analizar(codigo)
 
         if resultado == esperado:

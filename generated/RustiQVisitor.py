@@ -29,8 +29,43 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#letDecl.
+    def visitLetDecl(self, ctx:RustiQParser.LetDeclContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#assignment.
+    def visitAssignment(self, ctx:RustiQParser.AssignmentContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#returnStmt.
+    def visitReturnStmt(self, ctx:RustiQParser.ReturnStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#expression.
     def visitExpression(self, ctx:RustiQParser.ExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#additive.
+    def visitAdditive(self, ctx:RustiQParser.AdditiveContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#multiplicative.
+    def visitMultiplicative(self, ctx:RustiQParser.MultiplicativeContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#unary.
+    def visitUnary(self, ctx:RustiQParser.UnaryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#primary.
+    def visitPrimary(self, ctx:RustiQParser.PrimaryContext):
         return self.visitChildren(ctx)
 
 
