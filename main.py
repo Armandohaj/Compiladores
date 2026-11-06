@@ -3,6 +3,7 @@ from antlr4.error.ErrorListener import ErrorListener
 
 from generated.RustiQLexer import RustiQLexer
 from generated.RustiQParser import RustiQParser
+from analizador_semantico import AnalizadorSemantico
 
 
 class RecolectorErrores(ErrorListener):
@@ -33,19 +34,28 @@ def analizar(codigo):
     parser.removeErrorListeners()
     parser.addErrorListener(errores_sintacticos)
 
-    parser.program()
+    arbol = parser.program()
 
     errores = (
         errores_lexicos.errores
         + errores_sintacticos.errores
     )
 
+    # Solo analizar la semántica si la sintaxis es correcta.
     if errores:
         for error in errores:
             print(error)
         return False
 
-    print("Análisis léxico y sintáctico correcto.")
+    semantico = AnalizadorSemantico()
+    semantico.visit(arbol)
+
+    if semantico.errores:
+        for error in semantico.errores:
+            print(error)
+        return False
+
+    print("Análisis léxico, sintáctico y semántico básico correcto.")
     return True
 
 
@@ -125,6 +135,77 @@ if __name__ == "__main__":
             "Falta expresión después del igual",
             """fn main() -> i32 {
     let x = ;
+    return 0;
+}""",
+            False,
+        ),
+        (
+            "Uso de variable no declarada",
+            """fn main() -> i32 {
+    return x;
+}""",
+            False,
+        ),
+        (
+            "Variable duplicada en el mismo ámbito",
+            """fn main() -> i32 {
+    let x = 10;
+    let x = 20;
+    return x;
+}""",
+            False,
+        ),
+        (
+            "Uso antes de inicializar",
+            """fn main() -> i32 {
+    let x: i32;
+    return x;
+}""",
+            False,
+        ),
+        (
+            "Modificación sin mut",
+            """fn main() -> i32 {
+    let x = 10;
+    x = 20;
+    return x;
+}""",
+            False,
+        ),
+        (
+            "Primera asignación a variable sin inicializar",
+            """fn main() -> i32 {
+    let x: i32;
+    x = 10;
+    return x;
+}""",
+            True,
+        ),
+        (
+            "Variable fuera de su ámbito",
+            """fn main() -> i32 {
+    {
+        let x = 10;
+    }
+    return x;
+}""",
+            False,
+        ),
+        (
+            "Mismo nombre en un ámbito interior",
+            """fn main() -> i32 {
+    let x = 10;
+    {
+        let x = 20;
+    }
+    return x;
+}""",
+            True,
+        ),
+        (
+            "Asignación a variable no declarada",
+            """fn main() -> i32 {
+    x = 10;
     return 0;
 }""",
             False,
