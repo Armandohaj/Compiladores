@@ -9,11 +9,12 @@ class AnalizadorSemantico(RustiQVisitor):
         self.tipo_retorno = None
 
     def reportar(self, token, mensaje):
-        self.errores.append(
-            f"Error semántico — "
-            f"Línea {token.line}, "
-            f"columna {token.column + 1}: {mensaje}"
-        )
+        self.errores.append({
+            "fase": "semantico",
+            "mensaje": mensaje,
+            "linea": token.line,
+            "columna": token.column + 1,
+        })
 
     def buscar_variable(self, nombre):
         for ambito in reversed(self.ambitos):
@@ -47,8 +48,8 @@ class AnalizadorSemantico(RustiQVisitor):
             self.tipo_retorno = retorno_anterior
 
     def bloque_garantiza_retorno(self, ctx):
-        # Por ahora solo hay sentencias secuenciales y bloques.
-        # Ampliaremos esta lógica al incorporar condiciones y ciclos.
+        # Esta comprobación cubre nuestras sentencias actuales.
+        # Se ampliará cuando agreguemos condiciones y ciclos.
         for sentencia in ctx.statement():
             if sentencia.returnStmt() is not None:
                 return True
