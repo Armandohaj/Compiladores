@@ -1,0 +1,19 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #172033; background: #f3f6fa; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.aplicacion { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 1.7rem; }
+header p { color: #5d6879; margin-top: .25rem; }
+.acciones { display: flex; gap: .6rem; }
+button, .boton { border: 0; border-radius: .4rem; padding: .65rem .9rem; font: inherit; cursor: pointer; background: #1769aa; color: white; }
+.secundario { background: #e6edf5; color: #172033; }
+.editor-panel { display: flex; min-height: 420px; border: 1px solid #ccd6e2; border-radius: .5rem; overflow: hidden; background: #fff; }
+.lineas { min-width: 3rem; padding: 1rem .7rem; text-align: right; white-space: pre; color: #7a8797; background: #f7f9fc; border-right: 1px solid #dde4ed; font: 14px/1.5 ui-monospace, monospace; user-select: none; overflow: hidden; }
+textarea { width: 100%; resize: vertical; border: 0; outline: 0; padding: 1rem; font: 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 4; }
+.resultados { margin-top: 1rem; padding: 1rem; background: #fff; border: 1px solid #ccd6e2; border-radius: .5rem; }
+.resultados h2 { font-size: 1rem; margin-bottom: .5rem; }
+#estado.correcto { color: #18723a; } #estado.error { color: #a12b2b; }
+#errores { margin: .75rem 0 0; padding-left: 1.4rem; } #errores li { margin: .35rem 0; }
+@media (max-width: 600px) { header { align-items: flex-start; flex-direction: column; } }

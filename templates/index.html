@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustiQ · Editor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <main class="aplicacion">
+    <header>
+      <div>
+        <h1>RustiQ</h1>
+        <p>Editor y analizador del lenguaje RustiQ</p>
+      </div>
+      <div class="acciones">
+        <label class="boton secundario" for="archivo">Cargar archivo</label>
+        <input id="archivo" type="file" accept=".rs,.rustiq,.txt,text/plain" hidden>
+        <button id="analizar" type="button">Analizar</button>
+      </div>
+    </header>
+
+    <section class="editor-panel" aria-label="Editor de código RustiQ">
+      <div id="lineas" class="lineas" aria-hidden="true">1</div>
+      <textarea id="codigo" spellcheck="false" aria-label="Código RustiQ">fn main() -> i32 {
+    return 10 + 20;
+}</textarea>
+    </section>
+
+    <section class="resultados" aria-live="polite">
+      <h2>Resultados</h2>
+      <p id="estado">Listo para analizar.</p>
+      <ul id="errores" hidden></ul>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
+</body>
+</html>
