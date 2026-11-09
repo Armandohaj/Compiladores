@@ -54,6 +54,21 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#whileStmt.
+    def visitWhileStmt(self, ctx:RustiQParser.WhileStmtContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#breakStmt.
+    def visitBreakStmt(self, ctx:RustiQParser.BreakStmtContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#continueStmt.
+    def visitContinueStmt(self, ctx:RustiQParser.ContinueStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#expression.
     def visitExpression(self, ctx:RustiQParser.ExpressionContext):
         return self.visitChildren(ctx)

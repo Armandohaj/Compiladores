@@ -12,12 +12,15 @@ class AnalizadorSemantico(RustiQVisitor):
         self.tipo_retorno = None
         self.tipos_expresiones = {}
 
+        # Cada entrada indica cuántos ámbitos existían
+        # antes de entrar en el cuerpo de un ciclo.
+        self.limites_ciclos = []
+
     # =================================================
     # 1. HERRAMIENTAS DE APOYO
     # =================================================
 
     def reportar(self, token, mensaje):
-        """Guarda un error estructurado para el editor."""
         self.errores.append({
             "fase": "semantico",
             "mensaje": mensaje,
@@ -35,22 +38,29 @@ class AnalizadorSemantico(RustiQVisitor):
         self.tipos_expresiones[ctx] = tipo
         return tipo
 
+    def buscar_variable_con_ambito(self, nombre):
+        """Devuelve la variable y el índice de su ámbito."""
+        for indice in range(len(self.ambitos) - 1, -1, -1):
+            if nombre in self.ambitos[indice]:
+                return self.ambitos[indice][nombre], indice
+
+        return None, None
+
     def buscar_variable(self, nombre):
-        """Busca desde el bloque más cercano hacia afuera."""
-        for ambito in reversed(self.ambitos):
-            if nombre in ambito:
-                return ambito[nombre]
-        return None
+        variable, _ = self.buscar_variable_con_ambito(nombre)
+        return variable
 
     # =================================================
-    # 2. FUNCIONES Y RETORNOS GARANTIZADOS
+    # 2. FUNCIONES Y RETORNOS
     # =================================================
 
     def visitFunctionDecl(self, ctx):
         anteriores = self.ambitos
         retorno_anterior = self.tipo_retorno
+        ciclos_anteriores = self.limites_ciclos
 
         self.ambitos = []
+        self.limites_ciclos = []
         self.tipo_retorno = (
             self.obtener_tipo_declarado(ctx) or "unit"
         )
@@ -70,12 +80,19 @@ class AnalizadorSemantico(RustiQVisitor):
         finally:
             self.ambitos = anteriores
             self.tipo_retorno = retorno_anterior
+            self.limites_ciclos = ciclos_anteriores
 
     def bloque_garantiza_retorno(self, ctx):
-        """Comprueba retornos en sentencias secuenciales."""
         for sentencia in ctx.statement():
             if sentencia.returnStmt() is not None:
                 return True
+
+            # Un salto impide alcanzar las sentencias siguientes.
+            if (
+                sentencia.breakStmt() is not None
+                or sentencia.continueStmt() is not None
+            ):
+                return False
 
             if sentencia.block() is not None:
                 if self.bloque_garantiza_retorno(sentencia.block()):
@@ -85,10 +102,12 @@ class AnalizadorSemantico(RustiQVisitor):
                 if self.if_garantiza_retorno(sentencia.ifStmt()):
                     return True
 
+            # Un while no garantiza retorno:
+            # su cuerpo podría ejecutarse cero veces.
+
         return False
 
     def if_garantiza_retorno(self, ctx):
-        """Un if garantiza retorno si ambas alternativas retornan."""
         if ctx.ELSE() is None:
             return False
 
@@ -132,16 +151,15 @@ class AnalizadorSemantico(RustiQVisitor):
             self.ambitos.pop()
 
     def visitIfStmt(self, ctx):
-        tipo_condicion = self.visit(ctx.expression())
+        tipo = self.visit(ctx.expression())
 
-        if tipo_condicion is not None and tipo_condicion != "bool":
+        if tipo is not None and tipo != "bool":
             self.reportar(
                 ctx.IF().getSymbol(),
                 "La condición del if debe ser bool."
             )
 
-        # Cada alternativa parte del mismo estado inicial.
-        # deepcopy evita que una rama modifique el estado de la otra.
+        # Las dos ramas parten del mismo estado.
         inicial = deepcopy(self.ambitos)
         bloques = ctx.block()
 
@@ -156,15 +174,11 @@ class AnalizadorSemantico(RustiQVisitor):
         if ctx.ifStmt() is not None:
             self.visit(ctx.ifStmt())
             retorna_else = self.if_garantiza_retorno(ctx.ifStmt())
-
         elif ctx.ELSE() is not None:
             self.visit(bloques[1])
             retorna_else = self.bloque_garantiza_retorno(bloques[1])
 
-        # Sin else, la alternativa es no ejecutar el bloque.
         estado_else = deepcopy(self.ambitos)
-
-        # Solo combinamos caminos que llegan después del if.
         caminos = []
 
         if not retorna_then:
@@ -176,7 +190,6 @@ class AnalizadorSemantico(RustiQVisitor):
         self.ambitos = deepcopy(inicial)
 
         if not caminos:
-            # Ambas ramas retornan: no hay continuación alcanzable.
             return
 
         for indice, ambito in enumerate(self.ambitos):
@@ -185,24 +198,54 @@ class AnalizadorSemantico(RustiQVisitor):
                     camino[indice][nombre]
                     for camino in caminos
                 ]
-
-                # Está inicializada solo si todos los caminos
-                # que continúan la dejaron inicializada.
                 variable["inicializada"] = all(
-                    estado["inicializada"]
-                    for estado in estados
+                    estado["inicializada"] for estado in estados
                 )
-
-                # Puede haber recibido un valor en algún camino.
-                # Esto impide reasignar una variable inmutable
-                # que ya podría tener un valor.
                 variable["puede_inicializada"] = any(
-                    estado["puede_inicializada"]
-                    for estado in estados
+                    estado["puede_inicializada"] for estado in estados
                 )
 
     # =================================================
-    # 4. VARIABLES Y ASIGNACIONES
+    # 4. CICLOS Y SALTOS
+    # =================================================
+
+    def visitWhileStmt(self, ctx):
+        tipo = self.visit(ctx.expression())
+
+        if tipo is not None and tipo != "bool":
+            self.reportar(
+                ctx.WHILE().getSymbol(),
+                "La condición del while debe ser bool."
+            )
+
+        inicial = deepcopy(self.ambitos)
+        self.limites_ciclos.append(len(self.ambitos))
+
+        try:
+            self.visit(ctx.block())
+        finally:
+            self.limites_ciclos.pop()
+
+            # El ciclo podría no ejecutarse.
+            # Conservamos el estado anterior para las variables externas.
+            self.ambitos = inicial
+
+    def visitBreakStmt(self, ctx):
+        if not self.limites_ciclos:
+            self.reportar(
+                ctx.BREAK().getSymbol(),
+                "'break' solo puede usarse dentro de un ciclo."
+            )
+
+    def visitContinueStmt(self, ctx):
+        if not self.limites_ciclos:
+            self.reportar(
+                ctx.CONTINUE().getSymbol(),
+                "'continue' solo puede usarse dentro de un ciclo."
+            )
+
+    # =================================================
+    # 5. VARIABLES Y ASIGNACIONES
     # =================================================
 
     def visitLetDecl(self, ctx):
@@ -262,7 +305,9 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitAssignment(self, ctx):
         token = ctx.IDENT().getSymbol()
         nombre = token.text
-        variable = self.buscar_variable(nombre)
+        variable, indice_ambito = self.buscar_variable_con_ambito(
+            nombre
+        )
 
         errores_antes = len(self.errores)
         tipo_valor = self.visit(ctx.expression())
@@ -279,6 +324,21 @@ class AnalizadorSemantico(RustiQVisitor):
                 token,
                 f"No se puede modificar '{nombre}' "
                 "porque no fue declarada con 'mut'."
+            )
+            return
+
+        # Regla conservadora inicial:
+        # asignar dentro de un ciclo a una variable externa exige mut,
+        # porque esa asignación podría repetirse.
+        if (
+            not variable["mutable"]
+            and self.limites_ciclos
+            and indice_ambito < self.limites_ciclos[-1]
+        ):
+            self.reportar(
+                token,
+                f"La variable externa '{nombre}' debe declararse "
+                "con 'mut' para asignarla dentro de un ciclo."
             )
             return
 
@@ -303,13 +363,11 @@ class AnalizadorSemantico(RustiQVisitor):
             variable["puede_inicializada"] = True
 
     # =================================================
-    # 5. EXPRESIONES LÓGICAS
+    # 6. EXPRESIONES LÓGICAS
     # =================================================
 
     def visitExpression(self, ctx):
-        return self.guardar_tipo(
-            ctx, self.visit(ctx.logicalOr())
-        )
+        return self.guardar_tipo(ctx, self.visit(ctx.logicalOr()))
 
     def comprobar_logica(self, izquierdo, derecho, token):
         if izquierdo is None or derecho is None:
@@ -332,9 +390,7 @@ class AnalizadorSemantico(RustiQVisitor):
         for indice in range(1, len(operandos)):
             derecho = self.visit(operandos[indice])
             tipo = self.comprobar_logica(
-                tipo,
-                derecho,
-                ctx.OR(indice - 1).getSymbol()
+                tipo, derecho, ctx.OR(indice - 1).getSymbol()
             )
 
         return self.guardar_tipo(ctx, tipo)
@@ -346,15 +402,13 @@ class AnalizadorSemantico(RustiQVisitor):
         for indice in range(1, len(operandos)):
             derecho = self.visit(operandos[indice])
             tipo = self.comprobar_logica(
-                tipo,
-                derecho,
-                ctx.AND(indice - 1).getSymbol()
+                tipo, derecho, ctx.AND(indice - 1).getSymbol()
             )
 
         return self.guardar_tipo(ctx, tipo)
 
     # =================================================
-    # 6. COMPARACIONES
+    # 7. COMPARACIONES
     # =================================================
 
     def visitComparison(self, ctx):
@@ -392,7 +446,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, "bool")
 
     # =================================================
-    # 7. OPERACIONES ARITMÉTICAS
+    # 8. OPERACIONES ARITMÉTICAS
     # =================================================
 
     def comprobar_operacion(self, izquierdo, derecho, token):
@@ -453,7 +507,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, tipo)
 
     # =================================================
-    # 8. OPERADORES UNARIOS Y VALORES
+    # 9. OPERADORES UNARIOS Y VALORES
     # =================================================
 
     def visitUnary(self, ctx):
@@ -482,13 +536,10 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitPrimary(self, ctx):
         if ctx.INT() is not None:
             tipo = "i32"
-
         elif ctx.FLOAT() is not None:
             tipo = "f64"
-
         elif ctx.TRUE() is not None or ctx.FALSE() is not None:
             tipo = "bool"
-
         elif ctx.IDENT() is not None:
             token = ctx.IDENT().getSymbol()
             variable = self.buscar_variable(token.text)
@@ -499,7 +550,6 @@ class AnalizadorSemantico(RustiQVisitor):
                     f"La variable '{token.text}' no está declarada."
                 )
                 tipo = None
-
             elif not variable["inicializada"]:
                 self.reportar(
                     token,
@@ -507,10 +557,8 @@ class AnalizadorSemantico(RustiQVisitor):
                     "antes de inicializarla."
                 )
                 tipo = None
-
             else:
                 tipo = variable["tipo"]
-
         else:
             tipo = self.visit(ctx.expression())
 
