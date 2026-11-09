@@ -4,10 +4,23 @@ const botonAnalizar = document.querySelector("#analizar");
 const archivo = document.querySelector("#archivo");
 const estado = document.querySelector("#estado");
 const listaErrores = document.querySelector("#errores");
+let versionCodigo = 0;
+let controladorAnalisis = null;
 
 function actualizarLineas() {
   const total = codigo.value.split("\n").length;
   lineas.textContent = Array.from({ length: total }, (_, indice) => indice + 1).join("\n");
+}
+
+function invalidarResultados() {
+  versionCodigo += 1;
+  controladorAnalisis?.abort();
+  controladorAnalisis = null;
+  botonAnalizar.disabled = false;
+  listaErrores.replaceChildren();
+  listaErrores.hidden = true;
+  estado.textContent = "Código modificado. Analiza para actualizar los resultados.";
+  estado.className = "";
 }
 
 function mostrarResultado(resultado) {
@@ -30,6 +43,9 @@ function mostrarResultado(resultado) {
 }
 
 async function analizar() {
+  const versionAnalizada = versionCodigo;
+  const controlador = new AbortController();
+  controladorAnalisis = controlador;
   botonAnalizar.disabled = true;
   estado.textContent = "Analizando…";
   estado.className = "";
@@ -38,27 +54,39 @@ async function analizar() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ codigo: codigo.value }),
+      signal: controlador.signal,
     });
     const resultado = await respuesta.json();
     if (!respuesta.ok) throw new Error(resultado.error || "No se pudo analizar el código.");
+    if (versionAnalizada !== versionCodigo) return;
     mostrarResultado(resultado);
   } catch (error) {
+    if (error.name === "AbortError") return;
+    if (versionAnalizada !== versionCodigo) return;
     estado.textContent = error.message;
     estado.className = "error";
     listaErrores.hidden = true;
   } finally {
-    botonAnalizar.disabled = false;
+    if (versionAnalizada === versionCodigo) botonAnalizar.disabled = false;
+    if (controladorAnalisis === controlador) controladorAnalisis = null;
   }
 }
 
-codigo.addEventListener("input", actualizarLineas);
+codigo.addEventListener("input", () => {
+  actualizarLineas();
+  invalidarResultados();
+});
 codigo.addEventListener("scroll", () => { lineas.scrollTop = codigo.scrollTop; });
 botonAnalizar.addEventListener("click", analizar);
 archivo.addEventListener("change", () => {
   const seleccionado = archivo.files[0];
   if (!seleccionado) return;
   const lector = new FileReader();
-  lector.onload = () => { codigo.value = lector.result; actualizarLineas(); };
+  lector.onload = () => {
+    codigo.value = lector.result;
+    actualizarLineas();
+    invalidarResultados();
+  };
   lector.readAsText(seleccionado);
 });
 actualizarLineas();
