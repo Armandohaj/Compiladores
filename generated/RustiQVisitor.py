@@ -19,6 +19,16 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#parameterList.
+    def visitParameterList(self, ctx:RustiQParser.ParameterListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#parameter.
+    def visitParameter(self, ctx:RustiQParser.ParameterContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#type.
     def visitType(self, ctx:RustiQParser.TypeContext):
         return self.visitChildren(ctx)
@@ -66,6 +76,16 @@ class RustiQVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by RustiQParser#continueStmt.
     def visitContinueStmt(self, ctx:RustiQParser.ContinueStmtContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#functionCall.
+    def visitFunctionCall(self, ctx:RustiQParser.FunctionCallContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#argumentList.
+    def visitArgumentList(self, ctx:RustiQParser.ArgumentListContext):
         return self.visitChildren(ctx)
 
 

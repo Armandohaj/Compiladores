@@ -7,13 +7,23 @@ from generated.RustiQParser import RustiQParser
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
         super().__init__()
+
+        # Pila de ámbitos: cada diccionario contiene variables.
         self.ambitos = []
+
+        # Errores encontrados durante el análisis.
         self.errores = []
+
+        # Tipo que debe devolver la función actual.
         self.tipo_retorno = None
+
+        # Tipo calculado para cada nodo de expresión.
         self.tipos_expresiones = {}
 
-        # Cada entrada indica cuántos ámbitos existían
-        # antes de entrar en el cuerpo de un ciclo.
+        # Firmas de funciones: parámetros y tipo de retorno.
+        self.funciones = {}
+
+        # Cantidad de ámbitos existentes antes de cada ciclo.
         self.limites_ciclos = []
 
     # =================================================
@@ -29,6 +39,7 @@ class AnalizadorSemantico(RustiQVisitor):
         })
 
     def obtener_tipo_declarado(self, ctx):
+        # Accedemos directamente a la regla type de ANTLR.
         nodo = ctx.getTypedRuleContext(
             RustiQParser.TypeContext, 0
         )
@@ -39,7 +50,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return tipo
 
     def buscar_variable_con_ambito(self, nombre):
-        """Devuelve la variable y el índice de su ámbito."""
+        # Buscamos desde el ámbito interior hacia el exterior.
         for indice in range(len(self.ambitos) - 1, -1, -1):
             if nombre in self.ambitos[indice]:
                 return self.ambitos[indice][nombre], indice
@@ -50,8 +61,44 @@ class AnalizadorSemantico(RustiQVisitor):
         variable, _ = self.buscar_variable_con_ambito(nombre)
         return variable
 
+    def obtener_parametros(self, ctx):
+        lista = ctx.parameterList()
+        return lista.parameter() if lista is not None else []
+
     # =================================================
-    # 2. FUNCIONES Y RETORNOS
+    # 2. REGISTRO DE FUNCIONES
+    # =================================================
+
+    def visitProgram(self, ctx):
+        # Primera pasada: registrar todas las firmas.
+        # Esto permite llamadas adelantadas y recursión.
+        for funcion in ctx.functionDecl():
+            token = funcion.IDENT().getSymbol()
+            nombre = token.text
+
+            if nombre in self.funciones:
+                self.reportar(
+                    token,
+                    f"La función '{nombre}' ya fue declarada."
+                )
+                continue
+
+            self.funciones[nombre] = {
+                "parametros": [
+                    self.obtener_tipo_declarado(parametro)
+                    for parametro in self.obtener_parametros(funcion)
+                ],
+                "retorno": (
+                    self.obtener_tipo_declarado(funcion) or "unit"
+                ),
+            }
+
+        # Segunda pasada: revisar los cuerpos.
+        for funcion in ctx.functionDecl():
+            self.visit(funcion)
+
+    # =================================================
+    # 3. CUERPOS DE FUNCIONES Y PARÁMETROS
     # =================================================
 
     def visitFunctionDecl(self, ctx):
@@ -59,14 +106,39 @@ class AnalizadorSemantico(RustiQVisitor):
         retorno_anterior = self.tipo_retorno
         ciclos_anteriores = self.limites_ciclos
 
-        self.ambitos = []
+        # Los parámetros comparten ámbito con las variables
+        # declaradas directamente en el cuerpo de la función.
+        self.ambitos = [{}]
         self.limites_ciclos = []
         self.tipo_retorno = (
             self.obtener_tipo_declarado(ctx) or "unit"
         )
 
         try:
-            self.visit(ctx.block())
+            for parametro in self.obtener_parametros(ctx):
+                token = parametro.IDENT().getSymbol()
+                nombre = token.text
+
+                if nombre in self.ambitos[-1]:
+                    self.reportar(
+                        token,
+                        f"El parámetro '{nombre}' ya fue declarado."
+                    )
+                    continue
+
+                # Un parámetro recibe su valor al llamar
+                # a la función, por eso está inicializado.
+                self.ambitos[-1][nombre] = {
+                    "tipo": self.obtener_tipo_declarado(parametro),
+                    "mutable": parametro.MUT() is not None,
+                    "inicializada": True,
+                    "puede_inicializada": True,
+                }
+
+            # No usamos visitBlock aquí porque crearía
+            # otro ámbito entre parámetros y variables locales.
+            for sentencia in ctx.block().statement():
+                self.visit(sentencia)
 
             if (
                 self.tipo_retorno != "unit"
@@ -82,12 +154,79 @@ class AnalizadorSemantico(RustiQVisitor):
             self.tipo_retorno = retorno_anterior
             self.limites_ciclos = ciclos_anteriores
 
+    # =================================================
+    # 4. LLAMADAS A FUNCIONES
+    # =================================================
+
+    def visitFunctionCall(self, ctx):
+        token = ctx.IDENT().getSymbol()
+        nombre = token.text
+        lista = ctx.argumentList()
+
+        argumentos = (
+            lista.expression() if lista is not None else []
+        )
+
+        # Revisamos todos los argumentos, aunque la función
+        # no exista, para detectar errores dentro de ellos.
+        tipos = [self.visit(argumento) for argumento in argumentos]
+
+        # Una variable local con este nombre oculta la función.
+        if self.buscar_variable(nombre) is not None:
+            self.reportar(
+                token,
+                f"'{nombre}' es una variable y no puede "
+                "llamarse como función."
+            )
+            return self.guardar_tipo(ctx, None)
+
+        funcion = self.funciones.get(nombre)
+
+        if funcion is None:
+            self.reportar(
+                token,
+                f"La función '{nombre}' no está declarada."
+            )
+            return self.guardar_tipo(ctx, None)
+
+        esperados = funcion["parametros"]
+        llamada_valida = True
+
+        if len(argumentos) != len(esperados):
+            self.reportar(
+                token,
+                f"La función '{nombre}' espera "
+                f"{len(esperados)} argumentos, pero recibió "
+                f"{len(argumentos)}."
+            )
+            llamada_valida = False
+
+        for indice, (recibido, esperado) in enumerate(
+            zip(tipos, esperados), start=1
+        ):
+            if recibido is None:
+                llamada_valida = False
+            elif recibido != esperado:
+                self.reportar(
+                    argumentos[indice - 1].start,
+                    f"Argumento {indice} de '{nombre}': "
+                    f"se esperaba {esperado}, "
+                    f"pero se recibió {recibido}."
+                )
+                llamada_valida = False
+
+        tipo = funcion["retorno"] if llamada_valida else None
+        return self.guardar_tipo(ctx, tipo)
+
+    # =================================================
+    # 5. RETORNOS
+    # =================================================
+
     def bloque_garantiza_retorno(self, ctx):
         for sentencia in ctx.statement():
             if sentencia.returnStmt() is not None:
                 return True
 
-            # Un salto impide alcanzar las sentencias siguientes.
             if (
                 sentencia.breakStmt() is not None
                 or sentencia.continueStmt() is not None
@@ -102,8 +241,8 @@ class AnalizadorSemantico(RustiQVisitor):
                 if self.if_garantiza_retorno(sentencia.ifStmt()):
                     return True
 
-            # Un while no garantiza retorno:
-            # su cuerpo podría ejecutarse cero veces.
+            # Un while podría ejecutarse cero veces.
+            # Por eso no garantiza un retorno.
 
         return False
 
@@ -138,7 +277,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
 
     # =================================================
-    # 3. BLOQUES Y CONDICIONALES
+    # 6. BLOQUES Y CONDICIONALES
     # =================================================
 
     def visitBlock(self, ctx):
@@ -192,6 +331,8 @@ class AnalizadorSemantico(RustiQVisitor):
         if not caminos:
             return
 
+        # Una variable está definitivamente inicializada
+        # si lo está en todos los caminos que continúan.
         for indice, ambito in enumerate(self.ambitos):
             for nombre, variable in ambito.items():
                 estados = [
@@ -206,7 +347,7 @@ class AnalizadorSemantico(RustiQVisitor):
                 )
 
     # =================================================
-    # 4. CICLOS Y SALTOS
+    # 7. CICLOS Y SALTOS
     # =================================================
 
     def visitWhileStmt(self, ctx):
@@ -226,8 +367,7 @@ class AnalizadorSemantico(RustiQVisitor):
         finally:
             self.limites_ciclos.pop()
 
-            # El ciclo podría no ejecutarse.
-            # Conservamos el estado anterior para las variables externas.
+            # El cuerpo podría no ejecutarse.
             self.ambitos = inicial
 
     def visitBreakStmt(self, ctx):
@@ -245,7 +385,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
 
     # =================================================
-    # 5. VARIABLES Y ASIGNACIONES
+    # 8. VARIABLES Y ASIGNACIONES
     # =================================================
 
     def visitLetDecl(self, ctx):
@@ -277,6 +417,15 @@ class AnalizadorSemantico(RustiQVisitor):
                 "indicá un tipo o un valor inicial."
             )
 
+        # unit representa la ausencia de un valor.
+        # Por ahora no es un tipo admitido para variables.
+        if tipo_valor == "unit":
+            self.reportar(
+                token,
+                f"No se puede inicializar '{nombre}' con "
+                "una función que no devuelve un valor."
+            )
+
         if (
             declarado is not None
             and tipo_valor is not None
@@ -296,7 +445,10 @@ class AnalizadorSemantico(RustiQVisitor):
         )
 
         ambito[nombre] = {
-            "tipo": declarado or tipo_valor,
+            "tipo": (
+                declarado
+                or (tipo_valor if tipo_valor != "unit" else None)
+            ),
             "mutable": ctx.MUT() is not None,
             "inicializada": inicializada,
             "puede_inicializada": inicializada,
@@ -327,9 +479,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return
 
-        # Regla conservadora inicial:
-        # asignar dentro de un ciclo a una variable externa exige mut,
-        # porque esa asignación podría repetirse.
+        # Una asignación dentro del ciclo podría repetirse.
         if (
             not variable["mutable"]
             and self.limites_ciclos
@@ -363,7 +513,7 @@ class AnalizadorSemantico(RustiQVisitor):
             variable["puede_inicializada"] = True
 
     # =================================================
-    # 6. EXPRESIONES LÓGICAS
+    # 9. EXPRESIONES LÓGICAS
     # =================================================
 
     def visitExpression(self, ctx):
@@ -408,7 +558,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, tipo)
 
     # =================================================
-    # 7. COMPARACIONES
+    # 10. COMPARACIONES
     # =================================================
 
     def visitComparison(self, ctx):
@@ -432,6 +582,15 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return self.guardar_tipo(ctx, None)
 
+        # Las funciones unit no aportan valores comparables.
+        if izquierdo == "unit":
+            self.reportar(
+                operador,
+                "No se pueden comparar llamadas "
+                "que no devuelven un valor."
+            )
+            return self.guardar_tipo(ctx, None)
+
         if (
             operador.text not in ("==", "!=")
             and izquierdo not in ("i32", "f64")
@@ -446,7 +605,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, "bool")
 
     # =================================================
-    # 8. OPERACIONES ARITMÉTICAS
+    # 11. OPERACIONES ARITMÉTICAS
     # =================================================
 
     def comprobar_operacion(self, izquierdo, derecho, token):
@@ -507,7 +666,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, tipo)
 
     # =================================================
-    # 9. OPERADORES UNARIOS Y VALORES
+    # 12. OPERADORES UNARIOS Y VALORES
     # =================================================
 
     def visitUnary(self, ctx):
@@ -536,10 +695,16 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitPrimary(self, ctx):
         if ctx.INT() is not None:
             tipo = "i32"
+
         elif ctx.FLOAT() is not None:
             tipo = "f64"
+
         elif ctx.TRUE() is not None or ctx.FALSE() is not None:
             tipo = "bool"
+
+        elif ctx.functionCall() is not None:
+            tipo = self.visit(ctx.functionCall())
+
         elif ctx.IDENT() is not None:
             token = ctx.IDENT().getSymbol()
             variable = self.buscar_variable(token.text)
@@ -550,6 +715,7 @@ class AnalizadorSemantico(RustiQVisitor):
                     f"La variable '{token.text}' no está declarada."
                 )
                 tipo = None
+
             elif not variable["inicializada"]:
                 self.reportar(
                     token,
@@ -557,8 +723,10 @@ class AnalizadorSemantico(RustiQVisitor):
                     "antes de inicializarla."
                 )
                 tipo = None
+
             else:
                 tipo = variable["tipo"]
+
         else:
             tipo = self.visit(ctx.expression())
 

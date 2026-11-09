@@ -10,10 +10,22 @@ program
     : functionDecl* EOF
     ;
 
-// Funciones sin parámetros por ahora.
-// El tipo de retorno es opcional.
+// Los parámetros y el tipo de retorno son opcionales.
+// Ejemplo: fn sumar(a: i32, b: i32) -> i32 { ... }
 functionDecl
-    : FN IDENT LPAREN RPAREN (ARROW type)? block
+    : FN IDENT LPAREN parameterList? RPAREN (ARROW type)? block
+    ;
+
+// Parámetros separados por comas.
+// También permite una coma después del último parámetro.
+parameterList
+    : parameter (COMMA parameter)* COMMA?
+    ;
+
+// Cada parámetro debe indicar su tipo.
+// mut permite modificarlo dentro de la función.
+parameter
+    : MUT? IDENT COLON type
     ;
 
 // Tipos disponibles.
@@ -33,9 +45,12 @@ block
     ;
 
 // Instrucciones disponibles dentro de un bloque.
+// Una llamada también puede utilizarse como sentencia:
+// procesar(10);
 statement
     : letDecl
     | assignment SEMICOLON
+    | functionCall SEMICOLON
     | returnStmt
     | ifStmt
     | whileStmt
@@ -50,7 +65,6 @@ letDecl
     ;
 
 // Asignación a una variable.
-// El punto y coma se reconoce en statement.
 assignment
     : IDENT ASSIGN expression
     ;
@@ -65,29 +79,40 @@ ifStmt
     : IF expression block (ELSE (block | ifStmt))?
     ;
 
-// Repite un bloque mientras la condición sea verdadera.
-// Ejemplo: while contador < 10 { ... }
-//
 // La condición debe ser bool.
-// Esa comprobación corresponde al análisis semántico.
+// El análisis semántico comprueba su tipo.
 whileStmt
     : WHILE expression block
     ;
 
 // Sale del ciclo más cercano.
-// La semántica comprobará que esté dentro de un ciclo.
 breakStmt
     : BREAK SEMICOLON
     ;
 
 // Pasa a la siguiente iteración del ciclo más cercano.
-// La semántica comprobará que esté dentro de un ciclo.
 continueStmt
     : CONTINUE SEMICOLON
     ;
 
 // =====================================================
-// 3. EXPRESIONES Y PRIORIDAD
+// 3. LLAMADAS A FUNCIONES
+// =====================================================
+
+// Llamada con cero o más argumentos.
+// Ejemplos: obtener() y sumar(10, 20).
+functionCall
+    : IDENT LPAREN argumentList? RPAREN
+    ;
+
+// Los argumentos son expresiones.
+// Permite llamadas anidadas: sumar(obtener(), 20).
+argumentList
+    : expression (COMMA expression)* COMMA?
+    ;
+
+// =====================================================
+// 4. EXPRESIONES Y PRIORIDAD
 // =====================================================
 
 expression
@@ -109,7 +134,6 @@ comparison
     : additive (relOp additive)?
     ;
 
-// Operadores de comparación.
 relOp
     : EQ
     | NEQ
@@ -125,7 +149,6 @@ additive
     ;
 
 // Multiplicación, división y residuo.
-// Mayor prioridad que suma y resta.
 multiplicative
     : unary ((STAR | SLASH | PERCENT) unary)*
     ;
@@ -135,18 +158,20 @@ unary
     : (MINUS | NOT)? primary
     ;
 
-// Valores básicos y expresiones entre paréntesis.
+// Valores básicos, llamadas y expresiones entre paréntesis.
+// El resultado de una llamada puede participar en operaciones.
 primary
     : INT
     | FLOAT
     | TRUE
     | FALSE
+    | functionCall
     | IDENT
     | LPAREN expression RPAREN
     ;
 
 // =====================================================
-// 4. PALABRAS RESERVADAS
+// 5. PALABRAS RESERVADAS
 // =====================================================
 
 // Se colocan antes de IDENT para distinguirlas
@@ -161,15 +186,15 @@ WHILE    : 'while';
 BREAK    : 'break';
 CONTINUE : 'continue';
 
-I32    : 'i32';
-F64    : 'f64';
-BOOL   : 'bool';
+I32      : 'i32';
+F64      : 'f64';
+BOOL     : 'bool';
 
-TRUE   : 'true';
-FALSE  : 'false';
+TRUE     : 'true';
+FALSE    : 'false';
 
 // =====================================================
-// 5. SÍMBOLOS Y OPERADORES
+// 6. SÍMBOLOS Y OPERADORES
 // =====================================================
 
 LPAREN    : '(';
@@ -179,6 +204,9 @@ RBRACE    : '}';
 ARROW     : '->';
 SEMICOLON : ';';
 COLON     : ':';
+
+// Separa parámetros y argumentos.
+COMMA     : ',';
 
 // Comparaciones.
 EQ     : '==';
@@ -202,7 +230,7 @@ SLASH   : '/';
 PERCENT : '%';
 
 // =====================================================
-// 6. IDENTIFICADORES Y LITERALES
+// 7. IDENTIFICADORES Y LITERALES
 // =====================================================
 
 // Nombres que comienzan con una letra o guion bajo.
@@ -222,7 +250,7 @@ INT
     ;
 
 // =====================================================
-// 7. COMENTARIOS Y ESPACIOS
+// 8. COMENTARIOS Y ESPACIOS
 // =====================================================
 
 // Ignorar comentarios de línea.
