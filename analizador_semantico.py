@@ -565,15 +565,18 @@ class AnalizadorSemantico(RustiQVisitor):
         operandos = ctx.additive()
         izquierdo = self.visit(operandos[0])
 
+        # Sin operador, conservar el tipo de la expresión.
         if ctx.relOp() is None:
             return self.guardar_tipo(ctx, izquierdo)
 
         derecho = self.visit(operandos[1])
         operador = ctx.relOp().start
 
+        # Evitar errores adicionales si un operando ya falló.
         if izquierdo is None or derecho is None:
             return self.guardar_tipo(ctx, None)
 
+        # Ambos operandos deben tener exactamente el mismo tipo.
         if izquierdo != derecho:
             self.reportar(
                 operador,
@@ -582,7 +585,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return self.guardar_tipo(ctx, None)
 
-        # Las funciones unit no aportan valores comparables.
+        # unit representa la ausencia de un valor.
         if izquierdo == "unit":
             self.reportar(
                 operador,
@@ -591,6 +594,11 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return self.guardar_tipo(ctx, None)
 
+        # Igualdad y diferencia admiten los tipos disponibles:
+        # i32, f64, bool, char y String.
+        #
+        # Conservamos por ahora la regla existente:
+        # las comparaciones de orden solo admiten números.
         if (
             operador.text not in ("==", "!=")
             and izquierdo not in ("i32", "f64")
@@ -693,6 +701,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, tipo)
 
     def visitPrimary(self, ctx):
+        # Cada literal determina directamente su tipo.
         if ctx.INT() is not None:
             tipo = "i32"
 
@@ -702,9 +711,19 @@ class AnalizadorSemantico(RustiQVisitor):
         elif ctx.TRUE() is not None or ctx.FALSE() is not None:
             tipo = "bool"
 
+        # Comillas simples: un carácter.
+        elif ctx.CHAR_LITERAL() is not None:
+            tipo = "char"
+
+        # Comillas dobles: una cadena.
+        elif ctx.STRING_LITERAL() is not None:
+            tipo = "String"
+
+        # El tipo de una llamada es el retorno de la función.
         elif ctx.functionCall() is not None:
             tipo = self.visit(ctx.functionCall())
 
+        # Consultar el tipo de una variable existente.
         elif ctx.IDENT() is not None:
             token = ctx.IDENT().getSymbol()
             variable = self.buscar_variable(token.text)
@@ -727,6 +746,7 @@ class AnalizadorSemantico(RustiQVisitor):
             else:
                 tipo = variable["tipo"]
 
+        # Los paréntesis conservan el tipo de su expresión.
         else:
             tipo = self.visit(ctx.expression())
 
