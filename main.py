@@ -4,6 +4,7 @@ from antlr4.error.ErrorListener import ErrorListener
 from generated.RustiQLexer import RustiQLexer
 from generated.RustiQParser import RustiQParser
 from analizador_semantico import AnalizadorSemantico
+from resolucion_variables import ResolucionVariables
 
 
 # =====================================================
@@ -11,7 +12,7 @@ from analizador_semantico import AnalizadorSemantico
 # =====================================================
 
 class RecolectorErrores(ErrorListener):
-    """Guarda errores de ANTLR sin imprimirlos directamente."""
+    """Guarda los errores de ANTLR sin imprimirlos."""
 
     def __init__(self, fase):
         super().__init__()
@@ -26,8 +27,7 @@ class RecolectorErrores(ErrorListener):
             "fase": self.fase,
             "mensaje": msg,
             "linea": line,
-            # ANTLR cuenta columnas desde cero.
-            # Las mostramos desde uno para el usuario.
+            # ANTLR cuenta desde cero; mostramos desde uno.
             "columna": column + 1,
         })
 
@@ -42,20 +42,23 @@ def analizar_programa(codigo):
 
     Devuelve:
     - valido: indica si el programa pasó el análisis.
-    - arbol: árbol de ANTLR, disponible si es válido.
-    - errores: lista de errores estructurados.
-    - funciones: firmas de las funciones del programa.
-    - tipos_expresiones: relación nodo de ANTLR -> tipo.
+    - arbol: árbol de ANTLR.
+    - errores: errores léxicos, sintácticos o semánticos.
+    - funciones: firmas de las funciones.
+    - tipos_expresiones: nodo de expresión -> tipo.
+    - simbolos: identificador de variable -> información.
+    - declaraciones: nodo de declaración -> identificador.
+    - referencias: nodo de lectura/asignación -> identificador.
 
-    El árbol y los datos semánticos se entregan únicamente
-    cuando el programa completo es válido.
+    Si hay errores, el árbol será None y los diccionarios
+    destinados al backend estarán vacíos.
     """
 
     errores_lexicos = RecolectorErrores("lexico")
     errores_sintacticos = RecolectorErrores("sintactico")
 
     # -------------------------------------------------
-    # A. Análisis léxico: convertir texto en tokens.
+    # A. Análisis léxico: texto -> tokens.
     # -------------------------------------------------
 
     lexer = RustiQLexer(InputStream(codigo))
@@ -64,12 +67,12 @@ def analizar_programa(codigo):
 
     tokens = CommonTokenStream(lexer)
 
-    # Leer todos los tokens para recoger errores léxicos.
+    # Recoger todos los errores léxicos antes de continuar.
     tokens.fill()
     tokens.seek(0)
 
     # -------------------------------------------------
-    # B. Análisis sintáctico: construir el árbol.
+    # B. Análisis sintáctico: tokens -> árbol.
     # -------------------------------------------------
 
     parser = RustiQParser(tokens)
@@ -84,18 +87,16 @@ def analizar_programa(codigo):
     )
 
     # -------------------------------------------------
-    # C. Análisis semántico: comprobar significado.
+    # C. Análisis semántico.
     # -------------------------------------------------
 
     semantico = None
 
-    # Solo revisar semántica si el código está bien formado.
     if not errores:
         semantico = AnalizadorSemantico()
         semantico.visit(arbol)
         errores.extend(semantico.errores)
 
-    # Ordenar los errores según su posición en el archivo.
     errores.sort(
         key=lambda error: (error["linea"], error["columna"])
     )
@@ -103,24 +104,27 @@ def analizar_programa(codigo):
     valido = not errores
 
     # -------------------------------------------------
-    # D. Datos que utilizará el backend.
+    # D. Preparar información para el backend.
     # -------------------------------------------------
 
     funciones = {}
     tipos_expresiones = {}
+    simbolos = {}
+    declaraciones = {}
+    referencias = {}
 
     if valido:
-        # Ejemplo de firma:
-        # "sumar": {
-        #     "parametros": ["i32", "i32"],
-        #     "retorno": "i32"
-        # }
         funciones = semantico.funciones
-
-        # Las claves son los mismos nodos del árbol devuelto.
-        # El backend puede consultar:
-        # tipos_expresiones[nodo]
         tipos_expresiones = semantico.tipos_expresiones
+
+        # Vincular cada uso de una variable con su declaración.
+        # Se ejecuta únicamente sobre un programa válido.
+        resolucion = ResolucionVariables(tipos_expresiones)
+        resolucion.visit(arbol)
+
+        simbolos = resolucion.simbolos
+        declaraciones = resolucion.declaraciones
+        referencias = resolucion.referencias
 
     return {
         "valido": valido,
@@ -128,6 +132,9 @@ def analizar_programa(codigo):
         "errores": errores,
         "funciones": funciones,
         "tipos_expresiones": tipos_expresiones,
+        "simbolos": simbolos,
+        "declaraciones": declaraciones,
+        "referencias": referencias,
     }
 
 
@@ -161,8 +168,6 @@ def analizar(codigo):
 # 4. EJEMPLO AL EJECUTAR ESTE ARCHIVO
 # =====================================================
 
-# Este ejemplo solo se ejecuta con python main.py.
-# No se ejecuta cuando otro archivo importa las funciones.
 if __name__ == "__main__":
     codigo = """
 fn sumar(a: i32, b: i32) -> i32 {
