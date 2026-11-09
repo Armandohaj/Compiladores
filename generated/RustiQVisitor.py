@@ -49,8 +49,33 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#ifStmt.
+    def visitIfStmt(self, ctx:RustiQParser.IfStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#expression.
     def visitExpression(self, ctx:RustiQParser.ExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#logicalOr.
+    def visitLogicalOr(self, ctx:RustiQParser.LogicalOrContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#logicalAnd.
+    def visitLogicalAnd(self, ctx:RustiQParser.LogicalAndContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#comparison.
+    def visitComparison(self, ctx:RustiQParser.ComparisonContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#relOp.
+    def visitRelOp(self, ctx:RustiQParser.RelOpContext):
         return self.visitChildren(ctx)
 
 
