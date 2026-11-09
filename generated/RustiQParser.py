@@ -10,90 +10,92 @@ else:
 
 def serializedATN():
     return [
-        4,1,47,240,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
+        4,1,48,246,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
         6,2,7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,
         2,14,7,14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,
-        7,20,2,21,7,21,2,22,7,22,2,23,7,23,2,24,7,24,1,0,5,0,52,8,0,10,0,
-        12,0,55,9,0,1,0,1,0,1,1,1,1,1,1,1,1,3,1,63,8,1,1,1,1,1,1,1,3,1,68,
-        8,1,1,1,1,1,1,2,1,2,1,2,5,2,75,8,2,10,2,12,2,78,9,2,1,2,3,2,81,8,
-        2,1,3,3,3,84,8,3,1,3,1,3,1,3,1,3,1,4,1,4,1,5,1,5,5,5,94,8,5,10,5,
-        12,5,97,9,5,1,5,1,5,1,6,1,6,1,6,1,6,1,6,1,6,1,6,1,6,1,6,1,6,1,6,
-        1,6,1,6,3,6,114,8,6,1,7,1,7,3,7,118,8,7,1,7,1,7,1,7,3,7,123,8,7,
-        1,7,1,7,3,7,127,8,7,1,7,1,7,1,8,1,8,1,8,1,8,1,9,1,9,3,9,137,8,9,
-        1,9,1,9,1,10,1,10,1,10,1,10,1,10,1,10,3,10,147,8,10,3,10,149,8,10,
-        1,11,1,11,1,11,1,11,1,12,1,12,1,12,1,13,1,13,1,13,1,14,1,14,1,14,
-        3,14,164,8,14,1,14,1,14,1,15,1,15,1,15,5,15,171,8,15,10,15,12,15,
-        174,9,15,1,15,3,15,177,8,15,1,16,1,16,1,17,1,17,1,17,5,17,184,8,
-        17,10,17,12,17,187,9,17,1,18,1,18,1,18,5,18,192,8,18,10,18,12,18,
-        195,9,18,1,19,1,19,1,19,1,19,3,19,201,8,19,1,20,1,20,1,21,1,21,1,
-        21,5,21,208,8,21,10,21,12,21,211,9,21,1,22,1,22,1,22,5,22,216,8,
-        22,10,22,12,22,219,9,22,1,23,3,23,222,8,23,1,23,1,23,1,24,1,24,1,
-        24,1,24,1,24,1,24,1,24,1,24,1,24,1,24,1,24,1,24,3,24,238,8,24,1,
-        24,0,0,25,0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,
-        40,42,44,46,48,0,5,1,0,10,14,1,0,25,30,1,0,35,36,1,0,37,39,2,0,33,
-        33,36,36,252,0,53,1,0,0,0,2,58,1,0,0,0,4,71,1,0,0,0,6,83,1,0,0,0,
-        8,89,1,0,0,0,10,91,1,0,0,0,12,113,1,0,0,0,14,115,1,0,0,0,16,130,
-        1,0,0,0,18,134,1,0,0,0,20,140,1,0,0,0,22,150,1,0,0,0,24,154,1,0,
-        0,0,26,157,1,0,0,0,28,160,1,0,0,0,30,167,1,0,0,0,32,178,1,0,0,0,
-        34,180,1,0,0,0,36,188,1,0,0,0,38,196,1,0,0,0,40,202,1,0,0,0,42,204,
-        1,0,0,0,44,212,1,0,0,0,46,221,1,0,0,0,48,237,1,0,0,0,50,52,3,2,1,
-        0,51,50,1,0,0,0,52,55,1,0,0,0,53,51,1,0,0,0,53,54,1,0,0,0,54,56,
-        1,0,0,0,55,53,1,0,0,0,56,57,5,0,0,1,57,1,1,0,0,0,58,59,5,1,0,0,59,
-        60,5,40,0,0,60,62,5,17,0,0,61,63,3,4,2,0,62,61,1,0,0,0,62,63,1,0,
-        0,0,63,64,1,0,0,0,64,67,5,18,0,0,65,66,5,21,0,0,66,68,3,8,4,0,67,
-        65,1,0,0,0,67,68,1,0,0,0,68,69,1,0,0,0,69,70,3,10,5,0,70,3,1,0,0,
-        0,71,76,3,6,3,0,72,73,5,24,0,0,73,75,3,6,3,0,74,72,1,0,0,0,75,78,
-        1,0,0,0,76,74,1,0,0,0,76,77,1,0,0,0,77,80,1,0,0,0,78,76,1,0,0,0,
-        79,81,5,24,0,0,80,79,1,0,0,0,80,81,1,0,0,0,81,5,1,0,0,0,82,84,5,
-        4,0,0,83,82,1,0,0,0,83,84,1,0,0,0,84,85,1,0,0,0,85,86,5,40,0,0,86,
-        87,5,23,0,0,87,88,3,8,4,0,88,7,1,0,0,0,89,90,7,0,0,0,90,9,1,0,0,
-        0,91,95,5,19,0,0,92,94,3,12,6,0,93,92,1,0,0,0,94,97,1,0,0,0,95,93,
-        1,0,0,0,95,96,1,0,0,0,96,98,1,0,0,0,97,95,1,0,0,0,98,99,5,20,0,0,
-        99,11,1,0,0,0,100,114,3,14,7,0,101,102,3,16,8,0,102,103,5,22,0,0,
-        103,114,1,0,0,0,104,105,3,28,14,0,105,106,5,22,0,0,106,114,1,0,0,
-        0,107,114,3,18,9,0,108,114,3,20,10,0,109,114,3,22,11,0,110,114,3,
-        24,12,0,111,114,3,26,13,0,112,114,3,10,5,0,113,100,1,0,0,0,113,101,
-        1,0,0,0,113,104,1,0,0,0,113,107,1,0,0,0,113,108,1,0,0,0,113,109,
-        1,0,0,0,113,110,1,0,0,0,113,111,1,0,0,0,113,112,1,0,0,0,114,13,1,
-        0,0,0,115,117,5,3,0,0,116,118,5,4,0,0,117,116,1,0,0,0,117,118,1,
-        0,0,0,118,119,1,0,0,0,119,122,5,40,0,0,120,121,5,23,0,0,121,123,
-        3,8,4,0,122,120,1,0,0,0,122,123,1,0,0,0,123,126,1,0,0,0,124,125,
-        5,34,0,0,125,127,3,32,16,0,126,124,1,0,0,0,126,127,1,0,0,0,127,128,
-        1,0,0,0,128,129,5,22,0,0,129,15,1,0,0,0,130,131,5,40,0,0,131,132,
-        5,34,0,0,132,133,3,32,16,0,133,17,1,0,0,0,134,136,5,2,0,0,135,137,
-        3,32,16,0,136,135,1,0,0,0,136,137,1,0,0,0,137,138,1,0,0,0,138,139,
-        5,22,0,0,139,19,1,0,0,0,140,141,5,5,0,0,141,142,3,32,16,0,142,148,
-        3,10,5,0,143,146,5,6,0,0,144,147,3,10,5,0,145,147,3,20,10,0,146,
-        144,1,0,0,0,146,145,1,0,0,0,147,149,1,0,0,0,148,143,1,0,0,0,148,
-        149,1,0,0,0,149,21,1,0,0,0,150,151,5,7,0,0,151,152,3,32,16,0,152,
-        153,3,10,5,0,153,23,1,0,0,0,154,155,5,8,0,0,155,156,5,22,0,0,156,
-        25,1,0,0,0,157,158,5,9,0,0,158,159,5,22,0,0,159,27,1,0,0,0,160,161,
-        5,40,0,0,161,163,5,17,0,0,162,164,3,30,15,0,163,162,1,0,0,0,163,
-        164,1,0,0,0,164,165,1,0,0,0,165,166,5,18,0,0,166,29,1,0,0,0,167,
-        172,3,32,16,0,168,169,5,24,0,0,169,171,3,32,16,0,170,168,1,0,0,0,
-        171,174,1,0,0,0,172,170,1,0,0,0,172,173,1,0,0,0,173,176,1,0,0,0,
-        174,172,1,0,0,0,175,177,5,24,0,0,176,175,1,0,0,0,176,177,1,0,0,0,
-        177,31,1,0,0,0,178,179,3,34,17,0,179,33,1,0,0,0,180,185,3,36,18,
-        0,181,182,5,32,0,0,182,184,3,36,18,0,183,181,1,0,0,0,184,187,1,0,
-        0,0,185,183,1,0,0,0,185,186,1,0,0,0,186,35,1,0,0,0,187,185,1,0,0,
-        0,188,193,3,38,19,0,189,190,5,31,0,0,190,192,3,38,19,0,191,189,1,
-        0,0,0,192,195,1,0,0,0,193,191,1,0,0,0,193,194,1,0,0,0,194,37,1,0,
-        0,0,195,193,1,0,0,0,196,200,3,42,21,0,197,198,3,40,20,0,198,199,
-        3,42,21,0,199,201,1,0,0,0,200,197,1,0,0,0,200,201,1,0,0,0,201,39,
-        1,0,0,0,202,203,7,1,0,0,203,41,1,0,0,0,204,209,3,44,22,0,205,206,
-        7,2,0,0,206,208,3,44,22,0,207,205,1,0,0,0,208,211,1,0,0,0,209,207,
-        1,0,0,0,209,210,1,0,0,0,210,43,1,0,0,0,211,209,1,0,0,0,212,217,3,
-        46,23,0,213,214,7,3,0,0,214,216,3,46,23,0,215,213,1,0,0,0,216,219,
-        1,0,0,0,217,215,1,0,0,0,217,218,1,0,0,0,218,45,1,0,0,0,219,217,1,
-        0,0,0,220,222,7,4,0,0,221,220,1,0,0,0,221,222,1,0,0,0,222,223,1,
-        0,0,0,223,224,3,48,24,0,224,47,1,0,0,0,225,238,5,42,0,0,226,238,
-        5,41,0,0,227,238,5,15,0,0,228,238,5,16,0,0,229,238,5,43,0,0,230,
-        238,5,44,0,0,231,238,3,28,14,0,232,238,5,40,0,0,233,234,5,17,0,0,
-        234,235,3,32,16,0,235,236,5,18,0,0,236,238,1,0,0,0,237,225,1,0,0,
-        0,237,226,1,0,0,0,237,227,1,0,0,0,237,228,1,0,0,0,237,229,1,0,0,
-        0,237,230,1,0,0,0,237,231,1,0,0,0,237,232,1,0,0,0,237,233,1,0,0,
-        0,238,49,1,0,0,0,24,53,62,67,76,80,83,95,113,117,122,126,136,146,
-        148,163,172,176,185,193,200,209,217,221,237
+        7,20,2,21,7,21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,1,0,5,0,54,
+        8,0,10,0,12,0,57,9,0,1,0,1,0,1,1,1,1,1,1,1,1,3,1,65,8,1,1,1,1,1,
+        1,1,3,1,70,8,1,1,1,1,1,1,2,1,2,1,2,5,2,77,8,2,10,2,12,2,80,9,2,1,
+        2,3,2,83,8,2,1,3,3,3,86,8,3,1,3,1,3,1,3,1,3,1,4,1,4,1,5,1,5,5,5,
+        96,8,5,10,5,12,5,99,9,5,1,5,1,5,1,6,1,6,1,6,1,6,1,6,1,6,1,6,1,6,
+        1,6,1,6,1,6,1,6,1,6,1,6,3,6,117,8,6,1,7,1,7,3,7,121,8,7,1,7,1,7,
+        1,7,3,7,126,8,7,1,7,1,7,3,7,130,8,7,1,7,1,7,1,8,1,8,1,8,1,8,1,9,
+        1,9,3,9,140,8,9,1,9,1,9,1,10,1,10,1,10,1,10,1,10,1,10,3,10,150,8,
+        10,3,10,152,8,10,1,11,1,11,1,11,1,11,1,12,1,12,1,12,1,13,1,13,1,
+        13,1,14,1,14,1,14,1,15,1,15,1,15,3,15,170,8,15,1,15,1,15,1,16,1,
+        16,1,16,5,16,177,8,16,10,16,12,16,180,9,16,1,16,3,16,183,8,16,1,
+        17,1,17,1,18,1,18,1,18,5,18,190,8,18,10,18,12,18,193,9,18,1,19,1,
+        19,1,19,5,19,198,8,19,10,19,12,19,201,9,19,1,20,1,20,1,20,1,20,3,
+        20,207,8,20,1,21,1,21,1,22,1,22,1,22,5,22,214,8,22,10,22,12,22,217,
+        9,22,1,23,1,23,1,23,5,23,222,8,23,10,23,12,23,225,9,23,1,24,3,24,
+        228,8,24,1,24,1,24,1,25,1,25,1,25,1,25,1,25,1,25,1,25,1,25,1,25,
+        1,25,1,25,1,25,3,25,244,8,25,1,25,0,0,26,0,2,4,6,8,10,12,14,16,18,
+        20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,0,5,1,0,11,15,1,
+        0,26,31,1,0,36,37,1,0,38,40,2,0,34,34,37,37,258,0,55,1,0,0,0,2,60,
+        1,0,0,0,4,73,1,0,0,0,6,85,1,0,0,0,8,91,1,0,0,0,10,93,1,0,0,0,12,
+        116,1,0,0,0,14,118,1,0,0,0,16,133,1,0,0,0,18,137,1,0,0,0,20,143,
+        1,0,0,0,22,153,1,0,0,0,24,157,1,0,0,0,26,160,1,0,0,0,28,163,1,0,
+        0,0,30,166,1,0,0,0,32,173,1,0,0,0,34,184,1,0,0,0,36,186,1,0,0,0,
+        38,194,1,0,0,0,40,202,1,0,0,0,42,208,1,0,0,0,44,210,1,0,0,0,46,218,
+        1,0,0,0,48,227,1,0,0,0,50,243,1,0,0,0,52,54,3,2,1,0,53,52,1,0,0,
+        0,54,57,1,0,0,0,55,53,1,0,0,0,55,56,1,0,0,0,56,58,1,0,0,0,57,55,
+        1,0,0,0,58,59,5,0,0,1,59,1,1,0,0,0,60,61,5,1,0,0,61,62,5,41,0,0,
+        62,64,5,18,0,0,63,65,3,4,2,0,64,63,1,0,0,0,64,65,1,0,0,0,65,66,1,
+        0,0,0,66,69,5,19,0,0,67,68,5,22,0,0,68,70,3,8,4,0,69,67,1,0,0,0,
+        69,70,1,0,0,0,70,71,1,0,0,0,71,72,3,10,5,0,72,3,1,0,0,0,73,78,3,
+        6,3,0,74,75,5,25,0,0,75,77,3,6,3,0,76,74,1,0,0,0,77,80,1,0,0,0,78,
+        76,1,0,0,0,78,79,1,0,0,0,79,82,1,0,0,0,80,78,1,0,0,0,81,83,5,25,
+        0,0,82,81,1,0,0,0,82,83,1,0,0,0,83,5,1,0,0,0,84,86,5,4,0,0,85,84,
+        1,0,0,0,85,86,1,0,0,0,86,87,1,0,0,0,87,88,5,41,0,0,88,89,5,24,0,
+        0,89,90,3,8,4,0,90,7,1,0,0,0,91,92,7,0,0,0,92,9,1,0,0,0,93,97,5,
+        20,0,0,94,96,3,12,6,0,95,94,1,0,0,0,96,99,1,0,0,0,97,95,1,0,0,0,
+        97,98,1,0,0,0,98,100,1,0,0,0,99,97,1,0,0,0,100,101,5,21,0,0,101,
+        11,1,0,0,0,102,117,3,14,7,0,103,104,3,16,8,0,104,105,5,23,0,0,105,
+        117,1,0,0,0,106,107,3,30,15,0,107,108,5,23,0,0,108,117,1,0,0,0,109,
+        117,3,18,9,0,110,117,3,20,10,0,111,117,3,22,11,0,112,117,3,24,12,
+        0,113,117,3,26,13,0,114,117,3,28,14,0,115,117,3,10,5,0,116,102,1,
+        0,0,0,116,103,1,0,0,0,116,106,1,0,0,0,116,109,1,0,0,0,116,110,1,
+        0,0,0,116,111,1,0,0,0,116,112,1,0,0,0,116,113,1,0,0,0,116,114,1,
+        0,0,0,116,115,1,0,0,0,117,13,1,0,0,0,118,120,5,3,0,0,119,121,5,4,
+        0,0,120,119,1,0,0,0,120,121,1,0,0,0,121,122,1,0,0,0,122,125,5,41,
+        0,0,123,124,5,24,0,0,124,126,3,8,4,0,125,123,1,0,0,0,125,126,1,0,
+        0,0,126,129,1,0,0,0,127,128,5,35,0,0,128,130,3,34,17,0,129,127,1,
+        0,0,0,129,130,1,0,0,0,130,131,1,0,0,0,131,132,5,23,0,0,132,15,1,
+        0,0,0,133,134,5,41,0,0,134,135,5,35,0,0,135,136,3,34,17,0,136,17,
+        1,0,0,0,137,139,5,2,0,0,138,140,3,34,17,0,139,138,1,0,0,0,139,140,
+        1,0,0,0,140,141,1,0,0,0,141,142,5,23,0,0,142,19,1,0,0,0,143,144,
+        5,5,0,0,144,145,3,34,17,0,145,151,3,10,5,0,146,149,5,6,0,0,147,150,
+        3,10,5,0,148,150,3,20,10,0,149,147,1,0,0,0,149,148,1,0,0,0,150,152,
+        1,0,0,0,151,146,1,0,0,0,151,152,1,0,0,0,152,21,1,0,0,0,153,154,5,
+        7,0,0,154,155,3,34,17,0,155,156,3,10,5,0,156,23,1,0,0,0,157,158,
+        5,8,0,0,158,159,3,10,5,0,159,25,1,0,0,0,160,161,5,9,0,0,161,162,
+        5,23,0,0,162,27,1,0,0,0,163,164,5,10,0,0,164,165,5,23,0,0,165,29,
+        1,0,0,0,166,167,5,41,0,0,167,169,5,18,0,0,168,170,3,32,16,0,169,
+        168,1,0,0,0,169,170,1,0,0,0,170,171,1,0,0,0,171,172,5,19,0,0,172,
+        31,1,0,0,0,173,178,3,34,17,0,174,175,5,25,0,0,175,177,3,34,17,0,
+        176,174,1,0,0,0,177,180,1,0,0,0,178,176,1,0,0,0,178,179,1,0,0,0,
+        179,182,1,0,0,0,180,178,1,0,0,0,181,183,5,25,0,0,182,181,1,0,0,0,
+        182,183,1,0,0,0,183,33,1,0,0,0,184,185,3,36,18,0,185,35,1,0,0,0,
+        186,191,3,38,19,0,187,188,5,33,0,0,188,190,3,38,19,0,189,187,1,0,
+        0,0,190,193,1,0,0,0,191,189,1,0,0,0,191,192,1,0,0,0,192,37,1,0,0,
+        0,193,191,1,0,0,0,194,199,3,40,20,0,195,196,5,32,0,0,196,198,3,40,
+        20,0,197,195,1,0,0,0,198,201,1,0,0,0,199,197,1,0,0,0,199,200,1,0,
+        0,0,200,39,1,0,0,0,201,199,1,0,0,0,202,206,3,44,22,0,203,204,3,42,
+        21,0,204,205,3,44,22,0,205,207,1,0,0,0,206,203,1,0,0,0,206,207,1,
+        0,0,0,207,41,1,0,0,0,208,209,7,1,0,0,209,43,1,0,0,0,210,215,3,46,
+        23,0,211,212,7,2,0,0,212,214,3,46,23,0,213,211,1,0,0,0,214,217,1,
+        0,0,0,215,213,1,0,0,0,215,216,1,0,0,0,216,45,1,0,0,0,217,215,1,0,
+        0,0,218,223,3,48,24,0,219,220,7,3,0,0,220,222,3,48,24,0,221,219,
+        1,0,0,0,222,225,1,0,0,0,223,221,1,0,0,0,223,224,1,0,0,0,224,47,1,
+        0,0,0,225,223,1,0,0,0,226,228,7,4,0,0,227,226,1,0,0,0,227,228,1,
+        0,0,0,228,229,1,0,0,0,229,230,3,50,25,0,230,49,1,0,0,0,231,244,5,
+        43,0,0,232,244,5,42,0,0,233,244,5,16,0,0,234,244,5,17,0,0,235,244,
+        5,44,0,0,236,244,5,45,0,0,237,244,3,30,15,0,238,244,5,41,0,0,239,
+        240,5,18,0,0,240,241,3,34,17,0,241,242,5,19,0,0,242,244,1,0,0,0,
+        243,231,1,0,0,0,243,232,1,0,0,0,243,233,1,0,0,0,243,234,1,0,0,0,
+        243,235,1,0,0,0,243,236,1,0,0,0,243,237,1,0,0,0,243,238,1,0,0,0,
+        243,239,1,0,0,0,244,51,1,0,0,0,24,55,64,69,78,82,85,97,116,120,125,
+        129,139,149,151,169,178,182,191,199,206,215,223,227,243
     ]
 
 class RustiQParser ( Parser ):
@@ -107,7 +109,7 @@ class RustiQParser ( Parser ):
     sharedContextCache = PredictionContextCache()
 
     literalNames = [ "<INVALID>", "'fn'", "'return'", "'let'", "'mut'", 
-                     "'if'", "'else'", "'while'", "'break'", "'continue'", 
+                     "'if'", "'else'", "'while'", "'loop'", "'break'", "'continue'", 
                      "'i32'", "'f64'", "'bool'", "'char'", "'String'", "'true'", 
                      "'false'", "'('", "')'", "'{'", "'}'", "'->'", "';'", 
                      "':'", "','", "'=='", "'!='", "'<='", "'>='", "'<'", 
@@ -115,12 +117,12 @@ class RustiQParser ( Parser ):
                      "'*'", "'/'", "'%'" ]
 
     symbolicNames = [ "<INVALID>", "FN", "RETURN", "LET", "MUT", "IF", "ELSE", 
-                      "WHILE", "BREAK", "CONTINUE", "I32", "F64", "BOOL", 
-                      "CHAR", "STRING", "TRUE", "FALSE", "LPAREN", "RPAREN", 
-                      "LBRACE", "RBRACE", "ARROW", "SEMICOLON", "COLON", 
-                      "COMMA", "EQ", "NEQ", "LE", "GE", "LT", "GT", "AND", 
-                      "OR", "NOT", "ASSIGN", "PLUS", "MINUS", "STAR", "SLASH", 
-                      "PERCENT", "IDENT", "FLOAT", "INT", "CHAR_LITERAL", 
+                      "WHILE", "LOOP", "BREAK", "CONTINUE", "I32", "F64", 
+                      "BOOL", "CHAR", "STRING", "TRUE", "FALSE", "LPAREN", 
+                      "RPAREN", "LBRACE", "RBRACE", "ARROW", "SEMICOLON", 
+                      "COLON", "COMMA", "EQ", "NEQ", "LE", "GE", "LT", "GT", 
+                      "AND", "OR", "NOT", "ASSIGN", "PLUS", "MINUS", "STAR", 
+                      "SLASH", "PERCENT", "IDENT", "FLOAT", "INT", "CHAR_LITERAL", 
                       "STRING_LITERAL", "LINE_COMMENT", "BLOCK_COMMENT", 
                       "WS" ]
 
@@ -136,26 +138,27 @@ class RustiQParser ( Parser ):
     RULE_returnStmt = 9
     RULE_ifStmt = 10
     RULE_whileStmt = 11
-    RULE_breakStmt = 12
-    RULE_continueStmt = 13
-    RULE_functionCall = 14
-    RULE_argumentList = 15
-    RULE_expression = 16
-    RULE_logicalOr = 17
-    RULE_logicalAnd = 18
-    RULE_comparison = 19
-    RULE_relOp = 20
-    RULE_additive = 21
-    RULE_multiplicative = 22
-    RULE_unary = 23
-    RULE_primary = 24
+    RULE_loopStmt = 12
+    RULE_breakStmt = 13
+    RULE_continueStmt = 14
+    RULE_functionCall = 15
+    RULE_argumentList = 16
+    RULE_expression = 17
+    RULE_logicalOr = 18
+    RULE_logicalAnd = 19
+    RULE_comparison = 20
+    RULE_relOp = 21
+    RULE_additive = 22
+    RULE_multiplicative = 23
+    RULE_unary = 24
+    RULE_primary = 25
 
     ruleNames =  [ "program", "functionDecl", "parameterList", "parameter", 
                    "type", "block", "statement", "letDecl", "assignment", 
-                   "returnStmt", "ifStmt", "whileStmt", "breakStmt", "continueStmt", 
-                   "functionCall", "argumentList", "expression", "logicalOr", 
-                   "logicalAnd", "comparison", "relOp", "additive", "multiplicative", 
-                   "unary", "primary" ]
+                   "returnStmt", "ifStmt", "whileStmt", "loopStmt", "breakStmt", 
+                   "continueStmt", "functionCall", "argumentList", "expression", 
+                   "logicalOr", "logicalAnd", "comparison", "relOp", "additive", 
+                   "multiplicative", "unary", "primary" ]
 
     EOF = Token.EOF
     FN=1
@@ -165,46 +168,47 @@ class RustiQParser ( Parser ):
     IF=5
     ELSE=6
     WHILE=7
-    BREAK=8
-    CONTINUE=9
-    I32=10
-    F64=11
-    BOOL=12
-    CHAR=13
-    STRING=14
-    TRUE=15
-    FALSE=16
-    LPAREN=17
-    RPAREN=18
-    LBRACE=19
-    RBRACE=20
-    ARROW=21
-    SEMICOLON=22
-    COLON=23
-    COMMA=24
-    EQ=25
-    NEQ=26
-    LE=27
-    GE=28
-    LT=29
-    GT=30
-    AND=31
-    OR=32
-    NOT=33
-    ASSIGN=34
-    PLUS=35
-    MINUS=36
-    STAR=37
-    SLASH=38
-    PERCENT=39
-    IDENT=40
-    FLOAT=41
-    INT=42
-    CHAR_LITERAL=43
-    STRING_LITERAL=44
-    LINE_COMMENT=45
-    BLOCK_COMMENT=46
-    WS=47
+    LOOP=8
+    BREAK=9
+    CONTINUE=10
+    I32=11
+    F64=12
+    BOOL=13
+    CHAR=14
+    STRING=15
+    TRUE=16
+    FALSE=17
+    LPAREN=18
+    RPAREN=19
+    LBRACE=20
+    RBRACE=21
+    ARROW=22
+    SEMICOLON=23
+    COLON=24
+    COMMA=25
+    EQ=26
+    NEQ=27
+    LE=28
+    GE=29
+    LT=30
+    GT=31
+    AND=32
+    OR=33
+    NOT=34
+    ASSIGN=35
+    PLUS=36
+    MINUS=37
+    STAR=38
+    SLASH=39
+    PERCENT=40
+    IDENT=41
+    FLOAT=42
+    INT=43
+    CHAR_LITERAL=44
+    STRING_LITERAL=45
+    LINE_COMMENT=46
+    BLOCK_COMMENT=47
+    WS=48
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
         super().__init__(input, output)
@@ -251,17 +255,17 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 53
+            self.state = 55
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             while _la==1:
-                self.state = 50
+                self.state = 52
                 self.functionDecl()
-                self.state = 55
+                self.state = 57
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
-            self.state = 56
+            self.state = 58
             self.match(RustiQParser.EOF)
         except RecognitionException as re:
             localctx.exception = re
@@ -325,33 +329,33 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 58
-            self.match(RustiQParser.FN)
-            self.state = 59
-            self.match(RustiQParser.IDENT)
             self.state = 60
-            self.match(RustiQParser.LPAREN)
+            self.match(RustiQParser.FN)
+            self.state = 61
+            self.match(RustiQParser.IDENT)
             self.state = 62
+            self.match(RustiQParser.LPAREN)
+            self.state = 64
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==4 or _la==40:
-                self.state = 61
+            if _la==4 or _la==41:
+                self.state = 63
                 self.parameterList()
 
 
-            self.state = 64
+            self.state = 66
             self.match(RustiQParser.RPAREN)
-            self.state = 67
+            self.state = 69
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==21:
-                self.state = 65
+            if _la==22:
+                self.state = 67
                 self.match(RustiQParser.ARROW)
-                self.state = 66
+                self.state = 68
                 self.type_()
 
 
-            self.state = 69
+            self.state = 71
             self.block()
         except RecognitionException as re:
             localctx.exception = re
@@ -401,26 +405,26 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 71
+            self.state = 73
             self.parameter()
-            self.state = 76
+            self.state = 78
             self._errHandler.sync(self)
             _alt = self._interp.adaptivePredict(self._input,3,self._ctx)
             while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
                 if _alt==1:
-                    self.state = 72
+                    self.state = 74
                     self.match(RustiQParser.COMMA)
-                    self.state = 73
+                    self.state = 75
                     self.parameter() 
-                self.state = 78
+                self.state = 80
                 self._errHandler.sync(self)
                 _alt = self._interp.adaptivePredict(self._input,3,self._ctx)
 
-            self.state = 80
+            self.state = 82
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==24:
-                self.state = 79
+            if _la==25:
+                self.state = 81
                 self.match(RustiQParser.COMMA)
 
 
@@ -472,19 +476,19 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 83
+            self.state = 85
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             if _la==4:
-                self.state = 82
+                self.state = 84
                 self.match(RustiQParser.MUT)
 
 
-            self.state = 85
-            self.match(RustiQParser.IDENT)
-            self.state = 86
-            self.match(RustiQParser.COLON)
             self.state = 87
+            self.match(RustiQParser.IDENT)
+            self.state = 88
+            self.match(RustiQParser.COLON)
+            self.state = 89
             self.type_()
         except RecognitionException as re:
             localctx.exception = re
@@ -536,9 +540,9 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 89
+            self.state = 91
             _la = self._input.LA(1)
-            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 31744) != 0)):
+            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 63488) != 0)):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -591,19 +595,19 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 91
+            self.state = 93
             self.match(RustiQParser.LBRACE)
-            self.state = 95
+            self.state = 97
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while (((_la) & ~0x3f) == 0 and ((1 << _la) & 1099512153004) != 0):
-                self.state = 92
+            while (((_la) & ~0x3f) == 0 and ((1 << _la) & 2199024306092) != 0):
+                self.state = 94
                 self.statement()
-                self.state = 97
+                self.state = 99
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
-            self.state = 98
+            self.state = 100
             self.match(RustiQParser.RBRACE)
         except RecognitionException as re:
             localctx.exception = re
@@ -648,6 +652,10 @@ class RustiQParser ( Parser ):
             return self.getTypedRuleContext(RustiQParser.WhileStmtContext,0)
 
 
+        def loopStmt(self):
+            return self.getTypedRuleContext(RustiQParser.LoopStmtContext,0)
+
+
         def breakStmt(self):
             return self.getTypedRuleContext(RustiQParser.BreakStmtContext,0)
 
@@ -677,64 +685,70 @@ class RustiQParser ( Parser ):
         localctx = RustiQParser.StatementContext(self, self._ctx, self.state)
         self.enterRule(localctx, 12, self.RULE_statement)
         try:
-            self.state = 113
+            self.state = 116
             self._errHandler.sync(self)
             la_ = self._interp.adaptivePredict(self._input,7,self._ctx)
             if la_ == 1:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 100
+                self.state = 102
                 self.letDecl()
                 pass
 
             elif la_ == 2:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 101
+                self.state = 103
                 self.assignment()
-                self.state = 102
+                self.state = 104
                 self.match(RustiQParser.SEMICOLON)
                 pass
 
             elif la_ == 3:
                 self.enterOuterAlt(localctx, 3)
-                self.state = 104
+                self.state = 106
                 self.functionCall()
-                self.state = 105
+                self.state = 107
                 self.match(RustiQParser.SEMICOLON)
                 pass
 
             elif la_ == 4:
                 self.enterOuterAlt(localctx, 4)
-                self.state = 107
+                self.state = 109
                 self.returnStmt()
                 pass
 
             elif la_ == 5:
                 self.enterOuterAlt(localctx, 5)
-                self.state = 108
+                self.state = 110
                 self.ifStmt()
                 pass
 
             elif la_ == 6:
                 self.enterOuterAlt(localctx, 6)
-                self.state = 109
+                self.state = 111
                 self.whileStmt()
                 pass
 
             elif la_ == 7:
                 self.enterOuterAlt(localctx, 7)
-                self.state = 110
-                self.breakStmt()
+                self.state = 112
+                self.loopStmt()
                 pass
 
             elif la_ == 8:
                 self.enterOuterAlt(localctx, 8)
-                self.state = 111
-                self.continueStmt()
+                self.state = 113
+                self.breakStmt()
                 pass
 
             elif la_ == 9:
                 self.enterOuterAlt(localctx, 9)
-                self.state = 112
+                self.state = 114
+                self.continueStmt()
+                pass
+
+            elif la_ == 10:
+                self.enterOuterAlt(localctx, 10)
+                self.state = 115
                 self.block()
                 pass
 
@@ -800,39 +814,39 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 115
+            self.state = 118
             self.match(RustiQParser.LET)
-            self.state = 117
+            self.state = 120
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             if _la==4:
-                self.state = 116
+                self.state = 119
                 self.match(RustiQParser.MUT)
 
 
-            self.state = 119
-            self.match(RustiQParser.IDENT)
             self.state = 122
+            self.match(RustiQParser.IDENT)
+            self.state = 125
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==23:
-                self.state = 120
+            if _la==24:
+                self.state = 123
                 self.match(RustiQParser.COLON)
-                self.state = 121
+                self.state = 124
                 self.type_()
 
 
-            self.state = 126
+            self.state = 129
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==34:
-                self.state = 124
+            if _la==35:
+                self.state = 127
                 self.match(RustiQParser.ASSIGN)
-                self.state = 125
+                self.state = 128
                 self.expression()
 
 
-            self.state = 128
+            self.state = 131
             self.match(RustiQParser.SEMICOLON)
         except RecognitionException as re:
             localctx.exception = re
@@ -878,11 +892,11 @@ class RustiQParser ( Parser ):
         self.enterRule(localctx, 16, self.RULE_assignment)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 130
+            self.state = 133
             self.match(RustiQParser.IDENT)
-            self.state = 131
+            self.state = 134
             self.match(RustiQParser.ASSIGN)
-            self.state = 132
+            self.state = 135
             self.expression()
         except RecognitionException as re:
             localctx.exception = re
@@ -929,17 +943,17 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 134
+            self.state = 137
             self.match(RustiQParser.RETURN)
-            self.state = 136
+            self.state = 139
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 34162170101760) != 0):
-                self.state = 135
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 68324340203520) != 0):
+                self.state = 138
                 self.expression()
 
 
-            self.state = 138
+            self.state = 141
             self.match(RustiQParser.SEMICOLON)
         except RecognitionException as re:
             localctx.exception = re
@@ -997,27 +1011,27 @@ class RustiQParser ( Parser ):
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 140
+            self.state = 143
             self.match(RustiQParser.IF)
-            self.state = 141
+            self.state = 144
             self.expression()
-            self.state = 142
+            self.state = 145
             self.block()
-            self.state = 148
+            self.state = 151
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             if _la==6:
-                self.state = 143
-                self.match(RustiQParser.ELSE)
                 self.state = 146
+                self.match(RustiQParser.ELSE)
+                self.state = 149
                 self._errHandler.sync(self)
                 token = self._input.LA(1)
-                if token in [19]:
-                    self.state = 144
+                if token in [20]:
+                    self.state = 147
                     self.block()
                     pass
                 elif token in [5]:
-                    self.state = 145
+                    self.state = 148
                     self.ifStmt()
                     pass
                 else:
@@ -1070,11 +1084,56 @@ class RustiQParser ( Parser ):
         self.enterRule(localctx, 22, self.RULE_whileStmt)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 150
+            self.state = 153
             self.match(RustiQParser.WHILE)
-            self.state = 151
+            self.state = 154
             self.expression()
-            self.state = 152
+            self.state = 155
+            self.block()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class LoopStmtContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def LOOP(self):
+            return self.getToken(RustiQParser.LOOP, 0)
+
+        def block(self):
+            return self.getTypedRuleContext(RustiQParser.BlockContext,0)
+
+
+        def getRuleIndex(self):
+            return RustiQParser.RULE_loopStmt
+
+        def accept(self, visitor:ParseTreeVisitor):
+            if hasattr( visitor, "visitLoopStmt" ):
+                return visitor.visitLoopStmt(self)
+            else:
+                return visitor.visitChildren(self)
+
+
+
+
+    def loopStmt(self):
+
+        localctx = RustiQParser.LoopStmtContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 24, self.RULE_loopStmt)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 157
+            self.match(RustiQParser.LOOP)
+            self.state = 158
             self.block()
         except RecognitionException as re:
             localctx.exception = re
@@ -1113,12 +1172,12 @@ class RustiQParser ( Parser ):
     def breakStmt(self):
 
         localctx = RustiQParser.BreakStmtContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 24, self.RULE_breakStmt)
+        self.enterRule(localctx, 26, self.RULE_breakStmt)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 154
+            self.state = 160
             self.match(RustiQParser.BREAK)
-            self.state = 155
+            self.state = 161
             self.match(RustiQParser.SEMICOLON)
         except RecognitionException as re:
             localctx.exception = re
@@ -1157,12 +1216,12 @@ class RustiQParser ( Parser ):
     def continueStmt(self):
 
         localctx = RustiQParser.ContinueStmtContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 26, self.RULE_continueStmt)
+        self.enterRule(localctx, 28, self.RULE_continueStmt)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 157
+            self.state = 163
             self.match(RustiQParser.CONTINUE)
-            self.state = 158
+            self.state = 164
             self.match(RustiQParser.SEMICOLON)
         except RecognitionException as re:
             localctx.exception = re
@@ -1208,23 +1267,23 @@ class RustiQParser ( Parser ):
     def functionCall(self):
 
         localctx = RustiQParser.FunctionCallContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 28, self.RULE_functionCall)
+        self.enterRule(localctx, 30, self.RULE_functionCall)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 160
+            self.state = 166
             self.match(RustiQParser.IDENT)
-            self.state = 161
+            self.state = 167
             self.match(RustiQParser.LPAREN)
-            self.state = 163
+            self.state = 169
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 34162170101760) != 0):
-                self.state = 162
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 68324340203520) != 0):
+                self.state = 168
                 self.argumentList()
 
 
-            self.state = 165
+            self.state = 171
             self.match(RustiQParser.RPAREN)
         except RecognitionException as re:
             localctx.exception = re
@@ -1270,30 +1329,30 @@ class RustiQParser ( Parser ):
     def argumentList(self):
 
         localctx = RustiQParser.ArgumentListContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 30, self.RULE_argumentList)
+        self.enterRule(localctx, 32, self.RULE_argumentList)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 167
+            self.state = 173
             self.expression()
-            self.state = 172
+            self.state = 178
             self._errHandler.sync(self)
             _alt = self._interp.adaptivePredict(self._input,15,self._ctx)
             while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
                 if _alt==1:
-                    self.state = 168
+                    self.state = 174
                     self.match(RustiQParser.COMMA)
-                    self.state = 169
+                    self.state = 175
                     self.expression() 
-                self.state = 174
+                self.state = 180
                 self._errHandler.sync(self)
                 _alt = self._interp.adaptivePredict(self._input,15,self._ctx)
 
-            self.state = 176
+            self.state = 182
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==24:
-                self.state = 175
+            if _la==25:
+                self.state = 181
                 self.match(RustiQParser.COMMA)
 
 
@@ -1332,10 +1391,10 @@ class RustiQParser ( Parser ):
     def expression(self):
 
         localctx = RustiQParser.ExpressionContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 32, self.RULE_expression)
+        self.enterRule(localctx, 34, self.RULE_expression)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 178
+            self.state = 184
             self.logicalOr()
         except RecognitionException as re:
             localctx.exception = re
@@ -1381,21 +1440,21 @@ class RustiQParser ( Parser ):
     def logicalOr(self):
 
         localctx = RustiQParser.LogicalOrContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 34, self.RULE_logicalOr)
+        self.enterRule(localctx, 36, self.RULE_logicalOr)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 180
+            self.state = 186
             self.logicalAnd()
-            self.state = 185
+            self.state = 191
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==32:
-                self.state = 181
-                self.match(RustiQParser.OR)
-                self.state = 182
-                self.logicalAnd()
+            while _la==33:
                 self.state = 187
+                self.match(RustiQParser.OR)
+                self.state = 188
+                self.logicalAnd()
+                self.state = 193
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
@@ -1443,21 +1502,21 @@ class RustiQParser ( Parser ):
     def logicalAnd(self):
 
         localctx = RustiQParser.LogicalAndContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 36, self.RULE_logicalAnd)
+        self.enterRule(localctx, 38, self.RULE_logicalAnd)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 188
+            self.state = 194
             self.comparison()
-            self.state = 193
+            self.state = 199
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==31:
-                self.state = 189
-                self.match(RustiQParser.AND)
-                self.state = 190
-                self.comparison()
+            while _la==32:
                 self.state = 195
+                self.match(RustiQParser.AND)
+                self.state = 196
+                self.comparison()
+                self.state = 201
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
@@ -1503,19 +1562,19 @@ class RustiQParser ( Parser ):
     def comparison(self):
 
         localctx = RustiQParser.ComparisonContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 38, self.RULE_comparison)
+        self.enterRule(localctx, 40, self.RULE_comparison)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 196
+            self.state = 202
             self.additive()
-            self.state = 200
+            self.state = 206
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 2113929216) != 0):
-                self.state = 197
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 4227858432) != 0):
+                self.state = 203
                 self.relOp()
-                self.state = 198
+                self.state = 204
                 self.additive()
 
 
@@ -1568,13 +1627,13 @@ class RustiQParser ( Parser ):
     def relOp(self):
 
         localctx = RustiQParser.RelOpContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 40, self.RULE_relOp)
+        self.enterRule(localctx, 42, self.RULE_relOp)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 202
+            self.state = 208
             _la = self._input.LA(1)
-            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 2113929216) != 0)):
+            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 4227858432) != 0)):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -1629,26 +1688,26 @@ class RustiQParser ( Parser ):
     def additive(self):
 
         localctx = RustiQParser.AdditiveContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 42, self.RULE_additive)
+        self.enterRule(localctx, 44, self.RULE_additive)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 204
+            self.state = 210
             self.multiplicative()
-            self.state = 209
+            self.state = 215
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==35 or _la==36:
-                self.state = 205
+            while _la==36 or _la==37:
+                self.state = 211
                 _la = self._input.LA(1)
-                if not(_la==35 or _la==36):
+                if not(_la==36 or _la==37):
                     self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                self.state = 206
+                self.state = 212
                 self.multiplicative()
-                self.state = 211
+                self.state = 217
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
@@ -1708,26 +1767,26 @@ class RustiQParser ( Parser ):
     def multiplicative(self):
 
         localctx = RustiQParser.MultiplicativeContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 44, self.RULE_multiplicative)
+        self.enterRule(localctx, 46, self.RULE_multiplicative)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 212
+            self.state = 218
             self.unary()
-            self.state = 217
+            self.state = 223
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while (((_la) & ~0x3f) == 0 and ((1 << _la) & 962072674304) != 0):
-                self.state = 213
+            while (((_la) & ~0x3f) == 0 and ((1 << _la) & 1924145348608) != 0):
+                self.state = 219
                 _la = self._input.LA(1)
-                if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 962072674304) != 0)):
+                if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 1924145348608) != 0)):
                     self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                self.state = 214
+                self.state = 220
                 self.unary()
-                self.state = 219
+                self.state = 225
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
@@ -1772,24 +1831,24 @@ class RustiQParser ( Parser ):
     def unary(self):
 
         localctx = RustiQParser.UnaryContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 46, self.RULE_unary)
+        self.enterRule(localctx, 48, self.RULE_unary)
         self._la = 0 # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 221
+            self.state = 227
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==33 or _la==36:
-                self.state = 220
+            if _la==34 or _la==37:
+                self.state = 226
                 _la = self._input.LA(1)
-                if not(_la==33 or _la==36):
+                if not(_la==34 or _la==37):
                     self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
 
 
-            self.state = 223
+            self.state = 229
             self.primary()
         except RecognitionException as re:
             localctx.exception = re
@@ -1857,66 +1916,66 @@ class RustiQParser ( Parser ):
     def primary(self):
 
         localctx = RustiQParser.PrimaryContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 48, self.RULE_primary)
+        self.enterRule(localctx, 50, self.RULE_primary)
         try:
-            self.state = 237
+            self.state = 243
             self._errHandler.sync(self)
             la_ = self._interp.adaptivePredict(self._input,23,self._ctx)
             if la_ == 1:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 225
+                self.state = 231
                 self.match(RustiQParser.INT)
                 pass
 
             elif la_ == 2:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 226
+                self.state = 232
                 self.match(RustiQParser.FLOAT)
                 pass
 
             elif la_ == 3:
                 self.enterOuterAlt(localctx, 3)
-                self.state = 227
+                self.state = 233
                 self.match(RustiQParser.TRUE)
                 pass
 
             elif la_ == 4:
                 self.enterOuterAlt(localctx, 4)
-                self.state = 228
+                self.state = 234
                 self.match(RustiQParser.FALSE)
                 pass
 
             elif la_ == 5:
                 self.enterOuterAlt(localctx, 5)
-                self.state = 229
+                self.state = 235
                 self.match(RustiQParser.CHAR_LITERAL)
                 pass
 
             elif la_ == 6:
                 self.enterOuterAlt(localctx, 6)
-                self.state = 230
+                self.state = 236
                 self.match(RustiQParser.STRING_LITERAL)
                 pass
 
             elif la_ == 7:
                 self.enterOuterAlt(localctx, 7)
-                self.state = 231
+                self.state = 237
                 self.functionCall()
                 pass
 
             elif la_ == 8:
                 self.enterOuterAlt(localctx, 8)
-                self.state = 232
+                self.state = 238
                 self.match(RustiQParser.IDENT)
                 pass
 
             elif la_ == 9:
                 self.enterOuterAlt(localctx, 9)
-                self.state = 233
+                self.state = 239
                 self.match(RustiQParser.LPAREN)
-                self.state = 234
+                self.state = 240
                 self.expression()
-                self.state = 235
+                self.state = 241
                 self.match(RustiQParser.RPAREN)
                 pass
 

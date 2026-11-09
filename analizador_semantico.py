@@ -370,6 +370,24 @@ class AnalizadorSemantico(RustiQVisitor):
             # El cuerpo podría no ejecutarse.
             self.ambitos = inicial
 
+    def visitLoopStmt(self, ctx):
+        # Guardar el estado de las variables externas.
+        inicial = deepcopy(self.ambitos)
+
+        # Registrar que estamos dentro de un ciclo.
+        # Así se permiten break y continue en su cuerpo.
+        self.limites_ciclos.append(len(self.ambitos))
+
+        try:
+            self.visit(ctx.block())
+        finally:
+            self.limites_ciclos.pop()
+
+            # Por ahora conservamos el estado anterior.
+            # Determinar qué variables quedan inicializadas
+            # al salir requiere analizar los caminos de break.
+            self.ambitos = inicial
+
     def visitBreakStmt(self, ctx):
         if not self.limites_ciclos:
             self.reportar(

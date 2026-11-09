@@ -69,6 +69,11 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#loopStmt.
+    def visitLoopStmt(self, ctx:RustiQParser.LoopStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#breakStmt.
     def visitBreakStmt(self, ctx:RustiQParser.BreakStmtContext):
         return self.visitChildren(ctx)

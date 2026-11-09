@@ -45,6 +45,7 @@ statement
     | returnStmt
     | ifStmt
     | whileStmt
+    | loopStmt
     | breakStmt
     | continueStmt
     | block
@@ -68,6 +69,12 @@ ifStmt
 
 whileStmt
     : WHILE expression block
+    ;
+
+// Ciclo sin condición.
+// break permite salir y continue inicia otra iteración.
+loopStmt
+    : LOOP block
     ;
 
 breakStmt
@@ -156,6 +163,7 @@ MUT      : 'mut';
 IF       : 'if';
 ELSE     : 'else';
 WHILE    : 'while';
+LOOP     : 'loop';
 BREAK    : 'break';
 CONTINUE : 'continue';
 
