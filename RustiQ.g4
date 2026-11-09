@@ -5,7 +5,13 @@ program
     ;
 
 functionDecl
-    : FN IDENT LPAREN RPAREN (ARROW I32)? block
+    : FN IDENT LPAREN RPAREN (ARROW type)? block
+    ;
+
+type
+    : I32
+    | F64
+    | BOOL
     ;
 
 block
@@ -20,7 +26,7 @@ statement
     ;
 
 letDecl
-    : LET MUT? IDENT (COLON I32)? (ASSIGN expression)? SEMICOLON
+    : LET MUT? IDENT (COLON type)? (ASSIGN expression)? SEMICOLON
     ;
 
 assignment
@@ -49,6 +55,9 @@ unary
 
 primary
     : INT
+    | FLOAT
+    | TRUE
+    | FALSE
     | IDENT
     | LPAREN expression RPAREN
     ;
@@ -58,7 +67,13 @@ FN     : 'fn';
 RETURN : 'return';
 LET    : 'let';
 MUT    : 'mut';
+
 I32    : 'i32';
+F64    : 'f64';
+BOOL   : 'bool';
+
+TRUE   : 'true';
+FALSE  : 'false';
 
 // Símbolos
 LPAREN    : '(';
@@ -75,8 +90,9 @@ STAR      : '*';
 SLASH     : '/';
 PERCENT   : '%';
 
-// Identificadores y números enteros
+// Identificadores y literales
 IDENT : [a-zA-Z_] [a-zA-Z_0-9]*;
+FLOAT : [0-9]+ '.' [0-9]+;
 INT   : [0-9]+;
 
 // Comentarios y espacios

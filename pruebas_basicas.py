@@ -1,227 +1,218 @@
-from antlr4 import InputStream, CommonTokenStream
-from antlr4.error.ErrorListener import ErrorListener
-
-from generated.RustiQLexer import RustiQLexer
-from generated.RustiQParser import RustiQParser
-from analizador_semantico import AnalizadorSemantico
+from main import analizar_programa
 
 
-class RecolectorErrores(ErrorListener):
-    def __init__(self, categoria):
-        super().__init__()
-        self.categoria = categoria
-        self.errores = []
-
-    def syntaxError(self, recognizer, offendingSymbol,
-                    line, column, msg, e):
-        self.errores.append(
-            f"{self.categoria} — "
-            f"Línea {line}, columna {column + 1}: {msg}"
-        )
-
-
-def analizar(codigo):
-    errores_lexicos = RecolectorErrores("Error léxico")
-    errores_sintacticos = RecolectorErrores("Error sintáctico")
-
-    lexer = RustiQLexer(InputStream(codigo))
-    lexer.removeErrorListeners()
-    lexer.addErrorListener(errores_lexicos)
-
-    tokens = CommonTokenStream(lexer)
-
-    parser = RustiQParser(tokens)
-    parser.removeErrorListeners()
-    parser.addErrorListener(errores_sintacticos)
-
-    arbol = parser.program()
-
-    errores = (
-        errores_lexicos.errores
-        + errores_sintacticos.errores
-    )
-
-    # Solo analizar la semántica si la sintaxis es correcta.
-    if errores:
-        for error in errores:
-            print(error)
-        return False
-
-    semantico = AnalizadorSemantico()
-    semantico.visit(arbol)
-
-    if semantico.errores:
-        for error in semantico.errores:
-            print(error)
-        return False
-
-    print("Análisis léxico, sintáctico y semántico básico correcto.")
-    return True
-
-
-if __name__ == "__main__":
-    pruebas = [
-        (
-            "Programa correcto",
-            """fn main() -> i32 {
+PRUEBAS = [
+    (
+        "Programa correcto",
+        """fn main() -> i32 {
     return 10 + 20;
 }""",
-            True,
-        ),
-        (
-            "Falta punto y coma",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Falta punto y coma",
+        """fn main() -> i32 {
     return 10 + 20
 }""",
-            False,
-        ),
-        (
-            "Símbolo no permitido",
-            """fn main() -> i32 {
+        "sintactico",
+    ),
+    (
+        "Símbolo no permitido",
+        """fn main() -> i32 {
     return 10 + @20;
 }""",
-            False,
-        ),
-        (
-            "Variable con tipo",
-            """fn main() -> i32 {
+        "lexico",
+    ),
+    (
+        "Variable con tipo",
+        """fn main() -> i32 {
     let x: i32 = 10;
     return x + 20;
 }""",
-            True,
-        ),
-        (
-            "Variable sin tipo explícito",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Variable sin tipo explícito",
+        """fn main() -> i32 {
     let x = 10;
     return x;
 }""",
-            True,
-        ),
-        (
-            "Variable mutable y asignación",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Variable mutable y asignación",
+        """fn main() -> i32 {
     let mut x: i32 = 10;
     x = x + 5;
     return x;
 }""",
-            True,
-        ),
-        (
-            "Operaciones y paréntesis",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Operaciones y paréntesis",
+        """fn main() -> i32 {
     let x = (10 + 20) * 2 - 8 / 4;
     return x % 7;
 }""",
-            True,
-        ),
-        (
-            "Número negativo",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Número negativo",
+        """fn main() -> i32 {
     let x = -10;
     return x;
 }""",
-            True,
-        ),
-        (
-            "Falta nombre de variable",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Falta nombre de variable",
+        """fn main() -> i32 {
     let : i32 = 10;
     return 0;
 }""",
-            False,
-        ),
-        (
-            "Falta expresión después del igual",
-            """fn main() -> i32 {
+        "sintactico",
+    ),
+    (
+        "Falta expresión después del igual",
+        """fn main() -> i32 {
     let x = ;
     return 0;
 }""",
-            False,
-        ),
-        (
-            "Uso de variable no declarada",
-            """fn main() -> i32 {
+        "sintactico",
+    ),
+    (
+        "Uso de variable no declarada",
+        """fn main() -> i32 {
     return x;
 }""",
-            False,
-        ),
-        (
-            "Variable duplicada en el mismo ámbito",
-            """fn main() -> i32 {
+        "semantico",
+    ),
+    (
+        "Variable duplicada en el mismo ámbito",
+        """fn main() -> i32 {
     let x = 10;
     let x = 20;
     return x;
 }""",
-            False,
-        ),
-        (
-            "Uso antes de inicializar",
-            """fn main() -> i32 {
+        "semantico",
+    ),
+    (
+        "Uso antes de inicializar",
+        """fn main() -> i32 {
     let x: i32;
     return x;
 }""",
-            False,
-        ),
-        (
-            "Modificación sin mut",
-            """fn main() -> i32 {
+        "semantico",
+    ),
+    (
+        "Modificación sin mut",
+        """fn main() -> i32 {
     let x = 10;
     x = 20;
     return x;
 }""",
-            False,
-        ),
-        (
-            "Primera asignación a variable sin inicializar",
-            """fn main() -> i32 {
+        "semantico",
+    ),
+    (
+        "Primera asignación a variable sin inicializar",
+        """fn main() -> i32 {
     let x: i32;
     x = 10;
     return x;
 }""",
-            True,
-        ),
-        (
-            "Variable fuera de su ámbito",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Variable fuera de su ámbito",
+        """fn main() -> i32 {
     {
         let x = 10;
     }
     return x;
 }""",
-            False,
-        ),
-        (
-            "Mismo nombre en un ámbito interior",
-            """fn main() -> i32 {
+        "semantico",
+    ),
+    (
+        "Mismo nombre en un ámbito interior",
+        """fn main() -> i32 {
     let x = 10;
     {
         let x = 20;
     }
     return x;
 }""",
-            True,
-        ),
-        (
-            "Asignación a variable no declarada",
-            """fn main() -> i32 {
+        None,
+    ),
+    (
+        "Asignación a variable no declarada",
+        """fn main() -> i32 {
     x = 10;
     return 0;
 }""",
-            False,
-        ),
-    ]
+        "semantico",
+    ),
+]
 
+
+def ejecutar_pruebas():
     aprobadas = 0
 
-    for nombre, codigo, esperado in pruebas:
+    for nombre, codigo, fase_esperada in PRUEBAS:
         print(f"\n--- {nombre} ---")
-        resultado = analizar(codigo)
+        resultado = analizar_programa(codigo)
 
-        if resultado == esperado:
+        try:
+            errores = resultado["errores"]
+
+            if fase_esperada is None:
+                assert resultado["valido"], (
+                    "Se esperaba un programa válido."
+                )
+                assert errores == [], (
+                    "Un programa válido no debe tener errores."
+                )
+                assert resultado["arbol"] is not None, (
+                    "Falta el árbol del programa válido."
+                )
+            else:
+                assert not resultado["valido"], (
+                    "Se esperaba que el programa fuera rechazado."
+                )
+                assert resultado["arbol"] is None, (
+                    "No debe entregarse un árbol válido con errores."
+                )
+                assert any(
+                    error["fase"] == fase_esperada
+                    for error in errores
+                ), f"Falta un error de fase '{fase_esperada}'."
+
+            for error in errores:
+                assert isinstance(error["mensaje"], str)
+                assert error["mensaje"]
+                assert isinstance(error["linea"], int)
+                assert error["linea"] >= 1
+                assert isinstance(error["columna"], int)
+                assert error["columna"] >= 1
+
+                print(
+                    f"Error {error['fase']} — "
+                    f"Línea {error['linea']}, "
+                    f"columna {error['columna']}: "
+                    f"{error['mensaje']}"
+                )
+
             print("Prueba OK")
             aprobadas += 1
-        else:
-            print("Prueba FALLÓ")
 
-    print(f"\nResultado: {aprobadas}/{len(pruebas)} pruebas OK")
+        except AssertionError as error:
+            print(f"Prueba FALLÓ: {error}")
+            print(f"Resultado recibido: {resultado}")
+
+    print(f"\nResultado: {aprobadas}/{len(PRUEBAS)} pruebas OK")
+
+    if aprobadas != len(PRUEBAS):
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    ejecutar_pruebas()

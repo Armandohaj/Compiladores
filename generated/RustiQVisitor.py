@@ -19,6 +19,11 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#type.
+    def visitType(self, ctx:RustiQParser.TypeContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#block.
     def visitBlock(self, ctx:RustiQParser.BlockContext):
         return self.visitChildren(ctx)
