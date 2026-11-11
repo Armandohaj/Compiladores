@@ -1,5 +1,4 @@
-from copy import deepcopy
-
+from copy import copy, deepcopy
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 
@@ -475,9 +474,14 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitAssignment(self, ctx):
         token = ctx.IDENT().getSymbol()
         nombre = token.text
+
         variable, indice_ambito = self.buscar_variable_con_ambito(
             nombre
         )
+
+        # El operador puede ser =, +=, -=, *= o /=.
+        operador = ctx.assignmentOp().start
+        es_compuesta = operador.text != "="
 
         errores_antes = len(self.errores)
         tipo_valor = self.visit(ctx.expression())
@@ -489,6 +493,56 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return
 
+        if es_compuesta:
+            # Una asignación compuesta lee el valor anterior.
+            # Por eso no sirve para inicializar una variable.
+            if not variable["inicializada"]:
+                self.reportar(
+                    token,
+                    f"La variable '{nombre}' se usa "
+                    "antes de inicializarla."
+                )
+                return
+
+            if not variable["mutable"]:
+                self.reportar(
+                    token,
+                    f"No se puede modificar '{nombre}' "
+                    "porque no fue declarada con 'mut'."
+                )
+                return
+
+            # Reutilizar las reglas aritméticas existentes.
+            # Eliminar el "=" convierte "+=" en "+", etc.
+            #
+            # Creamos una copia del token para conservar
+            # su posición sin modificar el árbol de ANTLR.
+            operador_aritmetico = copy(operador)
+            operador_aritmetico.text = operador.text[:-1]
+
+            tipo_resultado = self.comprobar_operacion(
+                variable["tipo"],
+                tipo_valor,
+                operador_aritmetico,
+            )
+
+            # Si la operación es válida, conserva el tipo
+            # de la variable y su estado de inicialización.
+            if (
+                tipo_resultado is not None
+                and len(self.errores) == errores_antes
+            ):
+                variable["inicializada"] = True
+                variable["puede_inicializada"] = True
+
+            return
+
+        # -------------------------------------------------
+        # Asignación simple: =
+        # -------------------------------------------------
+
+        # Una variable sin mut admite su primera asignación,
+        # pero no una posible segunda asignación.
         if variable["puede_inicializada"] and not variable["mutable"]:
             self.reportar(
                 token,
@@ -497,7 +551,8 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return
 
-        # Una asignación dentro del ciclo podría repetirse.
+        # Dentro de un ciclo, una asignación a una variable
+        # externa podría repetirse; por ahora exige mut.
         if (
             not variable["mutable"]
             and self.limites_ciclos
@@ -523,6 +578,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return
 
+        # Solo marcar como inicializada si el valor es válido.
         if (
             tipo_valor is not None
             and len(self.errores) == errores_antes

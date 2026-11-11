@@ -54,6 +54,11 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#assignmentOp.
+    def visitAssignmentOp(self, ctx:RustiQParser.AssignmentOpContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#returnStmt.
     def visitReturnStmt(self, ctx:RustiQParser.ReturnStmtContext):
         return self.visitChildren(ctx)

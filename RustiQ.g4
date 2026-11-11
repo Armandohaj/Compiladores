@@ -55,10 +55,20 @@ letDecl
     : LET MUT? IDENT (COLON type)? (ASSIGN expression)? SEMICOLON
     ;
 
+// Asignación simple o compuesta a una variable.
 assignment
-    : IDENT ASSIGN expression
+    : IDENT assignmentOp expression
     ;
 
+// El análisis semántico comprobará mutabilidad,
+// inicialización y compatibilidad de tipos.
+assignmentOp
+    : ASSIGN
+    | PLUS_ASSIGN
+    | MINUS_ASSIGN
+    | STAR_ASSIGN
+    | SLASH_ASSIGN
+    ;
 returnStmt
     : RETURN expression? SEMICOLON
     ;
@@ -199,6 +209,12 @@ GT     : '>';
 AND    : '&&';
 OR     : '||';
 NOT    : '!';
+
+// Operadores de asignación compuesta.
+PLUS_ASSIGN  : '+=';
+MINUS_ASSIGN : '-=';
+STAR_ASSIGN  : '*=';
+SLASH_ASSIGN : '/=';
 
 ASSIGN  : '=';
 PLUS    : '+';
