@@ -4,8 +4,15 @@ grammar RustiQ;
 // 1. PROGRAMA, FUNCIONES Y TIPOS
 // =====================================================
 
+// El archivo puede contener funciones y constantes globales.
 program
-    : functionDecl* EOF
+    : (functionDecl | constDecl)* EOF
+    ;
+
+// Constante global con tipo y valor obligatorios.
+// Ejemplo: const LIMITE: i32 = 10;
+constDecl
+    : CONST IDENT COLON type ASSIGN expression SEMICOLON
     ;
 
 // Parámetros y retorno opcionales.
@@ -170,6 +177,7 @@ FN       : 'fn';
 RETURN   : 'return';
 LET      : 'let';
 MUT      : 'mut';
+CONST    : 'const';
 IF       : 'if';
 ELSE     : 'else';
 WHILE    : 'while';

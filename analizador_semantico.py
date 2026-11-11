@@ -1,7 +1,7 @@
 from copy import copy, deepcopy
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
-
+from gestor_constantes import GestorConstantes
 
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
@@ -49,10 +49,18 @@ class AnalizadorSemantico(RustiQVisitor):
         return tipo
 
     def buscar_variable_con_ambito(self, nombre):
-        # Buscamos desde el ámbito interior hacia el exterior.
+        # Primero buscar variables y parámetros locales.
         for indice in range(len(self.ambitos) - 1, -1, -1):
             if nombre in self.ambitos[indice]:
                 return self.ambitos[indice][nombre], indice
+
+        # Si no existe una variable local, buscar una constante.
+        constantes = getattr(self, "constantes", {})
+
+        if nombre in constantes:
+            # -1 identifica el nivel global.
+            # Las constantes ya están inicializadas y son inmutables.
+            return constantes[nombre], -1
 
         return None, None
 
@@ -69,8 +77,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitProgram(self, ctx):
-        # Primera pasada: registrar todas las firmas.
-        # Esto permite llamadas adelantadas y recursión.
+        # Registrar todas las funciones antes de revisar cuerpos.
         for funcion in ctx.functionDecl():
             token = funcion.IDENT().getSymbol()
             nombre = token.text
@@ -92,7 +99,17 @@ class AnalizadorSemantico(RustiQVisitor):
                 ),
             }
 
-        # Segunda pasada: revisar los cuerpos.
+        # Registrar los nombres y tipos de las constantes.
+        gestor = GestorConstantes(self)
+        gestor.registrar(ctx.constDecl())
+
+        # La búsqueda de identificadores utiliza este registro.
+        self.constantes = gestor.simbolos
+
+        # Comprobar tipos y calcular valores antes de los cuerpos.
+        gestor.validar_y_calcular()
+        self.valores_constantes = gestor.valores
+
         for funcion in ctx.functionDecl():
             self.visit(funcion)
 

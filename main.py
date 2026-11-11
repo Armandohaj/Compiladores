@@ -119,7 +119,10 @@ def analizar_programa(codigo):
 
         # Vincular cada uso de una variable con su declaración.
         # Se ejecuta únicamente sobre un programa válido.
-        resolucion = ResolucionVariables(tipos_expresiones)
+        resolucion = ResolucionVariables(
+            tipos_expresiones,
+            semantico.valores_constantes,
+        )
         resolucion.visit(arbol)
 
         simbolos = resolucion.simbolos
