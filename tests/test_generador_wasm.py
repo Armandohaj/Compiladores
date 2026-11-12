@@ -766,3 +766,98 @@ def test_operaciones_f64_invalidas_rechazadas_por_kevin(codigo):
     assert not resultado["valido"]
     assert any(error["fase"] == "semantico" for error in resultado["errores"])
     assert resultado["wasm"] is None
+
+
+def test_char_prueba_principal_con_variable_y_llamada():
+    resultado = compilar_programa("""fn obtener() -> char {
+    let letra: char = 'A';
+    return letra;
+}
+
+fn main() -> char {
+    return obtener();
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 65
+
+
+@pytest.mark.parametrize(
+    ("literal", "esperado"),
+    [
+        ("'A'", 65),
+        ("'ñ'", ord("ñ")),
+        ("'中'", ord("中")),
+        (r"'\n'", 10),
+        (r"'\t'", 9),
+        (r"'\0'", 0),
+        (r"'\\'", 92),
+        (r"'\''", 39),
+    ],
+)
+def test_literales_char_unicode_y_escapes(literal, esperado):
+    resultado = compilar_programa(f"""fn main() -> char {{
+    return {literal};
+}}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_variables_asignacion_parametros_y_llamadas_char():
+    resultado = compilar_programa("""fn identidad(letra: char) -> char {
+    return letra;
+}
+
+fn siguiente(letra: char) -> char {
+    let mut copia = letra;
+    copia = '中';
+    return identidad(copia);
+}
+
+fn main() -> char {
+    return siguiente('ñ');
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "identidad", 65) == 65
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == ord("中")
+
+
+def test_igualdad_diferencia_y_condicion_char():
+    resultado = compilar_programa("""fn coincide(a: char, b: char) -> bool {
+    return a == b;
+}
+
+fn main() -> i32 {
+    let letra = 'ñ';
+    if coincide(letra, 'ñ') && letra != 'A' {
+        return 1;
+    }
+    return 0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "coincide", ord("A"), ord("B")) == 0
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn main() -> char {
+    return 'ab';
+}""",
+        """fn main() -> char {
+    return 'A' + 'B';
+}""",
+        """fn main() -> bool {
+    return 'A' < 'B';
+}""",
+    ],
+)
+def test_chars_invalidos_o_con_operaciones_no_permitidas_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None

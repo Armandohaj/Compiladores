@@ -33,7 +33,19 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo):
-    return "i32" if tipo == "bool" else tipo
+    return "i32" if tipo in {"bool", "char"} else tipo
+
+
+def _valor_char(literal, contexto):
+    contenido = literal[1:-1]
+    escapes = {"n": "\n", "r": "\r", "t": "\t", "0": "\0", "'": "'", '"': '"', "\\": "\\"}
+    if contenido.startswith("\\"):
+        if len(contenido) != 2 or contenido[1] not in escapes:
+            _error("Literal char no soportado.", contexto)
+        contenido = escapes[contenido[1]]
+    if len(contenido) != 1:
+        _error("Literal char inválido.", contexto)
+    return ord(contenido)
 
 
 def _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion, tipos):
@@ -86,6 +98,8 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
             "<=": "f64.le", ">": "f64.gt", ">=": "f64.ge",
         }[operador])
     else:
+        if tipo == "char" and operador not in {"==", "!="}:
+            _error("Los caracteres solo admiten == y !=.", contexto)
         instrucciones.append({
             "==": "i32.eq", "!=": "i32.ne", "<": "i32.lt_s",
             "<=": "i32.le_s", ">": "i32.gt_s", ">=": "i32.ge_s",
@@ -126,7 +140,10 @@ def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion
                 operando, referencias, locales, funciones, nombres_funcion, tipos
             )
         )
-        instrucciones.append(f"{tipos[contexto]}.{'add' if operador == '+' else 'sub'}")
+        tipo = tipos[contexto]
+        if tipo not in {"i32", "f64"}:
+            _error("Esta operación aritmética no está disponible para el tipo.", contexto)
+        instrucciones.append(f"{tipo}.{'add' if operador == '+' else 'sub'}")
     return instrucciones
 
 
@@ -141,6 +158,8 @@ def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_
             _compilar_unaria(operando, referencias, locales, funciones, nombres_funcion, tipos)
         )
         tipo = tipos[contexto]
+        if tipo not in {"i32", "f64"}:
+            _error("Esta operación aritmética no está disponible para el tipo.", contexto)
         if operador == "%" and tipo != "i32":
             _error("El operador '%' solo está disponible para i32.", contexto)
         instrucciones.append({
@@ -173,6 +192,8 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
             ),
             "f64.neg",
         ]
+    if tipos[contexto] != "i32":
+        _error("La negación aritmética solo está disponible para i32 y f64.", contexto)
     primaria = postfija.primary() if postfija.getChildCount() == 1 else None
     literal = primaria.INT() if primaria is not None else None
     if literal is not None:
@@ -209,6 +230,9 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
     decimal = contexto.FLOAT()
     if decimal is not None:
         return [f"f64.const {decimal.getText()}"]
+    caracter = contexto.CHAR_LITERAL()
+    if caracter is not None:
+        return [f"i32.const {_valor_char(caracter.getText(), contexto)}"]
     if contexto.TRUE() is not None:
         return ["i32.const 1"]
     if contexto.FALSE() is not None:
@@ -267,6 +291,8 @@ def _compilar_asignacion(
         return [*expresion, f"local.set $local_{identificador}"]
     instrucciones = [f"local.get $local_{identificador}", *expresion]
     tipo = simbolos[identificador]["tipo"]
+    if tipo not in {"i32", "f64"}:
+        _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
     instrucciones.append({
         "+=": f"{tipo}.add",
         "-=": f"{tipo}.sub",
@@ -282,9 +308,9 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
     firma = funciones.get(nombre)
     if firma is None or nombre not in nombres_funcion:
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
-    if any(tipo not in {"i32", "bool", "f64"} for tipo in firma["parametros"]):
+    if any(tipo not in {"i32", "bool", "f64", "char"} for tipo in firma["parametros"]):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
-    if firma["retorno"] not in {"i32", "bool", "f64", "unit"}:
+    if firma["retorno"] not in {"i32", "bool", "f64", "char", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", llamada)
 
     argumentos = []
@@ -447,7 +473,7 @@ def _compilar_sentencia(
 def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     nombre = funcion.IDENT().getText()
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
-    if tipo_retorno not in {"i32", "bool", "f64", "unit"}:
+    if tipo_retorno not in {"i32", "bool", "f64", "char", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", funcion)
     variables = {
         identificador
@@ -462,8 +488,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     }
     variables.update(parametros)
     for identificador in variables:
-        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool", "f64"}:
-            _error("Solo se admiten parámetros y variables i32, bool o f64.", funcion)
+        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool", "f64", "char"}:
+            _error("Solo se admiten parámetros y variables i32, bool, f64 o char.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "
         f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'])})"

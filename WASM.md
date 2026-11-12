@@ -38,7 +38,7 @@ ejecutar_modulo_wasm(resultado["wasm"], "doble", 21)
 
 ## Alcance actual
 
-Se admiten funciones que retornan `i32`, `f64` o `bool` (este último
+Se admiten funciones que retornan `i32`, `f64`, `char` o `bool` (este último
 representado como `i32` 0/1 en WebAssembly), con declaraciones `let` y `let
 mut`, y asignaciones
 simples o compuestas. Las variables locales usan los identificadores resueltos
@@ -54,7 +54,12 @@ Las operaciones `f64` usan `f64.const`, aritmética y comparaciones nativas de
 WebAssembly. Su división conserva la semántica IEEE 754: dividir por cero
 puede producir infinito o `NaN`, sin el trap que ocurre con `i32.div_s`.
 
-También se admiten parámetros `i32`, `f64` y `bool`, incluidos parámetros mutables,
+El tipo `char` se representa como un punto de código Unicode en un `i32` de
+WebAssembly. Se admiten literales Unicode y los escapes `\n`, `\r`, `\t`,
+`\0`, `\"`, `\'` y `\\`; `char` admite comparación por igualdad o diferencia,
+pero no aritmética ni comparaciones de orden.
+
+También se admiten parámetros `i32`, `f64`, `bool` y `char`, incluidos parámetros mutables,
 llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
 resultado WebAssembly.
@@ -69,5 +74,5 @@ etiquetas únicas. `break` salta a la salida del ciclo más cercano y `continue`
 vuelve al encabezado de ese ciclo; en `while` esto vuelve a evaluar la
 condición.
 
-Se rechazan controladamente constantes globales, arreglos, `char`, `String` y
-todos los demás tipos o sentencias.
+Se rechazan controladamente constantes globales, arreglos, `String` y todos
+los demás tipos o sentencias.
