@@ -62,16 +62,14 @@ def test_programa_invalido_no_genera_wasm():
     assert resultado["wasm"] is None
 
 
-def test_arreglos_no_soportados_no_generan_wasm():
+def test_compila_y_ejecuta_el_arreglo_i32_principal():
     resultado = compilar_programa("""fn main() -> i32 {
-    let valores: [i32; 2] = [1, 2];
-    return 10;
+    let numeros: [i32; 3] = [10, 20, 30];
+    return numeros[1];
 }""")
 
-    assert not resultado["valido"]
-    assert resultado["errores"][0]["fase"] == "generacion"
-    assert resultado["wat"] is None
-    assert resultado["wasm"] is None
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 20
 
 
 @pytest.mark.parametrize(
@@ -1007,3 +1005,109 @@ def test_limite_de_memoria_estatica_genera_error_controlado(monkeypatch):
     assert not resultado["valido"]
     assert resultado["errores"][0]["fase"] == "generacion"
     assert resultado["wasm"] is None
+
+
+def test_arreglo_i32_inferido_indices_y_elementos_calculados():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let numeros = [2 + 3, 4 * 5, 30 - 1];
+    return numeros[0] + numeros[2];
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 34
+
+
+def test_arreglo_i32_acepta_indices_variables_y_expresiones():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let numeros: [i32; 4] = [10, 20, 30, 40];
+    let indice = 1;
+    return numeros[indice + 2];
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 40
+
+
+def test_arreglos_locales_diferentes_y_llamadas_repetidas():
+    resultado = compilar_programa("""fn obtener(base: i32) -> i32 {
+    let primero = [base, base + 1];
+    let segundo = [base + 2, base + 3];
+    return primero[1] + segundo[0];
+}
+
+fn main() -> i32 {
+    return obtener(10) + obtener(20);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 66
+
+
+def test_arreglos_en_llamadas_recursivas_no_comparten_memoria():
+    resultado = compilar_programa("""fn sumar(n: i32) -> i32 {
+    let valores = [n, n + 1];
+    if n == 0 {
+        return valores[0];
+    }
+    return sumar(n - 1) + valores[1];
+}
+
+fn main() -> i32 {
+    return sumar(3);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 9
+
+
+@pytest.mark.parametrize("indice", ["0 - 1", "1 + 2"])
+def test_indices_dinamicos_fuera_de_rango_producen_trap(indice):
+    resultado = compilar_programa(f"""fn main() -> i32 {{
+    let numeros = [10, 20];
+    let indice = {indice};
+    return numeros[indice];
+}}""")
+
+    assert resultado["valido"]
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(resultado["wasm"])
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn main() -> i32 {
+    let numeros: [i32; 3] = [1, 2];
+    return 0;
+}""",
+        """fn main() -> i32 {
+    let numeros: [i32; 2] = [1, true];
+    return 0;
+}""",
+    ],
+)
+def test_errores_semanticos_de_arreglos_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
+
+
+def test_arreglos_de_otros_tipos_y_asignaciones_se_rechazan_controladamente():
+    casos = [
+        """fn main() -> i32 {
+    let valores: [bool; 2] = [true, false];
+    return 0;
+}""",
+        """fn main() -> i32 {
+    let mut valores = [1, 2];
+    valores = [3, 4];
+    return valores[0];
+}""",
+    ]
+
+    for codigo in casos:
+        resultado = compilar_programa(codigo)
+        assert not resultado["valido"]
+        assert resultado["errores"][0]["fase"] == "generacion"
+        assert resultado["wasm"] is None

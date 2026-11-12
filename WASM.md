@@ -82,6 +82,17 @@ memoria usa el mínimo de páginas de 64 KiB requerido por los datos estáticos
 datos estáticos exceden ese límite, la compilación devuelve un error controlado
 de generación.
 
+Los arreglos locales unidimensionales `[i32; N]` se representan mediante un
+puntero `i32` a `N` celdas consecutivas de cuatro bytes en memoria lineal. Un
+literal reserva su bloque durante la ejecución, por lo que llamadas repetidas
+o recursivas no sobrescriben los datos de otra invocación; la memoria crece si
+es necesario. Los accesos `arreglo[indice]` comprueban en WebAssembly que el
+índice sea no negativo y menor que `N`, y hacen `trap` antes de una lectura
+fuera del bloque. En esta etapa solo se admiten literales, lectura e índices
+`i32` para arreglos locales: no hay arreglos de otros tipos, dimensiones
+adicionales, parámetros, retornos, copia, comparación ni asignación de
+arreglos o elementos.
+
 También se admiten parámetros `i32`, `f64`, `bool` y `char`, incluidos parámetros mutables,
 llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
