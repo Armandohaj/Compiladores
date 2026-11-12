@@ -279,14 +279,14 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion)
 
 def _compilar_bloque(
     bloque, declaraciones, referencias, simbolos, locales,
-    tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+    tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
     instrucciones = []
     for sentencia in bloque.statement():
         instrucciones.extend(
             _compilar_sentencia(
                 sentencia, declaraciones, referencias, simbolos, locales,
-                tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+                tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
             )
         )
     return instrucciones
@@ -294,32 +294,69 @@ def _compilar_bloque(
 
 def _compilar_if(
     condicional, declaraciones, referencias, simbolos, locales,
-    tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+    tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
     condicion = _compilar_expresion(
         condicional.expression(), referencias, locales, funciones, nombres_funcion
     )
     rama_cierta = _compilar_bloque(
         condicional.block(0), declaraciones, referencias, simbolos, locales,
-        tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+        tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
     )
     rama_falsa = None
     if condicional.ifStmt() is not None:
         rama_falsa = _compilar_if(
             condicional.ifStmt(), declaraciones, referencias, simbolos, locales,
-            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
         )
     elif len(condicional.block()) == 2:
         rama_falsa = _compilar_bloque(
             condicional.block(1), declaraciones, referencias, simbolos, locales,
-            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
         )
     return [*condicion, _wat_if(rama_cierta, rama_falsa)]
 
 
+def _compilar_ciclo(
+    ciclo, es_while, declaraciones, referencias, simbolos, locales,
+    tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
+):
+    indice = ciclos["siguiente"]
+    ciclos["siguiente"] += 1
+    salida = f"salida_{indice}"
+    siguiente = f"siguiente_{indice}"
+    ciclos["activos"].append((salida, siguiente))
+    try:
+        cuerpo = _compilar_bloque(
+            ciclo.block(), declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
+        )
+    finally:
+        ciclos["activos"].pop()
+
+    contenido = []
+    if es_while:
+        contenido.extend(
+            _compilar_expresion(
+                ciclo.expression(), referencias, locales, funciones, nombres_funcion
+            )
+        )
+        contenido.extend(["i32.eqz", f"br_if ${salida}"])
+    contenido.extend(cuerpo)
+    contenido.append(f"br ${siguiente}")
+    instrucciones = "\n        ".join(contenido)
+    return [
+        f"(block ${salida}\n"
+        f"      (loop ${siguiente}\n"
+        f"        {instrucciones}\n"
+        f"      )\n"
+        f"    )"
+    ]
+
+
 def _compilar_sentencia(
     sentencia, declaraciones, referencias, simbolos, locales,
-    tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+    tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
     if sentencia.letDecl() is not None:
         return _compilar_declaracion(
@@ -338,8 +375,22 @@ def _compilar_sentencia(
     if sentencia.ifStmt() is not None:
         return _compilar_if(
             sentencia.ifStmt(), declaraciones, referencias, simbolos, locales,
-            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
         )
+    if sentencia.whileStmt() is not None:
+        return _compilar_ciclo(
+            sentencia.whileStmt(), True, declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
+        )
+    if sentencia.loopStmt() is not None:
+        return _compilar_ciclo(
+            sentencia.loopStmt(), False, declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
+        )
+    if sentencia.breakStmt() is not None:
+        return [f"br ${ciclos['activos'][-1][0]}"]
+    if sentencia.continueStmt() is not None:
+        return [f"br ${ciclos['activos'][-1][1]}"]
     if sentencia.returnStmt() is not None:
         expresion = sentencia.returnStmt().expression()
         if tipo_retorno == "unit":
@@ -359,7 +410,7 @@ def _compilar_sentencia(
     if sentencia.block() is not None:
         return _compilar_bloque(
             sentencia.block(), declaraciones, referencias, simbolos, locales,
-            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
         )
     _error("Esta sentencia todavía no está implementada.", sentencia)
 
@@ -393,6 +444,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         for identificador in sorted(variables - parametros)
     )
     instrucciones = []
+    ciclos = {"siguiente": 0, "activos": []}
     for sentencia in funcion.block().statement():
         instrucciones.extend(
             _compilar_sentencia(
@@ -405,6 +457,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
                 tipo_retorno,
                 analisis["funciones"],
                 nombres_funcion,
+                ciclos,
             )
         )
     if tipo_retorno != "unit":

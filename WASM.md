@@ -60,5 +60,10 @@ Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,
 el análisis semántico, permiten retornos anticipados y ejecutan solamente la
 rama cuya condición sea verdadera.
 
-Se rechazan controladamente ciclos, constantes globales, arreglos y todos los
-demás tipos o sentencias.
+Los ciclos `while` y `loop` se traducen a pares WAT `block`/`loop` con
+etiquetas únicas. `break` salta a la salida del ciclo más cercano y `continue`
+vuelve al encabezado de ese ciclo; en `while` esto vuelve a evaluar la
+condición.
+
+Se rechazan controladamente constantes globales, arreglos y todos los demás
+tipos o sentencias.

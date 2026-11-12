@@ -53,11 +53,9 @@ def test_programa_invalido_no_genera_wasm():
     assert resultado["wasm"] is None
 
 
-def test_ciclos_no_soportados_no_generan_wasm():
+def test_tipos_no_soportados_no_generan_wasm():
     resultado = compilar_programa("""fn main() -> i32 {
-    while false {
-        break;
-    }
+    let texto: String;
     return 10;
 }""")
 
@@ -537,6 +535,130 @@ def test_condicion_no_booleana_rechazada_por_kevin():
     if 10 {
         return 1;
     }
+    return 0;
+}""")
+
+    assert not resultado["valido"]
+    assert any(error["fase"] == "semantico" for error in resultado["errores"])
+    assert resultado["wasm"] is None
+
+
+def test_while_principal_y_condicion_inicialmente_falsa():
+    resultado = compilar_programa("""fn contar(limite: i32) -> i32 {
+    let mut contador = 0;
+    while contador < limite {
+        contador += 1;
+    }
+    return contador;
+}
+
+fn main() -> i32 {
+    return contar(5);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 5
+    assert ejecutar_modulo_wasm(resultado["wasm"], "contar", -1) == 0
+
+
+def test_loop_break_y_continue_en_while_y_loop():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut contador = 0;
+    let mut suma = 0;
+    while contador < 5 {
+        contador += 1;
+        if contador == 3 {
+            continue;
+        }
+        suma += contador;
+    }
+    loop {
+        contador += 1;
+        if contador < 8 {
+            continue;
+        }
+        break;
+    }
+    return suma + contador;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 20
+
+
+def test_ciclos_anidados_break_y_continue_afectan_el_mas_cercano():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut externo = 0;
+    let mut total = 0;
+    while externo < 3 {
+        externo += 1;
+        let mut interno = 0;
+        loop {
+            interno += 1;
+            if interno == 2 {
+                break;
+            }
+            continue;
+        }
+        total += interno;
+    }
+    return total * 10 + externo;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 63
+
+
+def test_variables_llamadas_y_return_dentro_de_ciclos():
+    resultado = compilar_programa("""fn doble(valor: i32) -> i32 {
+    return valor * 2;
+}
+
+fn buscar() -> i32 {
+    let mut valor = 0;
+    loop {
+        valor += 1;
+        if valor == 4 {
+            return doble(valor);
+        }
+    }
+    return 0;
+}
+
+fn principal_unit() {
+    let mut valor = 0;
+    while valor < 2 {
+        valor += 1;
+    }
+    return;
+}
+
+fn main() -> i32 {
+    principal_unit();
+    return buscar();
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "principal_unit") is None
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 8
+
+
+def test_camino_no_ejecutado_en_ciclo_no_provoca_trap():
+    resultado = compilar_programa("""fn main() -> i32 {
+    while false {
+        let valor = 10 / 0;
+        return valor;
+    }
+    return 9;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 9
+
+
+def test_errores_de_ciclos_de_kevin_no_generan_wasm():
+    resultado = compilar_programa("""fn main() -> i32 {
+    break;
     return 0;
 }""")
 
