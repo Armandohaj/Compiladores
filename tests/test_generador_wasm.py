@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import wasmtime
 
@@ -661,6 +663,105 @@ def test_errores_de_ciclos_de_kevin_no_generan_wasm():
     break;
     return 0;
 }""")
+
+    assert not resultado["valido"]
+    assert any(error["fase"] == "semantico" for error in resultado["errores"])
+    assert resultado["wasm"] is None
+
+
+def test_f64_prueba_obligatoria_con_parametros_y_retorno():
+    resultado = compilar_programa("""fn calcular(a: f64, b: f64) -> f64 {
+    return a + b;
+}
+
+fn main() -> f64 {
+    return calcular(4.5, 2.25);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(6.75)
+    assert ejecutar_modulo_wasm(resultado["wasm"], "calcular", 1.5, 2.0) == pytest.approx(3.5)
+
+
+def test_aritmetica_negacion_y_precedencia_f64():
+    resultado = compilar_programa("""fn main() -> f64 {
+    return -(1.5 + 2.5) * 3.0 / 2.0 - 0.25;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(-6.25)
+
+
+def test_variables_f64_y_asignaciones_compuestas():
+    resultado = compilar_programa("""fn main() -> f64 {
+    let mut valor: f64 = 1.5;
+    valor += 2.5;
+    valor *= 3.0;
+    valor -= 1.0;
+    valor /= 2.0;
+    return valor;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(5.5)
+
+
+def test_llamadas_anidadas_y_comparaciones_f64():
+    resultado = compilar_programa("""fn promedio(a: f64, b: f64) -> f64 {
+    return (a + b) / 2.0;
+}
+
+fn main() -> bool {
+    let valor = promedio(promedio(2.0, 6.0), 8.0);
+    return valor >= 6.0 && valor != 7.0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+
+
+def test_f64_en_condiciones_y_ciclos():
+    resultado = compilar_programa("""fn main() -> f64 {
+    let mut valor = 0.0;
+    while valor < 1.0 {
+        valor += 0.25;
+    }
+    if valor == 1.0 {
+        return valor;
+    }
+    return 0.0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(1.0)
+
+
+def test_division_f64_por_cero_sigue_ieee_754():
+    infinito = compilar_programa("""fn main() -> f64 {
+    return 1.0 / 0.0;
+}""")
+    indefinido = compilar_programa("""fn main() -> f64 {
+    return 0.0 / 0.0;
+}""")
+
+    assert infinito["valido"] and indefinido["valido"]
+    assert math.isinf(ejecutar_modulo_wasm(infinito["wasm"]))
+    assert math.isnan(ejecutar_modulo_wasm(indefinido["wasm"]))
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn main() -> f64 {
+    return 1.0 + 1;
+}""",
+        """fn main() -> f64 {
+    return 5.0 % 2.0;
+}""",
+    ],
+)
+def test_operaciones_f64_invalidas_rechazadas_por_kevin(codigo):
+    resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
     assert any(error["fase"] == "semantico" for error in resultado["errores"])

@@ -38,19 +38,23 @@ ejecutar_modulo_wasm(resultado["wasm"], "doble", 21)
 
 ## Alcance actual
 
-Se admiten funciones que retornan `i32` o `bool` (este último
+Se admiten funciones que retornan `i32`, `f64` o `bool` (este último
 representado como `i32` 0/1 en WebAssembly), con declaraciones `let` y `let
 mut`, y asignaciones
 simples o compuestas. Las variables locales usan los identificadores resueltos
 por el analizador para mantener correctamente los ámbitos. Las expresiones
-permiten literales `i32` y booleanos, variables, paréntesis, aritmética,
-comparaciones, `!`, `&&` y `||`. Los operadores lógicos generan
+permiten literales `i32`, `f64` y booleanos, variables, paréntesis,
+aritmética, comparaciones, `!`, `&&` y `||`. Los operadores lógicos generan
 cortocircuito real con bloques `if (result i32)`. Cada función admitida
 se exporta por su nombre. La división y el residuo usan la semántica con signo
 de WebAssembly; dividir por cero y `-2147483648 / -1` generan un trap al
 ejecutarse.
 
-También se admiten parámetros `i32` y `bool`, incluidos parámetros mutables,
+Las operaciones `f64` usan `f64.const`, aritmética y comparaciones nativas de
+WebAssembly. Su división conserva la semántica IEEE 754: dividir por cero
+puede producir infinito o `NaN`, sin el trap que ocurre con `i32.div_s`.
+
+También se admiten parámetros `i32`, `f64` y `bool`, incluidos parámetros mutables,
 llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
 resultado WebAssembly.
@@ -65,5 +69,5 @@ etiquetas únicas. `break` salta a la salida del ciclo más cercano y `continue`
 vuelve al encabezado de ese ciclo; en `while` esto vuelve a evaluar la
 condición.
 
-Se rechazan controladamente constantes globales, arreglos y todos los demás
-tipos o sentencias.
+Se rechazan controladamente constantes globales, arreglos, `char`, `String` y
+todos los demás tipos o sentencias.

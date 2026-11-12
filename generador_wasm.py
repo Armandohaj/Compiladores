@@ -32,57 +32,64 @@ def _error(mensaje, contexto):
     raise ErrorGeneracion(mensaje, contexto)
 
 
-def _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion):
+def _tipo_wasm(tipo):
+    return "i32" if tipo == "bool" else tipo
+
+
+def _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion, tipos):
     return _compilar_logical_or(
-        expresion.logicalOr(), referencias, locales, funciones, nombres_funcion
+        expresion.logicalOr(), referencias, locales, funciones, nombres_funcion, tipos
     )
 
 
-def _compilar_logical_or(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_logical_or(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     operandos = contexto.logicalAnd()
     instrucciones = _compilar_logical_and(
-        operandos[0], referencias, locales, funciones, nombres_funcion
+        operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
     for operando in operandos[1:]:
         derecho = _compilar_logical_and(
-            operando, referencias, locales, funciones, nombres_funcion
+            operando, referencias, locales, funciones, nombres_funcion, tipos
         )
         instrucciones.append(_wat_condicional(["i32.const 1"], derecho))
     return instrucciones
 
 
-def _compilar_logical_and(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_logical_and(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     operandos = contexto.comparison()
     instrucciones = _compilar_comparacion(
-        operandos[0], referencias, locales, funciones, nombres_funcion
+        operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
     for operando in operandos[1:]:
         derecho = _compilar_comparacion(
-            operando, referencias, locales, funciones, nombres_funcion
+            operando, referencias, locales, funciones, nombres_funcion, tipos
         )
         instrucciones.append(_wat_condicional(derecho, ["i32.const 0"]))
     return instrucciones
 
 
-def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     operandos = contexto.additive()
     instrucciones = _compilar_aditiva(
-        operandos[0], referencias, locales, funciones, nombres_funcion
+        operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
     if len(operandos) == 1:
         return instrucciones
     operador = contexto.relOp().getText()
     instrucciones.extend(
-        _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion)
+        _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion, tipos)
     )
-    instrucciones.append({
-        "==": "i32.eq",
-        "!=": "i32.ne",
-        "<": "i32.lt_s",
-        "<=": "i32.le_s",
-        ">": "i32.gt_s",
-        ">=": "i32.ge_s",
-    }[operador])
+    tipo = tipos[operandos[0]]
+    if tipo == "f64":
+        instrucciones.append({
+            "==": "f64.eq", "!=": "f64.ne", "<": "f64.lt",
+            "<=": "f64.le", ">": "f64.gt", ">=": "f64.ge",
+        }[operador])
+    else:
+        instrucciones.append({
+            "==": "i32.eq", "!=": "i32.ne", "<": "i32.lt_s",
+            "<=": "i32.le_s", ">": "i32.gt_s", ">=": "i32.ge_s",
+        }[operador])
     return instrucciones
 
 
@@ -107,55 +114,65 @@ def _wat_if(rama_cierta, rama_falsa=None):
     return wat + "\n    )"
 
 
-def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     operandos = contexto.multiplicative()
     instrucciones = _compilar_multiplicativa(
-        operandos[0], referencias, locales, funciones, nombres_funcion
+        operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
     for indice, operando in enumerate(operandos[1:], start=1):
         operador = contexto.getChild(indice * 2 - 1).getText()
         instrucciones.extend(
             _compilar_multiplicativa(
-                operando, referencias, locales, funciones, nombres_funcion
+                operando, referencias, locales, funciones, nombres_funcion, tipos
             )
         )
-        instrucciones.append("i32.add" if operador == "+" else "i32.sub")
+        instrucciones.append(f"{tipos[contexto]}.{'add' if operador == '+' else 'sub'}")
     return instrucciones
 
 
-def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     operandos = contexto.unary()
     instrucciones = _compilar_unaria(
-        operandos[0], referencias, locales, funciones, nombres_funcion
+        operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
     for indice, operando in enumerate(operandos[1:], start=1):
         operador = contexto.getChild(indice * 2 - 1).getText()
         instrucciones.extend(
-            _compilar_unaria(operando, referencias, locales, funciones, nombres_funcion)
+            _compilar_unaria(operando, referencias, locales, funciones, nombres_funcion, tipos)
         )
+        tipo = tipos[contexto]
+        if operador == "%" and tipo != "i32":
+            _error("El operador '%' solo está disponible para i32.", contexto)
         instrucciones.append({
-            "*": "i32.mul",
-            "/": "i32.div_s",
+            "*": f"{tipo}.mul",
+            "/": "i32.div_s" if tipo == "i32" else "f64.div",
             "%": "i32.rem_s",
         }[operador])
     return instrucciones
 
 
-def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     if contexto.getChildCount() == 1:
         return _compilar_postfija(
-            contexto.postfix(), referencias, locales, funciones, nombres_funcion
+            contexto.postfix(), referencias, locales, funciones, nombres_funcion, tipos
         )
     operador = contexto.getChild(0).getText()
     if operador == "!":
         return [
             *_compilar_postfija(
-                contexto.postfix(), referencias, locales, funciones, nombres_funcion
+                contexto.postfix(), referencias, locales, funciones, nombres_funcion, tipos
             ),
             "i32.eqz",
         ]
 
     postfija = contexto.postfix()
+    if tipos[contexto] == "f64":
+        return [
+            *_compilar_postfija(
+                postfija, referencias, locales, funciones, nombres_funcion, tipos
+            ),
+            "f64.neg",
+        ]
     primaria = postfija.primary() if postfija.getChildCount() == 1 else None
     literal = primaria.INT() if primaria is not None else None
     if literal is not None:
@@ -167,26 +184,31 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion)
 
     return [
         "i32.const 0",
-        *_compilar_postfija(postfija, referencias, locales, funciones, nombres_funcion),
+        *_compilar_postfija(
+            postfija, referencias, locales, funciones, nombres_funcion, tipos
+        ),
         "i32.sub",
     ]
 
 
-def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     if contexto.getChildCount() != 1:
         _error("El acceso a arreglos todavía no está implementado.", contexto)
     return _compilar_primaria(
-        contexto.primary(), referencias, locales, funciones, nombres_funcion
+        contexto.primary(), referencias, locales, funciones, nombres_funcion, tipos
     )
 
 
-def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcion):
+def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     literal = contexto.INT()
     if literal is not None:
         valor = int(literal.getText())
         if valor > 2**31 - 1:
             _error("El literal excede el rango de i32.", contexto)
         return [f"i32.const {valor}"]
+    decimal = contexto.FLOAT()
+    if decimal is not None:
+        return [f"f64.const {decimal.getText()}"]
     if contexto.TRUE() is not None:
         return ["i32.const 1"]
     if contexto.FALSE() is not None:
@@ -194,7 +216,7 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
     expresion = contexto.expression()
     if expresion is not None:
         return _compilar_expresion(
-            expresion, referencias, locales, funciones, nombres_funcion
+            expresion, referencias, locales, funciones, nombres_funcion, tipos
         )
     if contexto.IDENT() is not None:
         identificador = referencias[contexto]
@@ -203,7 +225,7 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
         return [f"local.get $local_{identificador}"]
     if contexto.functionCall() is not None:
         instrucciones, retorno = _compilar_llamada(
-            contexto.functionCall(), referencias, locales, funciones, nombres_funcion
+            contexto.functionCall(), referencias, locales, funciones, nombres_funcion, tipos
         )
         if retorno == "unit":
             _error("Una función unit no puede usarse como expresión.", contexto)
@@ -215,7 +237,7 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
 
 
 def _compilar_declaracion(
-    declaracion, declaraciones, simbolos, referencias, locales, funciones, nombres_funcion
+    declaracion, declaraciones, simbolos, referencias, locales, funciones, nombres_funcion, tipos
 ):
     identificador = declaraciones[declaracion]
     if identificador not in locales:
@@ -225,41 +247,44 @@ def _compilar_declaracion(
         return []
     return [
         *_compilar_expresion(
-            expresion, referencias, locales, funciones, nombres_funcion
+            expresion, referencias, locales, funciones, nombres_funcion, tipos
         ),
         f"local.set $local_{identificador}",
     ]
 
 
-def _compilar_asignacion(asignacion, referencias, locales, funciones, nombres_funcion):
+def _compilar_asignacion(
+    asignacion, referencias, simbolos, locales, funciones, nombres_funcion, tipos
+):
     identificador = referencias[asignacion]
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
     operador = asignacion.assignmentOp().getText()
     expresion = _compilar_expresion(
-        asignacion.expression(), referencias, locales, funciones, nombres_funcion
+        asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
     )
     if operador == "=":
         return [*expresion, f"local.set $local_{identificador}"]
     instrucciones = [f"local.get $local_{identificador}", *expresion]
+    tipo = simbolos[identificador]["tipo"]
     instrucciones.append({
-        "+=": "i32.add",
-        "-=": "i32.sub",
-        "*=": "i32.mul",
-        "/=": "i32.div_s",
+        "+=": f"{tipo}.add",
+        "-=": f"{tipo}.sub",
+        "*=": f"{tipo}.mul",
+        "/=": "i32.div_s" if tipo == "i32" else "f64.div",
     }[operador])
     instrucciones.append(f"local.set $local_{identificador}")
     return instrucciones
 
 
-def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion):
+def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion, tipos):
     nombre = llamada.IDENT().getText()
     firma = funciones.get(nombre)
     if firma is None or nombre not in nombres_funcion:
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
-    if any(tipo not in {"i32", "bool"} for tipo in firma["parametros"]):
+    if any(tipo not in {"i32", "bool", "f64"} for tipo in firma["parametros"]):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
-    if firma["retorno"] not in {"i32", "bool", "unit"}:
+    if firma["retorno"] not in {"i32", "bool", "f64", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", llamada)
 
     argumentos = []
@@ -270,7 +295,7 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion)
     for argumento in argumentos:
         instrucciones.extend(
             _compilar_expresion(
-                argumento, referencias, locales, funciones, nombres_funcion
+                argumento, referencias, locales, funciones, nombres_funcion, tipos
             )
         )
     instrucciones.append(f"call $funcion_{nombres_funcion[nombre]}")
@@ -297,7 +322,8 @@ def _compilar_if(
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
     condicion = _compilar_expresion(
-        condicional.expression(), referencias, locales, funciones, nombres_funcion
+        condicional.expression(), referencias, locales, funciones, nombres_funcion,
+        tipos_expresiones,
     )
     rama_cierta = _compilar_bloque(
         condicional.block(0), declaraciones, referencias, simbolos, locales,
@@ -338,7 +364,8 @@ def _compilar_ciclo(
     if es_while:
         contenido.extend(
             _compilar_expresion(
-                ciclo.expression(), referencias, locales, funciones, nombres_funcion
+                ciclo.expression(), referencias, locales, funciones, nombres_funcion,
+                tipos_expresiones,
             )
         )
         contenido.extend(["i32.eqz", f"br_if ${salida}"])
@@ -361,15 +388,17 @@ def _compilar_sentencia(
     if sentencia.letDecl() is not None:
         return _compilar_declaracion(
             sentencia.letDecl(), declaraciones, simbolos, referencias, locales,
-            funciones, nombres_funcion,
+            funciones, nombres_funcion, tipos_expresiones,
         )
     if sentencia.assignment() is not None:
         return _compilar_asignacion(
-            sentencia.assignment(), referencias, locales, funciones, nombres_funcion
+            sentencia.assignment(), referencias, simbolos, locales, funciones, nombres_funcion,
+            tipos_expresiones,
         )
     if sentencia.functionCall() is not None:
         instrucciones, retorno = _compilar_llamada(
-            sentencia.functionCall(), referencias, locales, funciones, nombres_funcion
+            sentencia.functionCall(), referencias, locales, funciones, nombres_funcion,
+            tipos_expresiones,
         )
         return [*instrucciones, *( ["drop"] if retorno != "unit" else [] )]
     if sentencia.ifStmt() is not None:
@@ -403,7 +432,7 @@ def _compilar_sentencia(
             _error("El tipo de retorno no coincide con la función.", expresion)
         return [
             *_compilar_expresion(
-                expresion, referencias, locales, funciones, nombres_funcion
+                expresion, referencias, locales, funciones, nombres_funcion, tipos_expresiones
             ),
             "return",
         ]
@@ -418,7 +447,7 @@ def _compilar_sentencia(
 def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     nombre = funcion.IDENT().getText()
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
-    if tipo_retorno not in {"i32", "bool", "unit"}:
+    if tipo_retorno not in {"i32", "bool", "f64", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", funcion)
     variables = {
         identificador
@@ -433,14 +462,17 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     }
     variables.update(parametros)
     for identificador in variables:
-        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool"}:
-            _error("Solo se admiten parámetros y variables i32 o bool.", funcion)
+        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool", "f64"}:
+            _error("Solo se admiten parámetros y variables i32, bool o f64.", funcion)
     parametros_wat = " ".join(
-        f"(param $local_{identificador} i32)" for identificador in sorted(parametros)
+        f"(param $local_{identificador} "
+        f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'])})"
+        for identificador in sorted(parametros)
     )
-    resultado_wat = "" if tipo_retorno == "unit" else " (result i32)"
+    resultado_wat = "" if tipo_retorno == "unit" else f" (result {_tipo_wasm(tipo_retorno)})"
     declaraciones_locales = "\n".join(
-        f"    (local $local_{identificador} i32)"
+        f"    (local $local_{identificador} "
+        f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'])})"
         for identificador in sorted(variables - parametros)
     )
     instrucciones = []
