@@ -76,7 +76,7 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo):
-    return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None else tipo
+    return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None else tipo
 
 
 def _info_arreglo(tipo):
@@ -89,6 +89,22 @@ def _info_arreglo(tipo):
     if elemento not in {"i32", "bool", "char", "f64", "String"} or not tamano.isdigit():
         return None
     return elemento, int(tamano)
+
+
+def _info_matriz(tipo):
+    if not tipo.startswith("[") or not tipo.endswith("]"):
+        return None
+    contenido = tipo[1:-1]
+    if ";" not in contenido:
+        return None
+    fila, filas = contenido.rsplit(";", 1)
+    if not filas.isdigit():
+        return None
+    arreglo_fila = _info_arreglo(fila)
+    if arreglo_fila is None:
+        return None
+    tipo_elemento, columnas = arreglo_fila
+    return tipo_elemento, int(filas), columnas
 
 
 def _tamano_elemento_arreglo(tipo):
@@ -178,7 +194,7 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
         _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion, tipos)
     )
     tipo = tipos[operandos[0]]
-    if _info_arreglo(tipo) is not None:
+    if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None:
         _error("Las comparaciones entre arreglos todavía no están implementadas.", contexto)
     if tipo == "String":
         if operador not in {"==", "!="}:
@@ -451,7 +467,40 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     )
     if contexto.getChildCount() == 1:
         return instrucciones
-    arreglo = _info_arreglo(tipos[contexto.primary()])
+    tipo_base = tipos[contexto.primary()]
+    matriz = _info_matriz(tipo_base)
+    if matriz is not None:
+        tipo_elemento, filas, columnas = matriz
+        if len(contexto.expression()) != 2:
+            _error("Las matrices locales requieren exactamente dos índices.", contexto)
+        bytes_elemento = _tamano_elemento_arreglo(tipo_elemento)
+        instrucciones.extend(
+            _compilar_expresion(
+                contexto.expression(0), referencias, locales, funciones, nombres_funcion, tipos
+            )
+        )
+        instrucciones.extend(
+            [
+                f"i32.const {filas}",
+                f"i32.const {columnas * bytes_elemento}",
+                "call $array_addr",
+            ]
+        )
+        instrucciones.extend(
+            _compilar_expresion(
+                contexto.expression(1), referencias, locales, funciones, nombres_funcion, tipos
+            )
+        )
+        instrucciones.extend(
+            [
+                f"i32.const {columnas}",
+                f"i32.const {bytes_elemento}",
+                "call $array_addr",
+                _instruccion_carga_arreglo(tipo_elemento),
+            ]
+        )
+        return instrucciones
+    arreglo = _info_arreglo(tipo_base)
     if arreglo is None or len(contexto.expression()) != 1:
         _error("Solo se admiten accesos a arreglos locales de una dimensión.", contexto)
     tipo_elemento, tamano = arreglo
@@ -548,6 +597,43 @@ def _compilar_declaracion(
     if identificador not in locales:
         _error("La declaración no corresponde a una variable local i32.", declaracion)
     expresion = declaracion.expression()
+    matriz = _info_matriz(simbolos[identificador]["tipo"])
+    if matriz is not None:
+        tipo_elemento, filas, columnas = matriz
+        if expresion is None:
+            _error("Una matriz local requiere un literal para inicializarse.", declaracion)
+        literal = _obtener_literal_arreglo(expresion)
+        if literal is None:
+            _error("Solo se admiten literales para inicializar matrices locales.", expresion)
+        literales_fila = [_obtener_literal_arreglo(fila) for fila in literal.expression()]
+        if len(literales_fila) != filas or any(fila is None for fila in literales_fila):
+            _error("El literal no coincide con las filas de la matriz.", literal)
+        if any(len(fila.expression()) != columnas for fila in literales_fila):
+            _error("El literal no coincide con las columnas de la matriz.", literal)
+        bytes_elemento = _tamano_elemento_arreglo(tipo_elemento)
+        if filas == 0 or columnas == 0:
+            _error("Las matrices vacías todavía no están implementadas.", declaracion)
+        if filas > MAX_DIRECCION_I32 // columnas or filas * columnas > MAX_DIRECCION_I32 // bytes_elemento:
+            _error("La matriz excede el límite de memoria WebAssembly.", declaracion)
+        instrucciones = [
+            f"i32.const {filas * columnas * bytes_elemento}",
+            f"i32.const {bytes_elemento}",
+            "call $array_alloc",
+            f"local.set $local_{identificador}",
+        ]
+        for fila_indice, fila in enumerate(literales_fila):
+            for columna_indice, elemento in enumerate(fila.expression()):
+                instrucciones.append(f"local.get $local_{identificador}")
+                instrucciones.extend(
+                    _compilar_expresion(
+                        elemento, referencias, locales, funciones, nombres_funcion, tipos
+                    )
+                )
+                desplazamiento = (fila_indice * columnas + columna_indice) * bytes_elemento
+                instrucciones.append(
+                    _instruccion_almacenamiento_arreglo(tipo_elemento, desplazamiento)
+                )
+        return instrucciones
     arreglo = _info_arreglo(simbolos[identificador]["tipo"])
     if arreglo is not None:
         tipo_elemento, tamano_arreglo = arreglo
@@ -595,7 +681,7 @@ def _compilar_asignacion(
     identificador = referencias[asignacion]
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
-    if _info_arreglo(simbolos[identificador]["tipo"]) is not None:
+    if _info_arreglo(simbolos[identificador]["tipo"]) is not None or _info_matriz(simbolos[identificador]["tipo"]) is not None:
         _error("La asignación de arreglos todavía no está implementada.", asignacion)
     operador = asignacion.assignmentOp().getText()
     expresion = _compilar_expresion(
@@ -802,11 +888,12 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     }
     variables.update(parametros)
     for identificador in parametros:
-        if _info_arreglo(analisis["simbolos"][identificador]["tipo"]) is not None:
+        tipo = analisis["simbolos"][identificador]["tipo"]
+        if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None:
             _error("Los parámetros de arreglos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
-        if tipo not in {"i32", "bool", "f64", "char", "String"} and _info_arreglo(tipo) is None:
+        if tipo not in {"i32", "bool", "f64", "char", "String"} and _info_arreglo(tipo) is None and _info_matriz(tipo) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "

@@ -1162,11 +1162,11 @@ def test_indices_invalidos_en_arreglos_f64_producen_trap(indice):
         ejecutar_modulo_wasm(resultado["wasm"])
 
 
-def test_matrices_y_asignaciones_de_arreglos_se_rechazan_controladamente():
+def test_matrices_de_tres_dimensiones_y_asignaciones_se_rechazan_controladamente():
     casos = [
         """fn main() -> i32 {
-    let valores: [[i32; 1]; 1] = [[1]];
-    return valores[0][0];
+    let valores: [[[i32; 1]; 1]; 1] = [[[1]]];
+    return valores[0][0][0];
 }""",
         """fn main() -> i32 {
     let mut valores = [1, 2];
@@ -1275,3 +1275,124 @@ def test_indices_invalidos_en_arreglos_string_producen_trap(indice):
     assert resultado["valido"]
     with pytest.raises(wasmtime.Trap):
         ejecutar_modulo_wasm(resultado["wasm"])
+
+
+def test_matriz_i32_principal_explicita_e_inferida():
+    explicita = compilar_programa("""fn main() -> i32 {
+    let matriz: [[i32; 2]; 2] = [[10, 20], [30, 40]];
+    return matriz[1][0];
+}""")
+    inferida = compilar_programa("""fn main() -> i32 {
+    let matriz = [[1, 2, 3], [4, 5, 6]];
+    return matriz[0][2] + matriz[1][0];
+}""")
+
+    assert explicita["valido"]
+    assert ejecutar_modulo_wasm(explicita["wasm"]) == 30
+    assert inferida["valido"]
+    assert ejecutar_modulo_wasm(inferida["wasm"]) == 7
+
+
+def test_matrices_indices_variables_y_expresiones():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let matriz = [[10, 20], [30, 40], [50, 60]];
+    let fila = 1;
+    let columna = 0;
+    return matriz[fila + 1][columna + 1];
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 60
+
+
+def test_matrices_bool_char_y_f64():
+    booleanos = compilar_programa("""fn main() -> bool {
+    let matriz: [[bool; 2]; 2] = [[true, false], [false, true]];
+    return matriz[0][0] && matriz[1][1] && !matriz[0][1];
+}""")
+    caracteres = compilar_programa("""fn main() -> char {
+    let matriz = [['A', 'ñ'], ['中', 'Z']];
+    return matriz[1][0];
+}""")
+    decimales = compilar_programa("""fn main() -> f64 {
+    let matriz = [[1.5, 2.25], [3.0, 4.5]];
+    return matriz[0][1] + matriz[1][1];
+}""")
+
+    assert booleanos["valido"]
+    assert ejecutar_modulo_wasm(booleanos["wasm"]) == 1
+    assert caracteres["valido"]
+    assert ejecutar_modulo_wasm(caracteres["wasm"]) == ord("中")
+    assert decimales["valido"]
+    assert "f64.load align=8" in decimales["wat"]
+    assert ejecutar_modulo_wasm(decimales["wasm"]) == pytest.approx(6.75)
+
+
+def test_matrices_string_comparaciones_y_condicionales():
+    resultado = compilar_programa("""fn main() -> String {
+    let primera = [["igual", "uno"], ["dos", "final"]];
+    let segunda = [["igual", "tres"], ["cuatro", "final"]];
+    if primera[0][0] == segunda[0][0] && primera[1][1] == segunda[1][1] {
+        return segunda[1][1];
+    }
+    return primera[0][1];
+}""")
+
+    assert resultado["valido"]
+    assert "call $string_eq" in resultado["wat"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "final"
+
+
+def test_matrices_distintas_llamadas_repetidas_y_recursion():
+    resultado = compilar_programa("""fn sumar(n: i32) -> i32 {
+    let primera = [[n, n + 1]];
+    let segunda = [[n + 2, n + 3]];
+    if n == 0 {
+        return primera[0][0];
+    }
+    return sumar(n - 1) + primera[0][1] + segunda[0][0];
+}
+
+fn main() -> i32 {
+    return sumar(2) + sumar(1);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 17
+
+
+@pytest.mark.parametrize(
+    ("fila", "columna"),
+    [("0 - 1", "0"), ("2", "0"), ("0", "0 - 1"), ("0", "2")],
+)
+def test_indices_invalidos_en_cada_dimension_de_matriz_producen_trap(fila, columna):
+    resultado = compilar_programa(f"""fn main() -> i32 {{
+    let matriz = [[1, 2], [3, 4]];
+    let fila = {fila};
+    let columna = {columna};
+    return matriz[fila][columna];
+}}""")
+
+    assert resultado["valido"]
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(resultado["wasm"])
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn main() -> i32 {
+    let matriz: [[i32; 2]; 2] = [[1, 2], [3]];
+    return 0;
+}""",
+        """fn main() -> i32 {
+    let matriz: [[i32; 2]; 1] = [[1, true]];
+    return 0;
+}""",
+    ],
+)
+def test_errores_semanticos_de_matrices_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
