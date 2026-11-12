@@ -98,6 +98,15 @@ def _wat_condicional(rama_cierta, rama_falsa):
     )
 
 
+def _wat_if(rama_cierta, rama_falsa=None):
+    cierta = "\n        ".join(rama_cierta) if rama_cierta else "nop"
+    wat = "(if\n" f"      (then\n        {cierta}\n      )"
+    if rama_falsa is not None:
+        falsa = "\n        ".join(rama_falsa) if rama_falsa else "nop"
+        wat += f"\n      (else\n        {falsa}\n      )"
+    return wat + "\n    )"
+
+
 def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion):
     operandos = contexto.multiplicative()
     instrucciones = _compilar_multiplicativa(
@@ -268,6 +277,46 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion)
     return instrucciones, firma["retorno"]
 
 
+def _compilar_bloque(
+    bloque, declaraciones, referencias, simbolos, locales,
+    tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+):
+    instrucciones = []
+    for sentencia in bloque.statement():
+        instrucciones.extend(
+            _compilar_sentencia(
+                sentencia, declaraciones, referencias, simbolos, locales,
+                tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+            )
+        )
+    return instrucciones
+
+
+def _compilar_if(
+    condicional, declaraciones, referencias, simbolos, locales,
+    tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+):
+    condicion = _compilar_expresion(
+        condicional.expression(), referencias, locales, funciones, nombres_funcion
+    )
+    rama_cierta = _compilar_bloque(
+        condicional.block(0), declaraciones, referencias, simbolos, locales,
+        tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+    )
+    rama_falsa = None
+    if condicional.ifStmt() is not None:
+        rama_falsa = _compilar_if(
+            condicional.ifStmt(), declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+        )
+    elif len(condicional.block()) == 2:
+        rama_falsa = _compilar_bloque(
+            condicional.block(1), declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+        )
+    return [*condicion, _wat_if(rama_cierta, rama_falsa)]
+
+
 def _compilar_sentencia(
     sentencia, declaraciones, referencias, simbolos, locales,
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
@@ -286,6 +335,11 @@ def _compilar_sentencia(
             sentencia.functionCall(), referencias, locales, funciones, nombres_funcion
         )
         return [*instrucciones, *( ["drop"] if retorno != "unit" else [] )]
+    if sentencia.ifStmt() is not None:
+        return _compilar_if(
+            sentencia.ifStmt(), declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+        )
     if sentencia.returnStmt() is not None:
         expresion = sentencia.returnStmt().expression()
         if tipo_retorno == "unit":
@@ -303,15 +357,10 @@ def _compilar_sentencia(
             "return",
         ]
     if sentencia.block() is not None:
-        instrucciones = []
-        for interna in sentencia.block().statement():
-            instrucciones.extend(
-                _compilar_sentencia(
-                    interna, declaraciones, referencias, simbolos, locales,
-                    tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
-                )
-            )
-        return instrucciones
+        return _compilar_bloque(
+            sentencia.block(), declaraciones, referencias, simbolos, locales,
+            tipos_expresiones, tipo_retorno, funciones, nombres_funcion,
+        )
     _error("Esta sentencia todavía no está implementada.", sentencia)
 
 
@@ -358,6 +407,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
                 nombres_funcion,
             )
         )
+    if tipo_retorno != "unit":
+        instrucciones.append("unreachable")
     cuerpo = "\n    ".join(instrucciones)
     locales_wat = f"\n{declaraciones_locales}" if declaraciones_locales else ""
     return (

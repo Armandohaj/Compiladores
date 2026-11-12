@@ -55,5 +55,10 @@ llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
 resultado WebAssembly.
 
-Se rechazan controladamente constantes globales, arreglos, control de flujo y
-todos los demás tipos o sentencias.
+Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,
+`then` y `else`. Sus ramas conservan las variables locales identificadas por
+el análisis semántico, permiten retornos anticipados y ejecutan solamente la
+rama cuya condición sea verdadera.
+
+Se rechazan controladamente ciclos, constantes globales, arreglos y todos los
+demás tipos o sentencias.

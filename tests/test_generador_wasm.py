@@ -53,13 +53,12 @@ def test_programa_invalido_no_genera_wasm():
     assert resultado["wasm"] is None
 
 
-def test_control_de_flujo_no_soportado_no_genera_wasm():
+def test_ciclos_no_soportados_no_generan_wasm():
     resultado = compilar_programa("""fn main() -> i32 {
-    if true {
-        return 10;
-    } else {
-        return 20;
+    while false {
+        break;
     }
+    return 10;
 }""")
 
     assert not resultado["valido"]
@@ -409,4 +408,138 @@ def test_errores_de_llamadas_rechazados_por_kevin(codigo):
     assert not resultado["valido"]
     assert any(error["fase"] == "semantico" for error in resultado["errores"])
     assert resultado["wat"] is None
+    assert resultado["wasm"] is None
+
+
+def test_if_else_principal_con_funcion_y_parametros():
+    resultado = compilar_programa("""fn mayor(a: i32, b: i32) -> i32 {
+    if a > b {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+fn main() -> i32 {
+    return mayor(15, 8);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 15
+    assert ejecutar_modulo_wasm(resultado["wasm"], "mayor", 2, 9) == 9
+
+
+def test_if_sin_else_y_else_if():
+    resultado = compilar_programa("""fn clasificar(numero: i32) -> i32 {
+    let mut resultado = 0;
+    if numero > 0 {
+        resultado = 1;
+    }
+    if numero < 0 {
+        return -1;
+    } else if numero == 0 {
+        return 0;
+    } else {
+        return resultado;
+    }
+}
+
+fn main() -> i32 {
+    return clasificar(3);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "clasificar", 3) == 1
+    assert ejecutar_modulo_wasm(resultado["wasm"], "clasificar", 0) == 0
+    assert ejecutar_modulo_wasm(resultado["wasm"], "clasificar", -4) == -1
+
+
+def test_condicionales_anidados_ambitos_y_modificacion_externa():
+    resultado = compilar_programa("""fn ajustar(mut valor: i32, activo: bool) -> i32 {
+    if activo {
+        let mut valor = 50;
+        if valor > 10 {
+            valor = valor + 1;
+        }
+    } else {
+        valor += 2;
+    }
+    return valor;
+}
+
+fn main() -> i32 {
+    return ajustar(10, false);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "ajustar", 10, 1) == 10
+    assert ejecutar_modulo_wasm(resultado["wasm"], "ajustar", 10, 0) == 12
+
+
+def test_bool_unit_y_retorno_anticipado_en_condicionales():
+    resultado = compilar_programa("""fn es_positivo(numero: i32) -> bool {
+    if numero > 0 {
+        return true;
+    }
+    return false;
+}
+
+fn registrar(activo: bool) {
+    if activo {
+        return;
+    }
+    return;
+}
+
+fn main() -> bool {
+    registrar(true);
+    return es_positivo(-2);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "es_positivo", 4) == 1
+    assert ejecutar_modulo_wasm(resultado["wasm"], "registrar", 0) is None
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 0
+
+
+def test_rama_no_ejecutada_no_divide_entre_cero():
+    resultado = compilar_programa("""fn main() -> i32 {
+    if false {
+        return 10 / 0;
+    } else {
+        return 7;
+    }
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 7
+
+
+def test_recursion_factorial_con_if_else():
+    resultado = compilar_programa("""fn factorial(numero: i32) -> i32 {
+    if numero <= 1 {
+        return 1;
+    } else {
+        return numero * factorial(numero - 1);
+    }
+}
+
+fn main() -> i32 {
+    return factorial(5);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 120
+
+
+def test_condicion_no_booleana_rechazada_por_kevin():
+    resultado = compilar_programa("""fn main() -> i32 {
+    if 10 {
+        return 1;
+    }
+    return 0;
+}""")
+
+    assert not resultado["valido"]
+    assert any(error["fase"] == "semantico" for error in resultado["errores"])
     assert resultado["wasm"] is None
