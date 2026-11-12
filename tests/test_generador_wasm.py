@@ -1396,3 +1396,25 @@ def test_errores_semanticos_de_matrices_no_generan_wasm(codigo):
 
     assert not resultado["valido"]
     assert resultado["wasm"] is None
+
+
+def test_asignador_monotonico_crece_memoria_en_un_ciclo():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut indice = 0;
+    let mut suma = 0;
+    while indice < 20000 {
+        let valor = [indice];
+        suma += valor[0];
+        indice += 1;
+    }
+    return suma;
+}""")
+
+    assert resultado["valido"]
+    motor = wasmtime.Engine()
+    modulo = wasmtime.Module(motor, resultado["wasm"])
+    almacen = wasmtime.Store(motor)
+    instancia = wasmtime.Instance(almacen, modulo, [])
+    exportaciones = instancia.exports(almacen)
+    assert exportaciones["main"](almacen) == 199990000
+    assert exportaciones["memory"].size(almacen) == 2

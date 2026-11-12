@@ -47,9 +47,9 @@ ejecutar_modulo_wasm(resultado["wasm"], "doble", 21)
 
 ## Alcance actual
 
-Se admiten funciones que retornan `i32`, `f64`, `char` o `bool` (este último
-representado como `i32` 0/1 en WebAssembly), con declaraciones `let` y `let
-mut`, y asignaciones
+Se admiten funciones que retornan `i32`, `f64`, `char`, `bool` o `String`
+(`bool` se representa como `i32` 0/1 en WebAssembly), con declaraciones `let`
+y `let mut`, y asignaciones
 simples o compuestas. Las variables locales usan los identificadores resueltos
 por el analizador para mantener correctamente los ámbitos. Las expresiones
 permiten literales `i32`, `f64` y booleanos, variables, paréntesis,
@@ -93,7 +93,9 @@ reserva su bloque durante la ejecución, por lo que llamadas repetidas o
 recursivas no sobrescriben datos de otra invocación; la memoria crece si es
 necesario. El asignador es monotónico: un literal creado en cada iteración de
 un ciclo consume una reserva adicional y no se libera durante la ejecución
-actual. Los accesos `arreglo[indice]` comprueban en WebAssembly que el índice
+actual. Si el crecimiento de memoria es rechazado por el runtime o se agota el
+espacio direccionable, la ejecución hace `trap`. Los accesos `arreglo[indice]`
+comprueban en WebAssembly que el índice
 sea no negativo y menor que `N`, y hacen `trap` antes de una lectura fuera del
 bloque. En esta etapa solo se admiten literales, lectura e índices `i32` para
 arreglos locales: no hay parámetros, retornos, copia, comparación de arreglos
@@ -108,8 +110,8 @@ incluida la alineación de ocho bytes para `f64` y los punteros a descriptores
 para `String`. No se admiten más de dos dimensiones, ni parámetros, retornos,
 copias, comparaciones o asignaciones de matrices.
 
-También se admiten parámetros `i32`, `f64`, `bool` y `char`, incluidos parámetros mutables,
-llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
+También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
+parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
 resultado WebAssembly.
 
