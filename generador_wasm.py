@@ -37,21 +37,51 @@ def _compilar_expresion(expresion, referencias, locales):
 
 
 def _compilar_logical_or(contexto, referencias, locales):
-    if len(contexto.logicalAnd()) != 1:
-        _error("El operador lógico '||' todavía no está implementado.", contexto)
-    return _compilar_logical_and(contexto.logicalAnd(0), referencias, locales)
+    operandos = contexto.logicalAnd()
+    instrucciones = _compilar_logical_and(operandos[0], referencias, locales)
+    for operando in operandos[1:]:
+        derecho = _compilar_logical_and(operando, referencias, locales)
+        instrucciones.append(_wat_condicional(["i32.const 1"], derecho))
+    return instrucciones
 
 
 def _compilar_logical_and(contexto, referencias, locales):
-    if len(contexto.comparison()) != 1:
-        _error("El operador lógico '&&' todavía no está implementado.", contexto)
-    return _compilar_comparacion(contexto.comparison(0), referencias, locales)
+    operandos = contexto.comparison()
+    instrucciones = _compilar_comparacion(operandos[0], referencias, locales)
+    for operando in operandos[1:]:
+        derecho = _compilar_comparacion(operando, referencias, locales)
+        instrucciones.append(_wat_condicional(derecho, ["i32.const 0"]))
+    return instrucciones
 
 
 def _compilar_comparacion(contexto, referencias, locales):
-    if len(contexto.additive()) != 1:
-        _error("Las comparaciones todavía no están implementadas.", contexto)
-    return _compilar_aditiva(contexto.additive(0), referencias, locales)
+    operandos = contexto.additive()
+    instrucciones = _compilar_aditiva(operandos[0], referencias, locales)
+    if len(operandos) == 1:
+        return instrucciones
+    operador = contexto.relOp().getText()
+    instrucciones.extend(_compilar_aditiva(operandos[1], referencias, locales))
+    instrucciones.append({
+        "==": "i32.eq",
+        "!=": "i32.ne",
+        "<": "i32.lt_s",
+        "<=": "i32.le_s",
+        ">": "i32.gt_s",
+        ">=": "i32.ge_s",
+    }[operador])
+    return instrucciones
+
+
+def _wat_condicional(rama_cierta, rama_falsa):
+    """Construye un if con resultado i32; la condición ya está en la pila."""
+    cierta = "\n        ".join(rama_cierta)
+    falsa = "\n        ".join(rama_falsa)
+    return (
+        "(if (result i32)\n"
+        f"      (then\n        {cierta}\n      )\n"
+        f"      (else\n        {falsa}\n      )\n"
+        "    )"
+    )
 
 
 def _compilar_aditiva(contexto, referencias, locales):
@@ -81,8 +111,9 @@ def _compilar_multiplicativa(contexto, referencias, locales):
 def _compilar_unaria(contexto, referencias, locales):
     if contexto.getChildCount() == 1:
         return _compilar_postfija(contexto.postfix(), referencias, locales)
-    if contexto.getChild(0).getText() != "-":
-        _error("El operador unario '!' todavía no está implementado.", contexto)
+    operador = contexto.getChild(0).getText()
+    if operador == "!":
+        return [*_compilar_postfija(contexto.postfix(), referencias, locales), "i32.eqz"]
 
     postfija = contexto.postfix()
     primaria = postfija.primary() if postfija.getChildCount() == 1 else None
@@ -114,6 +145,10 @@ def _compilar_primaria(contexto, referencias, locales):
         if valor > 2**31 - 1:
             _error("El literal excede el rango de i32.", contexto)
         return [f"i32.const {valor}"]
+    if contexto.TRUE() is not None:
+        return ["i32.const 1"]
+    if contexto.FALSE() is not None:
+        return ["i32.const 0"]
     expresion = contexto.expression()
     if expresion is not None:
         return _compilar_expresion(expresion, referencias, locales)
@@ -160,7 +195,10 @@ def _compilar_asignacion(asignacion, referencias, locales):
     return instrucciones
 
 
-def _compilar_sentencia(sentencia, declaraciones, referencias, simbolos, locales):
+def _compilar_sentencia(
+    sentencia, declaraciones, referencias, simbolos, locales,
+    tipos_expresiones, tipo_retorno,
+):
     if sentencia.letDecl() is not None:
         return _compilar_declaracion(
             sentencia.letDecl(), declaraciones, simbolos, referencias, locales
@@ -170,13 +208,18 @@ def _compilar_sentencia(sentencia, declaraciones, referencias, simbolos, locales
     if sentencia.returnStmt() is not None:
         expresion = sentencia.returnStmt().expression()
         if expresion is None:
-            _error("La función debe retornar una expresión i32.", sentencia)
+            _error("La función debe retornar una expresión.", sentencia)
+        if tipos_expresiones.get(expresion) != tipo_retorno:
+            _error("El tipo de retorno no coincide con la función.", expresion)
         return [*_compilar_expresion(expresion, referencias, locales), "return"]
     if sentencia.block() is not None:
         instrucciones = []
         for interna in sentencia.block().statement():
             instrucciones.extend(
-                _compilar_sentencia(interna, declaraciones, referencias, simbolos, locales)
+                _compilar_sentencia(
+                    interna, declaraciones, referencias, simbolos, locales,
+                    tipos_expresiones, tipo_retorno,
+                )
             )
         return instrucciones
     _error("Esta sentencia todavía no está implementada.", sentencia)
@@ -186,8 +229,9 @@ def _compilar_funcion(funcion, analisis, indice):
     nombre = funcion.IDENT().getText()
     if funcion.parameterList() is not None:
         _error(f"La función '{nombre}' tiene parámetros no soportados.", funcion)
-    if funcion.type_() is None or funcion.type_().getText() != "i32":
-        _error(f"La función '{nombre}' debe retornar i32.", funcion)
+    if funcion.type_() is None or funcion.type_().getText() not in {"i32", "bool"}:
+        _error(f"La función '{nombre}' debe retornar i32 o bool.", funcion)
+    tipo_retorno = funcion.type_().getText()
     locales = {
         identificador
         for identificador, simbolo in analisis["simbolos"].items()
@@ -195,8 +239,8 @@ def _compilar_funcion(funcion, analisis, indice):
         and not simbolo["es_constante"]
     }
     for identificador in locales:
-        if analisis["simbolos"][identificador]["tipo"] != "i32":
-            _error("Solo se admiten variables locales de tipo i32.", funcion)
+        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool"}:
+            _error("Solo se admiten variables locales i32 o bool.", funcion)
     declaraciones_locales = "\n".join(
         f"    (local $local_{identificador} i32)" for identificador in sorted(locales)
     )
@@ -209,6 +253,8 @@ def _compilar_funcion(funcion, analisis, indice):
                 analisis["referencias"],
                 analisis["simbolos"],
                 locales,
+                analisis["tipos_expresiones"],
+                tipo_retorno,
             )
         )
     cuerpo = "\n    ".join(instrucciones)

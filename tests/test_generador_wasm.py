@@ -232,3 +232,70 @@ def test_errores_de_kevin_no_generan_wasm(codigo):
     assert any(error["fase"] == "semantico" for error in resultado["errores"])
     assert resultado["wat"] is None
     assert resultado["wasm"] is None
+
+
+@pytest.mark.parametrize(
+    ("expresion", "esperado"),
+    [
+        ("10 > 5", 1),
+        ("10 < 5", 0),
+        ("true && false", 0),
+        ("true || false", 1),
+        ("!false", 1),
+    ],
+)
+def test_booleanos_y_comparaciones_basicas(expresion, esperado):
+    resultado = compilar_programa(f"""fn main() -> bool {{
+    return {expresion};
+}}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_comparaciones_de_variables_i32_y_variables_bool():
+    resultado = compilar_programa("""fn main() -> bool {
+    let limite: i32 = 10;
+    let actual = 7;
+    let mut activo: bool = false;
+    activo = !(actual >= limite);
+    return activo && (actual < limite) && (activo == true);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+
+
+def test_precedencia_y_expresiones_booleanas_anidadas():
+    resultado = compilar_programa("""fn main() -> bool {
+    return !false && ((2 + 3 * 2) == 8 || false);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+
+
+@pytest.mark.parametrize(
+    "expresion, esperado",
+    [
+        ("false && (10 / 0 == 1)", 0),
+        ("true || (10 / 0 == 1)", 1),
+    ],
+)
+def test_operadores_logicos_hacen_cortocircuito_real(expresion, esperado):
+    resultado = compilar_programa(f"""fn main() -> bool {{
+    return {expresion};
+}}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_tipo_incompatible_rechazado_por_kevin_no_genera_wasm():
+    resultado = compilar_programa("""fn main() -> bool {
+    return true + false;
+}""")
+
+    assert not resultado["valido"]
+    assert any(error["fase"] == "semantico" for error in resultado["errores"])
+    assert resultado["wasm"] is None
