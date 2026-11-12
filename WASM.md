@@ -75,6 +75,13 @@ datos; `==` y `!=` invocan una rutina WAT que compara longitud y bytes, no
 direcciones. Se admiten cadenas vacías, Unicode y los mismos escapes que la
 gramática reconoce.
 
+El estado de esos segmentos pertenece a cada llamada a `compilar_programa`,
+por lo que compilaciones simultáneas no comparten literales ni direcciones. La
+memoria usa el mínimo de páginas de 64 KiB requerido por los datos estáticos
+(como mínimo una página) y admite hasta 65 536 páginas, es decir 4 GiB. Si los
+datos estáticos exceden ese límite, la compilación devuelve un error controlado
+de generación.
+
 También se admiten parámetros `i32`, `f64`, `bool` y `char`, incluidos parámetros mutables,
 llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin

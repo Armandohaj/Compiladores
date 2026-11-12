@@ -9,19 +9,28 @@ import wasmtime
 from main import analizar_programa
 
 
+TAMANO_PAGINA_WASM = 65536
+MAX_PAGINAS_MEMORIA = 65536
+
+
 class MemoriaStrings:
     def __init__(self):
         self.cursor = 0
         self.segmentos = []
 
-    def agregar(self, texto):
+    def agregar(self, texto, contexto):
         datos = texto.encode("utf-8")
         descriptor = self.cursor
         inicio = descriptor + 8
         contenido = inicio.to_bytes(4, "little") + len(datos).to_bytes(4, "little") + datos
+        if self.cursor + len(contenido) > MAX_PAGINAS_MEMORIA * TAMANO_PAGINA_WASM:
+            _error("Los datos estáticos exceden el límite de memoria WebAssembly.", contexto)
         self.segmentos.append((descriptor, contenido))
         self.cursor += len(contenido)
         return descriptor
+
+    def paginas_necesarias(self):
+        return max(1, (self.cursor + TAMANO_PAGINA_WASM - 1) // TAMANO_PAGINA_WASM)
 
     def wat(self):
         return "\n".join(
@@ -30,8 +39,10 @@ class MemoriaStrings:
             for direccion, datos in self.segmentos
         )
 
-
-_memoria_strings = None
+@dataclass
+class EstadoModulo:
+    nombres_funcion: dict
+    memoria: MemoriaStrings
 
 
 @dataclass
@@ -339,7 +350,9 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
         return [f"i32.const {_valor_char(caracter.getText(), contexto)}"]
     cadena = contexto.STRING_LITERAL()
     if cadena is not None:
-        return [f"i32.const {_memoria_strings.agregar(_valor_string(cadena.getText(), contexto))}"]
+        return [
+            f"i32.const {nombres_funcion.memoria.agregar(_valor_string(cadena.getText(), contexto), contexto)}"
+        ]
     if contexto.TRUE() is not None:
         return ["i32.const 1"]
     if contexto.FALSE() is not None:
@@ -413,7 +426,7 @@ def _compilar_asignacion(
 def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion, tipos):
     nombre = llamada.IDENT().getText()
     firma = funciones.get(nombre)
-    if firma is None or nombre not in nombres_funcion:
+    if firma is None or nombre not in nombres_funcion.nombres_funcion:
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
     if any(tipo not in {"i32", "bool", "f64", "char", "String"} for tipo in firma["parametros"]):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
@@ -431,7 +444,7 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
                 argumento, referencias, locales, funciones, nombres_funcion, tipos
             )
         )
-    instrucciones.append(f"call $funcion_{nombres_funcion[nombre]}")
+    instrucciones.append(f"call $funcion_{nombres_funcion.nombres_funcion[nombre]}")
     return instrucciones, firma["retorno"]
 
 
@@ -642,47 +655,44 @@ def compilar_programa(codigo):
     analisis = analizar_programa(codigo)
     if not analisis["valido"]:
         return {"valido": False, "errores": analisis["errores"], "wat": None, "wasm": None}
-    global _memoria_strings
-    memoria_anterior = _memoria_strings
-    _memoria_strings = MemoriaStrings()
     try:
-        try:
-            arbol = analisis["arbol"]
-            if arbol.constDecl():
-                _error("Las constantes globales todavía no están implementadas.", arbol.constDecl(0))
-            funciones = arbol.functionDecl()
-            if not funciones:
-                _error("El programa debe declarar al menos una función.", arbol)
-            nombres_funcion = {
+        arbol = analisis["arbol"]
+        if arbol.constDecl():
+            _error("Las constantes globales todavía no están implementadas.", arbol.constDecl(0))
+        funciones = arbol.functionDecl()
+        if not funciones:
+            _error("El programa debe declarar al menos una función.", arbol)
+        estado = EstadoModulo(
+            {
                 funcion.IDENT().getText(): indice
                 for indice, funcion in enumerate(funciones)
-            }
-            wat_funciones = [
-                _compilar_funcion(funcion, analisis, indice, nombres_funcion)
-                for indice, funcion in enumerate(funciones)
-            ]
-            datos = _memoria_strings.wat()
-            wat = (
-                "(module\n  (memory (export \"memory\") 1)\n"
-                + _wat_string_eq() + "\n"
-                + "\n".join(wat_funciones)
-                + ("\n" + datos if datos else "")
-                + "\n)"
-            )
-            wasm = wasmtime.wat2wasm(wat)
-            wasmtime.Module(wasmtime.Engine(), wasm)
-        except ErrorGeneracion as error:
-            return {"valido": False, "errores": [error.como_error()], "wat": None, "wasm": None}
-        except wasmtime.WasmtimeError as error:
-            return {
-                "valido": False,
-                "errores": [{"fase": "generacion", "mensaje": str(error), "linea": 1, "columna": 1}],
-                "wat": None,
-                "wasm": None,
-            }
-        return {"valido": True, "errores": [], "wat": wat, "wasm": wasm}
-    finally:
-        _memoria_strings = memoria_anterior
+            },
+            MemoriaStrings(),
+        )
+        wat_funciones = [
+            _compilar_funcion(funcion, analisis, indice, estado)
+            for indice, funcion in enumerate(funciones)
+        ]
+        datos = estado.memoria.wat()
+        wat = (
+            f"(module\n  (memory (export \"memory\") {estado.memoria.paginas_necesarias()})\n"
+            + _wat_string_eq() + "\n"
+            + "\n".join(wat_funciones)
+            + ("\n" + datos if datos else "")
+            + "\n)"
+        )
+        wasm = wasmtime.wat2wasm(wat)
+        wasmtime.Module(wasmtime.Engine(), wasm)
+    except ErrorGeneracion as error:
+        return {"valido": False, "errores": [error.como_error()], "wat": None, "wasm": None}
+    except wasmtime.WasmtimeError as error:
+        return {
+            "valido": False,
+            "errores": [{"fase": "generacion", "mensaje": str(error), "linea": 1, "columna": 1}],
+            "wat": None,
+            "wasm": None,
+        }
+    return {"valido": True, "errores": [], "wat": wat, "wasm": wasm}
 
 
 def ejecutar_modulo_wasm(wasm, funcion="main", *argumentos):

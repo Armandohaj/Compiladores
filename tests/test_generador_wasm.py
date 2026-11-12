@@ -1,8 +1,10 @@
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import wasmtime
 
+import generador_wasm
 from generador_wasm import (
     ErrorGeneracion,
     compilar_programa,
@@ -967,4 +969,41 @@ def test_operaciones_y_tipos_string_invalidos_no_generan_wasm(codigo):
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
+    assert resultado["wasm"] is None
+
+
+def test_datos_estaticos_string_mayores_a_64_kib_usando_dos_paginas():
+    texto = "x" * 70000
+    resultado = compilar_programa(f'''fn main() -> String {{
+    return "{texto}";
+}}''')
+
+    assert resultado["valido"]
+    assert '(memory (export "memory") 2)' in resultado["wat"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == texto
+
+
+def test_compilaciones_concurrentes_no_comparten_literales_string():
+    entradas = [("uno", "uno"), ("dos", "dos"), ("中", "中"), ("ñ", "ñ")] * 4
+
+    def compilar_y_leer(esperado):
+        codigo = f'''fn main() -> String {{ return "{esperado}"; }}'''
+        resultado = compilar_programa(codigo)
+        return resultado["valido"], ejecutar_string_wasm(resultado["wasm"])
+
+    with ThreadPoolExecutor(max_workers=4) as ejecutor:
+        resultados = list(ejecutor.map(lambda entrada: compilar_y_leer(entrada[0]), entradas))
+
+    assert resultados == [(True, esperado) for _, esperado in entradas]
+
+
+def test_limite_de_memoria_estatica_genera_error_controlado(monkeypatch):
+    monkeypatch.setattr(generador_wasm, "MAX_PAGINAS_MEMORIA", 1)
+    texto = "x" * 65529
+    resultado = compilar_programa(f'''fn main() -> String {{
+    return "{texto}";
+}}''')
+
+    assert not resultado["valido"]
+    assert resultado["errores"][0]["fase"] == "generacion"
     assert resultado["wasm"] is None
