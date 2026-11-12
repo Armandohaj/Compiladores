@@ -17,7 +17,9 @@ class ErrorGeneracion(Exception):
     contexto: object
 
     def como_error(self):
-        inicio = self.contexto.start
+        inicio = getattr(self.contexto, "start", None)
+        if inicio is None:
+            inicio = getattr(self.contexto, "symbol", None)
         return {
             "fase": "generacion",
             "mensaje": self.mensaje,
@@ -67,20 +69,32 @@ def _compilar_multiplicativa(contexto):
     instrucciones = _compilar_unaria(operandos[0])
     for indice, operando in enumerate(operandos[1:], start=1):
         operador = contexto.getChild(indice * 2 - 1).getText()
-        if operador != "*":
-            _error(
-                f"El operador '{operador}' todavía no está implementado.",
-                contexto.getChild(indice * 2 - 1),
-            )
         instrucciones.extend(_compilar_unaria(operando))
-        instrucciones.append("i32.mul")
+        instrucciones.append({
+            "*": "i32.mul",
+            "/": "i32.div_s",
+            "%": "i32.rem_s",
+        }[operador])
     return instrucciones
 
 
 def _compilar_unaria(contexto):
-    if contexto.getChildCount() != 1:
-        _error("Los operadores unarios todavía no están implementados.", contexto)
-    return _compilar_postfija(contexto.postfix())
+    if contexto.getChildCount() == 1:
+        return _compilar_postfija(contexto.postfix())
+    if contexto.getChild(0).getText() != "-":
+        _error("El operador unario '!' todavía no está implementado.", contexto)
+
+    postfija = contexto.postfix()
+    primaria = postfija.primary() if postfija.getChildCount() == 1 else None
+    literal = primaria.INT() if primaria is not None else None
+    if literal is not None:
+        valor = int(literal.getText())
+        if valor == 2**31:
+            return ["i32.const -2147483648"]
+        if valor > 2**31 - 1:
+            _error("El literal excede el rango de i32.", literal)
+
+    return ["i32.const 0", *_compilar_postfija(postfija), "i32.sub"]
 
 
 def _compilar_postfija(contexto):

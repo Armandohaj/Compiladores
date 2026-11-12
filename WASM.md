@@ -34,8 +34,10 @@ características no implementadas tienen fase `generacion` y posición fuente.
 
 Se admiten funciones sin parámetros cuyo cuerpo contiene exactamente un
 `return` de tipo `i32`. Las expresiones permiten literales `i32`, paréntesis,
-`+`, `-` y `*`. Cada función admitida se exporta por su nombre.
+`+`, `-`, `*`, `/` y `%`, incluida la negación unaria. Cada función admitida
+se exporta por su nombre. La división y el residuo usan la semántica con signo
+de WebAssembly; dividir por cero y `-2147483648 / -1` generan un trap al
+ejecutarse.
 
 Se rechazan controladamente variables, llamadas, constantes globales,
-arreglos, operadores unarios, división, módulo, comparaciones, lógica y todos
-los demás tipos o sentencias.
+arreglos, comparaciones, lógica y todos los demás tipos o sentencias.
