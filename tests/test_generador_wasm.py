@@ -299,3 +299,114 @@ def test_tipo_incompatible_rechazado_por_kevin_no_genera_wasm():
     assert not resultado["valido"]
     assert any(error["fase"] == "semantico" for error in resultado["errores"])
     assert resultado["wasm"] is None
+
+
+def test_llamada_principal_a_funcion_con_parametros():
+    resultado = compilar_programa("""fn sumar(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() -> i32 {
+    return sumar(10, 20);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 30
+
+
+def test_funcion_declarada_despues_y_exportada_con_argumentos():
+    resultado = compilar_programa("""fn main() -> i32 {
+    return doble(9);
+}
+
+fn doble(numero: i32) -> i32 {
+    return numero * 2;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 18
+    assert ejecutar_modulo_wasm(resultado["wasm"], "doble", 11) == 22
+
+
+def test_llamadas_anidadas_y_resultados_en_variables():
+    resultado = compilar_programa("""fn sumar(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() -> i32 {
+    let valor = sumar(sumar(1, 2), 3);
+    return valor * sumar(2, 2);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 24
+
+
+def test_parametro_mutable_y_parametros_booleanos():
+    resultado = compilar_programa("""fn incrementar(mut numero: i32) -> i32 {
+    numero += 1;
+    return numero;
+}
+
+fn negar(valor: bool) -> bool {
+    return !valor;
+}
+
+fn main() -> bool {
+    return negar(incrementar(4) == 5);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "incrementar", 9) == 10
+    assert ejecutar_modulo_wasm(resultado["wasm"], "negar", 0) == 1
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 0
+
+
+def test_funciones_unit_y_llamadas_como_sentencias():
+    resultado = compilar_programa("""fn registrar(valor: i32) {
+    return;
+}
+
+fn sumar(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() -> i32 {
+    registrar(10);
+    sumar(1, 2);
+    return 7;
+}""")
+
+    assert resultado["valido"]
+    assert "call $funcion_1\n    drop" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"], "registrar", 10) is None
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 7
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn uno(valor: i32) -> i32 {
+    return valor;
+}
+fn main() -> i32 {
+    return uno();
+}""",
+        """fn uno(valor: i32) -> i32 {
+    return valor;
+}
+fn main() -> i32 {
+    return uno(true);
+}""",
+        """fn main() -> i32 {
+    return inexistente(1);
+}""",
+    ],
+)
+def test_errores_de_llamadas_rechazados_por_kevin(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert any(error["fase"] == "semantico" for error in resultado["errores"])
+    assert resultado["wat"] is None
+    assert resultado["wasm"] is None

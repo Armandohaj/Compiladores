@@ -29,10 +29,16 @@ else:
 `compilar_programa` devuelve `valido`, `errores`, `wat` y `wasm`. Cuando el
 análisis o la generación fallan, `wat` y `wasm` son `None`; los errores de
 características no implementadas tienen fase `generacion` y posición fuente.
+`ejecutar_modulo_wasm` conserva el uso sin argumentos y permite invocar una
+exportación con argumentos, por ejemplo:
+
+```python
+ejecutar_modulo_wasm(resultado["wasm"], "doble", 21)
+```
 
 ## Alcance actual
 
-Se admiten funciones sin parámetros que retornan `i32` o `bool` (este último
+Se admiten funciones que retornan `i32` o `bool` (este último
 representado como `i32` 0/1 en WebAssembly), con declaraciones `let` y `let
 mut`, y asignaciones
 simples o compuestas. Las variables locales usan los identificadores resueltos
@@ -44,5 +50,10 @@ se exporta por su nombre. La división y el residuo usan la semántica con signo
 de WebAssembly; dividir por cero y `-2147483648 / -1` generan un trap al
 ejecutarse.
 
-Se rechazan controladamente llamadas, constantes globales, arreglos, control
-de flujo y todos los demás tipos o sentencias.
+También se admiten parámetros `i32` y `bool`, incluidos parámetros mutables,
+llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
+sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
+resultado WebAssembly.
+
+Se rechazan controladamente constantes globales, arreglos, control de flujo y
+todos los demás tipos o sentencias.
