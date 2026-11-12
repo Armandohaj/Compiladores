@@ -1084,6 +1084,10 @@ def test_indices_dinamicos_fuera_de_rango_producen_trap(indice):
     let numeros: [i32; 2] = [1, true];
     return 0;
 }""",
+        """fn main() -> i32 {
+    let valores: [f64; 2] = [1.0, true];
+    return 0;
+}""",
     ],
 )
 def test_errores_semanticos_de_arreglos_no_generan_wasm(codigo):
@@ -1093,10 +1097,71 @@ def test_errores_semanticos_de_arreglos_no_generan_wasm(codigo):
     assert resultado["wasm"] is None
 
 
-def test_arreglos_de_otros_tipos_y_asignaciones_se_rechazan_controladamente():
+def test_arreglos_bool_y_char_explicitos_e_inferidos():
+    booleanos = compilar_programa("""fn main() -> bool {
+    let valores: [bool; 3] = [true, false, true];
+    return valores[0] == valores[2] && !valores[1];
+}""")
+    caracteres = compilar_programa("""fn main() -> char {
+    let valores = ['A', 'ñ'];
+    return valores[1];
+}""")
+
+    assert booleanos["valido"]
+    assert ejecutar_modulo_wasm(booleanos["wasm"]) == 1
+    assert caracteres["valido"]
+    assert ejecutar_modulo_wasm(caracteres["wasm"]) == ord("ñ")
+
+
+def test_arreglos_f64_usan_alineacion_y_operaciones_reales():
+    resultado = compilar_programa("""fn main() -> f64 {
+    let mensaje = "dato";
+    let primero: [f64; 2] = [1.5, 2.25];
+    let segundo = [3.0, 4.5];
+    let indice = 1;
+    return primero[indice] + segundo[0] * segundo[indice];
+}""")
+
+    assert resultado["valido"]
+    assert "f64.store offset=8 align=8" in resultado["wat"]
+    assert "f64.load align=8" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(15.75)
+
+
+def test_arreglos_f64_en_llamadas_recursivas_no_comparten_memoria():
+    resultado = compilar_programa("""fn sumar(n: i32) -> f64 {
+    let valores = [1.0, 2.5];
+    if n == 0 {
+        return valores[0];
+    }
+    return sumar(n - 1) + valores[1];
+}
+
+fn main() -> f64 {
+    return sumar(3);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(8.5)
+
+
+@pytest.mark.parametrize("indice", ["0 - 1", "1 + 2"])
+def test_indices_invalidos_en_arreglos_f64_producen_trap(indice):
+    resultado = compilar_programa(f"""fn main() -> f64 {{
+    let valores = [1.0, 2.0];
+    let indice = {indice};
+    return valores[indice];
+}}""")
+
+    assert resultado["valido"]
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(resultado["wasm"])
+
+
+def test_arreglos_string_y_asignaciones_se_rechazan_controladamente():
     casos = [
         """fn main() -> i32 {
-    let valores: [bool; 2] = [true, false];
+    let valores: [String; 2] = ["a", "b"];
     return 0;
 }""",
         """fn main() -> i32 {

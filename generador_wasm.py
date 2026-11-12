@@ -76,15 +76,32 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo):
-    return "i32" if tipo in {"bool", "char", "String"} or _tamano_arreglo_i32(tipo) is not None else tipo
+    return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None else tipo
 
 
-def _tamano_arreglo_i32(tipo):
-    prefijo = "[i32;"
-    if not tipo.startswith(prefijo) or not tipo.endswith("]"):
+def _info_arreglo(tipo):
+    if not tipo.startswith("[") or not tipo.endswith("]"):
         return None
-    tamano = tipo[len(prefijo):-1]
-    return int(tamano) if tamano.isdigit() else None
+    contenido = tipo[1:-1]
+    if ";" not in contenido:
+        return None
+    elemento, tamano = contenido.rsplit(";", 1)
+    if elemento not in {"i32", "bool", "char", "f64"} or not tamano.isdigit():
+        return None
+    return elemento, int(tamano)
+
+
+def _tamano_elemento_arreglo(tipo):
+    return 8 if tipo == "f64" else 4
+
+
+def _instruccion_carga_arreglo(tipo):
+    return "f64.load align=8" if tipo == "f64" else "i32.load"
+
+
+def _instruccion_almacenamiento_arreglo(tipo, desplazamiento):
+    alineacion = " align=8" if tipo == "f64" else ""
+    return f"{tipo if tipo == 'f64' else 'i32'}.store offset={desplazamiento}{alineacion}"
 
 
 def _valor_string(literal, contexto):
@@ -161,7 +178,7 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
         _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion, tipos)
     )
     tipo = tipos[operandos[0]]
-    if _tamano_arreglo_i32(tipo) is not None:
+    if _info_arreglo(tipo) is not None:
         _error("Las comparaciones entre arreglos todavía no están implementadas.", contexto)
     if tipo == "String":
         if operador not in {"==", "!="}:
@@ -262,12 +279,30 @@ def _wat_string_eq():
 
 def _wat_arreglos(inicio_heap):
     return f"""  (global $heap (mut i32) (i32.const {inicio_heap}))
-  (func $array_alloc (param $tamano i32) (result i32)
+  (func $array_alloc (param $tamano i32) (param $alineacion i32) (result i32)
     (local $base i32)
+    (local $sin_alinear i32)
     (local $final i32)
     (local $paginas i32)
     global.get $heap
+    local.tee $sin_alinear
+    local.get $alineacion
+    i32.const 1
+    i32.sub
+    i32.add
     local.tee $base
+    local.get $sin_alinear
+    i32.lt_u
+    (if (then unreachable))
+    local.get $base
+    local.get $alineacion
+    i32.const 1
+    i32.sub
+    i32.const -1
+    i32.xor
+    i32.and
+    local.set $base
+    local.get $base
     local.get $tamano
     i32.add
     local.tee $final
@@ -309,7 +344,7 @@ def _wat_arreglos(inicio_heap):
     )
     local.get $base
   )
-  (func $array_get (param $base i32) (param $indice i32) (param $tamano i32) (result i32)
+  (func $array_addr (param $base i32) (param $indice i32) (param $tamano i32) (param $paso i32) (result i32)
     local.get $indice
     i32.const 0
     i32.lt_s
@@ -320,10 +355,9 @@ def _wat_arreglos(inicio_heap):
     (if (then unreachable))
     local.get $base
     local.get $indice
-    i32.const 4
+    local.get $paso
     i32.mul
     i32.add
-    i32.load
   )"""
 
 
@@ -417,15 +451,23 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     )
     if contexto.getChildCount() == 1:
         return instrucciones
-    tamano = _tamano_arreglo_i32(tipos[contexto.primary()])
-    if tamano is None or len(contexto.expression()) != 1:
-        _error("Solo se admiten accesos a arreglos [i32; N] de una dimensión.", contexto)
+    arreglo = _info_arreglo(tipos[contexto.primary()])
+    if arreglo is None or len(contexto.expression()) != 1:
+        _error("Solo se admiten accesos a arreglos locales de una dimensión.", contexto)
+    tipo_elemento, tamano = arreglo
     instrucciones.extend(
         _compilar_expresion(
             contexto.expression(0), referencias, locales, funciones, nombres_funcion, tipos
         )
     )
-    instrucciones.extend([f"i32.const {tamano}", "call $array_get"])
+    instrucciones.extend(
+        [
+            f"i32.const {tamano}",
+            f"i32.const {_tamano_elemento_arreglo(tipo_elemento)}",
+            "call $array_addr",
+            _instruccion_carga_arreglo(tipo_elemento),
+        ]
+    )
     return instrucciones
 
 
@@ -506,8 +548,9 @@ def _compilar_declaracion(
     if identificador not in locales:
         _error("La declaración no corresponde a una variable local i32.", declaracion)
     expresion = declaracion.expression()
-    tamano_arreglo = _tamano_arreglo_i32(simbolos[identificador]["tipo"])
-    if tamano_arreglo is not None:
+    arreglo = _info_arreglo(simbolos[identificador]["tipo"])
+    if arreglo is not None:
+        tipo_elemento, tamano_arreglo = arreglo
         if expresion is None:
             _error("Un arreglo local requiere un literal para inicializarse.", declaracion)
         literal = _obtener_literal_arreglo(expresion)
@@ -516,9 +559,15 @@ def _compilar_declaracion(
         elementos = literal.expression()
         if len(elementos) != tamano_arreglo:
             _error("El tamaño del literal no coincide con la declaración del arreglo.", literal)
-        if tamano_arreglo > MAX_DIRECCION_I32 // 4:
+        bytes_elemento = _tamano_elemento_arreglo(tipo_elemento)
+        if tamano_arreglo > MAX_DIRECCION_I32 // bytes_elemento:
             _error("El arreglo excede el límite de memoria WebAssembly.", declaracion)
-        instrucciones = [f"i32.const {tamano_arreglo * 4}", "call $array_alloc", f"local.set $local_{identificador}"]
+        instrucciones = [
+            f"i32.const {tamano_arreglo * bytes_elemento}",
+            f"i32.const {bytes_elemento}",
+            "call $array_alloc",
+            f"local.set $local_{identificador}",
+        ]
         for indice, elemento in enumerate(elementos):
             instrucciones.extend([f"local.get $local_{identificador}"])
             instrucciones.extend(
@@ -526,7 +575,9 @@ def _compilar_declaracion(
                     elemento, referencias, locales, funciones, nombres_funcion, tipos
                 )
             )
-            instrucciones.append(f"i32.store offset={indice * 4}")
+            instrucciones.append(
+                _instruccion_almacenamiento_arreglo(tipo_elemento, indice * bytes_elemento)
+            )
         return instrucciones
     if expresion is None:
         return []
@@ -544,7 +595,7 @@ def _compilar_asignacion(
     identificador = referencias[asignacion]
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
-    if _tamano_arreglo_i32(simbolos[identificador]["tipo"]) is not None:
+    if _info_arreglo(simbolos[identificador]["tipo"]) is not None:
         _error("La asignación de arreglos todavía no está implementada.", asignacion)
     operador = asignacion.assignmentOp().getText()
     expresion = _compilar_expresion(
@@ -751,11 +802,11 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     }
     variables.update(parametros)
     for identificador in parametros:
-        if _tamano_arreglo_i32(analisis["simbolos"][identificador]["tipo"]) is not None:
+        if _info_arreglo(analisis["simbolos"][identificador]["tipo"]) is not None:
             _error("Los parámetros de arreglos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
-        if tipo not in {"i32", "bool", "f64", "char", "String"} and _tamano_arreglo_i32(tipo) is None:
+        if tipo not in {"i32", "bool", "f64", "char", "String"} and _info_arreglo(tipo) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "
