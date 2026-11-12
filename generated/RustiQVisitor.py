@@ -144,8 +144,18 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#postfix.
+    def visitPostfix(self, ctx:RustiQParser.PostfixContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#primary.
     def visitPrimary(self, ctx:RustiQParser.PrimaryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#arrayLiteral.
+    def visitArrayLiteral(self, ctx:RustiQParser.ArrayLiteralContext):
         return self.visitChildren(ctx)
 
 

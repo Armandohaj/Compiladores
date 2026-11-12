@@ -29,14 +29,16 @@ parameter
     ;
 
 // String distingue mayúsculas y minúsculas.
+// Tipos básicos y arreglos de tamaño fijo.
+// Ejemplos: i32, String, [i32; 3], [[bool; 2]; 3].
 type
     : I32
     | F64
     | BOOL
     | CHAR
     | STRING
+    | LBRACKET type SEMICOLON INT RBRACKET
     ;
-
 // =====================================================
 // 2. BLOQUES Y SENTENCIAS
 // =====================================================
@@ -151,12 +153,19 @@ multiplicative
     : unary ((STAR | SLASH | PERCENT) unary)*
     ;
 
+// Los operadores unarios se aplican después de los accesos.
+// Ejemplo: -numeros[0].
 unary
-    : (MINUS | NOT)? primary
+    : (MINUS | NOT)? postfix
     ;
 
-// Los caracteres usan comillas simples.
-// Las cadenas usan comillas dobles.
+// Acceso a elementos de arreglos.
+// Permite accesos anidados: matriz[0][1].
+postfix
+    : primary (LBRACKET expression RBRACKET)*
+    ;
+
+// Valores básicos y expresiones entre paréntesis.
 primary
     : INT
     | FLOAT
@@ -164,11 +173,17 @@ primary
     | FALSE
     | CHAR_LITERAL
     | STRING_LITERAL
+    | arrayLiteral
     | functionCall
     | IDENT
     | LPAREN expression RPAREN
     ;
 
+// Elementos separados por comas.
+// Permite un arreglo vacío y una coma final.
+arrayLiteral
+    : LBRACKET (expression (COMMA expression)* COMMA?)? RBRACKET
+    ;
 // =====================================================
 // 5. PALABRAS RESERVADAS
 // =====================================================
@@ -202,6 +217,8 @@ LPAREN    : '(';
 RPAREN    : ')';
 LBRACE    : '{';
 RBRACE    : '}';
+LBRACKET  : '[';
+RBRACKET  : ']';
 ARROW     : '->';
 SEMICOLON : ';';
 COLON     : ':';

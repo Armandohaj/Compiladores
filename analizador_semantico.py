@@ -769,7 +769,9 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitUnary(self, ctx):
-        tipo = self.visit(ctx.primary())
+        # Primero resolver el valor y sus accesos:
+        # por ejemplo, numeros[0].
+        tipo = self.visit(ctx.postfix())
 
         if tipo is not None:
             if (
@@ -791,8 +793,135 @@ class AnalizadorSemantico(RustiQVisitor):
 
         return self.guardar_tipo(ctx, tipo)
 
+    def separar_tipo_arreglo(self, tipo):
+        """
+        Devuelve el tipo del elemento y el tamaño.
+        Ejemplo: [i32;3] -> ("i32", 3).
+        También admite arreglos anidados.
+        """
+        if (
+            tipo is None
+            or not tipo.startswith("[")
+            or not tipo.endswith("]")
+        ):
+            return None
+
+        contenido = tipo[1:-1]
+        elemento, cantidad = contenido.rsplit(";", 1)
+        return elemento, int(cantidad)
+
+    def visitPostfix(self, ctx):
+        # Tipo del valor antes de aplicar índices.
+        tipo = self.visit(ctx.primary())
+
+        for expresion_indice in ctx.expression():
+            tipo_indice = self.visit(expresion_indice)
+
+            # Visitar todos los índices aunque un acceso anterior
+            # haya fallado, para recoger sus posibles errores.
+            if tipo is None:
+                continue
+
+            arreglo = self.separar_tipo_arreglo(tipo)
+
+            if arreglo is None:
+                self.reportar(
+                    expresion_indice.start,
+                    f"No se puede indexar un valor de tipo {tipo}."
+                )
+                tipo = None
+                continue
+
+            if tipo_indice is None:
+                tipo = None
+                continue
+
+            if tipo_indice != "i32":
+                self.reportar(
+                    expresion_indice.start,
+                    "El índice de un arreglo debe ser i32."
+                )
+                tipo = None
+                continue
+
+            elemento, cantidad = arreglo
+
+            # Detectar índices escritos como enteros simples.
+            # Otros índices necesitarán comprobación en ejecución.
+            texto = expresion_indice.getText()
+            digitos = texto[1:] if texto.startswith("-") else texto
+
+            if digitos.isdigit():
+                indice = int(texto)
+
+                if indice < 0 or indice >= cantidad:
+                    self.reportar(
+                        expresion_indice.start,
+                        f"Índice {indice} fuera de rango "
+                        f"para un arreglo de tamaño {cantidad}."
+                    )
+                    tipo = None
+                    continue
+
+            # Un acceso devuelve el tipo del elemento.
+            # Si es otro arreglo, el siguiente índice lo utiliza.
+            tipo = elemento
+
+        return self.guardar_tipo(ctx, tipo)
+
+
+    def visitArrayLiteral(self, ctx):
+        expresiones = ctx.expression()
+
+        # El arreglo vacío necesita un tipo proporcionado
+        # por su contexto. Agregaremos ese caso después.
+        if not expresiones:
+            self.reportar(
+                ctx.start,
+                "Todavía no se admite inferir el tipo "
+                "de un arreglo vacío."
+            )
+            return self.guardar_tipo(ctx, None)
+
+        # Revisar todos los elementos para recoger sus errores.
+        tipos = [
+            self.visit(expresion)
+            for expresion in expresiones
+        ]
+
+        if any(tipo is None for tipo in tipos):
+            return self.guardar_tipo(ctx, None)
+
+        tipo_elemento = tipos[0]
+        valido = True
+
+        # Una función sin retorno no aporta un elemento.
+        if tipo_elemento == "unit":
+            self.reportar(
+                expresiones[0].start,
+                "Un arreglo no puede contener valores unit."
+            )
+            valido = False
+
+        for indice in range(1, len(tipos)):
+            if tipos[indice] != tipo_elemento:
+                self.reportar(
+                    expresiones[indice].start,
+                    f"El elemento {indice + 1} del arreglo "
+                    f"debe ser {tipo_elemento}, "
+                    f"pero se recibió {tipos[indice]}."
+                )
+                valido = False
+
+        if not valido:
+            return self.guardar_tipo(ctx, None)
+
+        # Utilizar el mismo formato que type.getText().
+        # Ejemplo: [i32;3].
+        tipo = f"[{tipo_elemento};{len(expresiones)}]"
+        return self.guardar_tipo(ctx, tipo)
+
     def visitPrimary(self, ctx):
-        # Cada literal determina directamente su tipo.
         if ctx.INT() is not None:
             tipo = "i32"
 
@@ -802,19 +931,19 @@ class AnalizadorSemantico(RustiQVisitor):
         elif ctx.TRUE() is not None or ctx.FALSE() is not None:
             tipo = "bool"
 
-        # Comillas simples: un carácter.
         elif ctx.CHAR_LITERAL() is not None:
             tipo = "char"
 
-        # Comillas dobles: una cadena.
         elif ctx.STRING_LITERAL() is not None:
             tipo = "String"
 
-        # El tipo de una llamada es el retorno de la función.
+        # Determinar el tipo y tamaño de un arreglo literal.
+        elif ctx.arrayLiteral() is not None:
+            tipo = self.visit(ctx.arrayLiteral())
+
         elif ctx.functionCall() is not None:
             tipo = self.visit(ctx.functionCall())
 
-        # Consultar el tipo de una variable existente.
         elif ctx.IDENT() is not None:
             token = ctx.IDENT().getSymbol()
             variable = self.buscar_variable(token.text)
@@ -837,8 +966,8 @@ class AnalizadorSemantico(RustiQVisitor):
             else:
                 tipo = variable["tipo"]
 
-        # Los paréntesis conservan el tipo de su expresión.
         else:
+            # Expresión entre paréntesis.
             tipo = self.visit(ctx.expression())
 
         return self.guardar_tipo(ctx, tipo)
