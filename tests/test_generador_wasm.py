@@ -1088,6 +1088,10 @@ def test_indices_dinamicos_fuera_de_rango_producen_trap(indice):
     let valores: [f64; 2] = [1.0, true];
     return 0;
 }""",
+        """fn main() -> i32 {
+    let textos: [String; 2] = ["a", 1];
+    return 0;
+}""",
     ],
 )
 def test_errores_semanticos_de_arreglos_no_generan_wasm(codigo):
@@ -1158,11 +1162,11 @@ def test_indices_invalidos_en_arreglos_f64_producen_trap(indice):
         ejecutar_modulo_wasm(resultado["wasm"])
 
 
-def test_arreglos_string_y_asignaciones_se_rechazan_controladamente():
+def test_matrices_y_asignaciones_de_arreglos_se_rechazan_controladamente():
     casos = [
         """fn main() -> i32 {
-    let valores: [String; 2] = ["a", "b"];
-    return 0;
+    let valores: [[i32; 1]; 1] = [[1]];
+    return valores[0][0];
 }""",
         """fn main() -> i32 {
     let mut valores = [1, 2];
@@ -1176,3 +1180,98 @@ def test_arreglos_string_y_asignaciones_se_rechazan_controladamente():
         assert not resultado["valido"]
         assert resultado["errores"][0]["fase"] == "generacion"
         assert resultado["wasm"] is None
+
+
+def test_arreglo_string_explicito_recupera_el_elemento_principal():
+    resultado = compilar_programa("""fn main() -> String {
+    let mensajes: [String; 3] = ["Hola", "Adiós", "RustiQ"];
+    return mensajes[1];
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "Adiós"
+
+
+@pytest.mark.parametrize(
+    ("literal", "indice", "esperado"),
+    [
+        ('["", "ñ"]', 0, ""),
+        (r'["a\n", "中"]', 1, "中"),
+        (r'["\t", "a\0b"]', 0, "\t"),
+        (r'["\t", "a\0b"]', 1, "a\0b"),
+    ],
+)
+def test_arreglos_string_inferidos_unicode_y_escapes(literal, indice, esperado):
+    resultado = compilar_programa(f"""fn main() -> String {{
+    let textos = {literal};
+    return textos[{indice}];
+}}""")
+
+    assert resultado["valido"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == esperado
+
+
+def test_arreglos_string_indices_comparaciones_y_condicionales():
+    resultado = compilar_programa("""fn main() -> String {
+    let primero = ["igual", "distinto"];
+    let segundo = ["igual", "final"];
+    let indice = 0;
+    if primero[indice + 1] != segundo[indice + 1] && primero[indice] == segundo[indice] {
+        return segundo[indice + 1];
+    }
+    return primero[indice];
+}""")
+
+    assert resultado["valido"]
+    assert "call $string_eq" in resultado["wat"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "final"
+
+
+def test_elementos_string_en_declaraciones_llamadas_y_arreglos_distintos():
+    resultado = compilar_programa("""fn identidad(texto: String) -> String {
+    return texto;
+}
+
+fn main() -> String {
+    let primero = ["uno", "dos"];
+    let segundo: [String; 2] = ["tres", "cuatro"];
+    let elegido = primero[1];
+    if elegido == "dos" {
+        return identidad(segundo[0]);
+    }
+    return elegido;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "tres"
+
+
+def test_arreglos_string_en_llamadas_recursivas():
+    resultado = compilar_programa("""fn elegir(n: i32) -> String {
+    let textos = ["base", "recursivo"];
+    if n == 0 {
+        return textos[0];
+    }
+    elegir(n - 1);
+    return textos[1];
+}
+
+fn main() -> String {
+    return elegir(3);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "recursivo"
+
+
+@pytest.mark.parametrize("indice", ["0 - 1", "1 + 2"])
+def test_indices_invalidos_en_arreglos_string_producen_trap(indice):
+    resultado = compilar_programa(f"""fn main() -> String {{
+    let textos = ["uno", "dos"];
+    let indice = {indice};
+    return textos[indice];
+}}""")
+
+    assert resultado["valido"]
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(resultado["wasm"])

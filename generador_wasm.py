@@ -86,7 +86,7 @@ def _info_arreglo(tipo):
     if ";" not in contenido:
         return None
     elemento, tamano = contenido.rsplit(";", 1)
-    if elemento not in {"i32", "bool", "char", "f64"} or not tamano.isdigit():
+    if elemento not in {"i32", "bool", "char", "f64", "String"} or not tamano.isdigit():
         return None
     return elemento, int(tamano)
 

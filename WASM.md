@@ -82,20 +82,22 @@ memoria usa el mínimo de páginas de 64 KiB requerido por los datos estáticos
 datos estáticos exceden ese límite, la compilación devuelve un error controlado
 de generación.
 
-Los arreglos locales unidimensionales `[i32; N]`, `[bool; N]`, `[char; N]` y
-`[f64; N]` se representan mediante un puntero `i32` a celdas consecutivas de
-memoria lineal. `i32`, `bool` y `char` ocupan cuatro bytes y usan cargas y
-almacenamientos `i32`; `f64` ocupa ocho bytes, se reserva alineado a ocho y
-usa `f64.load/store align=8`. Un literal reserva su bloque durante la
-ejecución, por lo que llamadas repetidas o recursivas no sobrescriben datos de
-otra invocación; la memoria crece si es necesario. El asignador es monotónico:
-un literal creado en cada iteración de un ciclo consume una reserva adicional
-y no se libera durante la ejecución actual. Los accesos `arreglo[indice]`
-comprueban en WebAssembly que el índice sea no negativo y menor que `N`, y
-hacen `trap` antes de una lectura fuera del bloque. En esta etapa solo se
-admiten literales, lectura e índices `i32` para arreglos locales: no hay
-arreglos de `String`, dimensiones adicionales, parámetros, retornos, copia,
-comparación ni asignación de arreglos o elementos.
+Los arreglos locales unidimensionales `[i32; N]`, `[bool; N]`, `[char; N]`,
+`[f64; N]` y `[String; N]` se representan mediante un puntero `i32` a celdas
+consecutivas de memoria lineal. `i32`, `bool`, `char` y `String` ocupan cuatro
+bytes y usan cargas y almacenamientos `i32`; una celda `String` contiene el
+puntero a su descriptor UTF-8 existente. `f64` ocupa ocho bytes, se reserva
+alineado a ocho y usa `f64.load/store align=8`. Comparar elementos `String`
+invoca `$string_eq`, por lo que compara contenido y no direcciones. Un literal
+reserva su bloque durante la ejecución, por lo que llamadas repetidas o
+recursivas no sobrescriben datos de otra invocación; la memoria crece si es
+necesario. El asignador es monotónico: un literal creado en cada iteración de
+un ciclo consume una reserva adicional y no se libera durante la ejecución
+actual. Los accesos `arreglo[indice]` comprueban en WebAssembly que el índice
+sea no negativo y menor que `N`, y hacen `trap` antes de una lectura fuera del
+bloque. En esta etapa solo se admiten literales, lectura e índices `i32` para
+arreglos locales: no hay dimensiones adicionales, parámetros, retornos, copia,
+comparación de arreglos ni asignación de arreglos o elementos.
 
 También se admiten parámetros `i32`, `f64`, `bool` y `char`, incluidos parámetros mutables,
 llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
