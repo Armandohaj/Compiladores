@@ -32,12 +32,15 @@ características no implementadas tienen fase `generacion` y posición fuente.
 
 ## Alcance actual
 
-Se admiten funciones sin parámetros cuyo cuerpo contiene exactamente un
-`return` de tipo `i32`. Las expresiones permiten literales `i32`, paréntesis,
+Se admiten funciones sin parámetros que retornan `i32`, con declaraciones
+`let` y `let mut`, y asignaciones
+simples o compuestas. Las variables locales usan los identificadores resueltos
+por el analizador para mantener correctamente los ámbitos. Las expresiones
+permiten literales `i32`, variables, paréntesis,
 `+`, `-`, `*`, `/` y `%`, incluida la negación unaria. Cada función admitida
 se exporta por su nombre. La división y el residuo usan la semántica con signo
 de WebAssembly; dividir por cero y `-2147483648 / -1` generan un trap al
 ejecutarse.
 
-Se rechazan controladamente variables, llamadas, constantes globales,
-arreglos, comparaciones, lógica y todos los demás tipos o sentencias.
+Se rechazan controladamente llamadas, constantes globales, arreglos,
+comparaciones, lógica, control de flujo y todos los demás tipos o sentencias.

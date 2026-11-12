@@ -53,10 +53,13 @@ def test_programa_invalido_no_genera_wasm():
     assert resultado["wasm"] is None
 
 
-def test_caracteristica_no_soportada_no_genera_wasm():
+def test_control_de_flujo_no_soportado_no_genera_wasm():
     resultado = compilar_programa("""fn main() -> i32 {
-    let valor = 10;
-    return valor;
+    if true {
+        return 10;
+    } else {
+        return 20;
+    }
 }""")
 
     assert not resultado["valido"]
@@ -142,3 +145,90 @@ def test_error_generacion_acepta_nodo_terminal_antlr():
         "linea": 2,
         "columna": 15,
     }
+
+
+def test_declaracion_y_asignacion_obligatoria_generan_locales_wasm():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut numero: i32 = 10;
+    numero = numero + 5;
+    return numero;
+}""")
+
+    assert resultado["valido"]
+    assert "(local $local_0 i32)" in resultado["wat"]
+    assert "local.get $local_0" in resultado["wat"]
+    assert "local.set $local_0" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 15
+
+
+def test_declaraciones_explicitas_e_inferidas_y_varias_operaciones():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let base: i32 = 8;
+    let factor = 3;
+    let mut resultado = base * factor;
+    resultado += 2;
+    resultado *= 2;
+    resultado -= 4;
+    resultado /= 2;
+    return resultado;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 24
+
+
+def test_inicializacion_posterior_y_asignaciones_compuestas():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut valor: i32;
+    valor = 20;
+    valor /= 3;
+    valor += 1;
+    return valor;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 7
+
+
+def test_sombras_usando_identidades_distintas_de_resolucion():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let valor = 10;
+    {
+        let valor = 3;
+        let mut copia = valor * 2;
+        copia += 1;
+    }
+    return valor;
+}""")
+
+    assert resultado["valido"]
+    assert "(local $local_0 i32)" in resultado["wat"]
+    assert "(local $local_1 i32)" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 10
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn main() -> i32 {
+    let valor = 1;
+    valor = 2;
+    return valor;
+}""",
+        """fn main() -> i32 {
+    let valor: i32;
+    return valor;
+}""",
+        """fn main() -> i32 {
+    let valor: i32 = true;
+    return 0;
+}""",
+    ],
+)
+def test_errores_de_kevin_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert any(error["fase"] == "semantico" for error in resultado["errores"])
+    assert resultado["wat"] is None
+    assert resultado["wasm"] is None
