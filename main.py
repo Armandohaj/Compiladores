@@ -4,28 +4,62 @@ from antlr4.error.ErrorListener import ErrorListener
 from generated.RustiQLexer import RustiQLexer
 from generated.RustiQParser import RustiQParser
 from analizador_semantico import AnalizadorSemantico
+from resolucion_variables import ResolucionVariables
 
+
+# =====================================================
+# 1. RECOLECCIÓN DE ERRORES
+# =====================================================
 
 class RecolectorErrores(ErrorListener):
+    """Guarda los errores de ANTLR sin imprimirlos."""
+
     def __init__(self, fase):
         super().__init__()
         self.fase = fase
         self.errores = []
 
-    def syntaxError(self, recognizer, offendingSymbol,
-                    line, column, msg, e):
+    def syntaxError(
+        self, recognizer, offendingSymbol,
+        line, column, msg, e
+    ):
         self.errores.append({
             "fase": self.fase,
             "mensaje": msg,
             "linea": line,
+            # ANTLR cuenta desde cero; mostramos desde uno.
             "columna": column + 1,
         })
 
 
+# =====================================================
+# 2. ANÁLISIS REUTILIZABLE
+# =====================================================
+
 def analizar_programa(codigo):
-    """Analiza el código y devuelve los resultados sin imprimir."""
+    """
+    Analiza código RustiQ sin imprimir.
+
+    Devuelve:
+    - valido: indica si el programa pasó el análisis.
+    - arbol: árbol de ANTLR.
+    - errores: errores léxicos, sintácticos o semánticos.
+    - funciones: firmas de las funciones.
+    - tipos_expresiones: nodo de expresión -> tipo.
+    - simbolos: identificador de variable -> información.
+    - declaraciones: nodo de declaración -> identificador.
+    - referencias: nodo de lectura/asignación -> identificador.
+
+    Si hay errores, el árbol será None y los diccionarios
+    destinados al backend estarán vacíos.
+    """
+
     errores_lexicos = RecolectorErrores("lexico")
     errores_sintacticos = RecolectorErrores("sintactico")
+
+    # -------------------------------------------------
+    # A. Análisis léxico: texto -> tokens.
+    # -------------------------------------------------
 
     lexer = RustiQLexer(InputStream(codigo))
     lexer.removeErrorListeners()
@@ -33,9 +67,13 @@ def analizar_programa(codigo):
 
     tokens = CommonTokenStream(lexer)
 
-    # Leer todos los tokens para recoger los errores léxicos.
+    # Recoger todos los errores léxicos antes de continuar.
     tokens.fill()
     tokens.seek(0)
+
+    # -------------------------------------------------
+    # B. Análisis sintáctico: tokens -> árbol.
+    # -------------------------------------------------
 
     parser = RustiQParser(tokens)
     parser.removeErrorListeners()
@@ -48,7 +86,12 @@ def analizar_programa(codigo):
         + errores_sintacticos.errores
     )
 
-    # No ejecutar la semántica sobre un programa mal formado.
+    # -------------------------------------------------
+    # C. Análisis semántico.
+    # -------------------------------------------------
+
+    semantico = None
+
     if not errores:
         semantico = AnalizadorSemantico()
         semantico.visit(arbol)
@@ -58,15 +101,53 @@ def analizar_programa(codigo):
         key=lambda error: (error["linea"], error["columna"])
     )
 
+    valido = not errores
+
+    # -------------------------------------------------
+    # D. Preparar información para el backend.
+    # -------------------------------------------------
+
+    funciones = {}
+    tipos_expresiones = {}
+    simbolos = {}
+    declaraciones = {}
+    referencias = {}
+
+    if valido:
+        funciones = semantico.funciones
+        tipos_expresiones = semantico.tipos_expresiones
+
+        # Vincular cada uso de una variable con su declaración.
+        # Se ejecuta únicamente sobre un programa válido.
+        resolucion = ResolucionVariables(
+            tipos_expresiones,
+            semantico.valores_constantes,
+        )
+        resolucion.visit(arbol)
+
+        simbolos = resolucion.simbolos
+        declaraciones = resolucion.declaraciones
+        referencias = resolucion.referencias
+
     return {
-        "valido": not errores,
-        "arbol": arbol if not errores else None,
+        "valido": valido,
+        "arbol": arbol if valido else None,
         "errores": errores,
+        "funciones": funciones,
+        "tipos_expresiones": tipos_expresiones,
+        "simbolos": simbolos,
+        "declaraciones": declaraciones,
+        "referencias": referencias,
     }
 
 
+# =====================================================
+# 3. SALIDA PARA LA TERMINAL
+# =====================================================
+
 def analizar(codigo):
-    """Muestra el resultado en terminal y devuelve True o False."""
+    """Muestra el resultado y devuelve True o False."""
+
     resultado = analizar_programa(codigo)
 
     if resultado["valido"]:
@@ -86,9 +167,19 @@ def analizar(codigo):
     return resultado["valido"]
 
 
+# =====================================================
+# 4. EJEMPLO AL EJECUTAR ESTE ARCHIVO
+# =====================================================
+
 if __name__ == "__main__":
-    codigo = """fn main() -> i32 {
-    let x = 10;
-    return x + 20;
-}"""
+    codigo = """
+fn sumar(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() -> i32 {
+    let resultado = sumar(10, 20);
+    return resultado;
+}
+"""
     analizar(codigo)

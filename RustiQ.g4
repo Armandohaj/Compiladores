@@ -4,112 +4,138 @@ grammar RustiQ;
 // 1. PROGRAMA, FUNCIONES Y TIPOS
 // =====================================================
 
-// Un programa contiene cero o más funciones.
-// EOF exige consumir todo el archivo.
+// El archivo puede contener funciones y constantes globales.
 program
-    : functionDecl* EOF
+    : (functionDecl | constDecl)* EOF
     ;
 
-// Funciones sin parámetros por ahora.
-// El tipo de retorno es opcional.
+// Constante global con tipo y valor obligatorios.
+// Ejemplo: const LIMITE: i32 = 10;
+constDecl
+    : CONST IDENT COLON type ASSIGN expression SEMICOLON
+    ;
+
+// Parámetros y retorno opcionales.
 functionDecl
-    : FN IDENT LPAREN RPAREN (ARROW type)? block
+    : FN IDENT LPAREN parameterList? RPAREN (ARROW type)? block
     ;
 
-// Tipos disponibles.
+parameterList
+    : parameter (COMMA parameter)* COMMA?
+    ;
+
+parameter
+    : MUT? IDENT COLON type
+    ;
+
+// String distingue mayúsculas y minúsculas.
+// Tipos básicos y arreglos de tamaño fijo.
+// Ejemplos: i32, String, [i32; 3], [[bool; 2]; 3].
 type
     : I32
     | F64
     | BOOL
+    | CHAR
+    | STRING
+    | LBRACKET type SEMICOLON INT RBRACKET
     ;
-
 // =====================================================
 // 2. BLOQUES Y SENTENCIAS
 // =====================================================
 
-// Grupo de sentencias entre llaves.
 block
     : LBRACE statement* RBRACE
     ;
 
-// Instrucciones disponibles dentro de un bloque.
 statement
     : letDecl
     | assignment SEMICOLON
+    | functionCall SEMICOLON
     | returnStmt
     | ifStmt
     | whileStmt
+    | loopStmt
     | breakStmt
     | continueStmt
     | block
     ;
 
-// Variable con mutabilidad, tipo e inicializador opcionales.
 letDecl
     : LET MUT? IDENT (COLON type)? (ASSIGN expression)? SEMICOLON
     ;
 
-// Asignación a una variable.
-// El punto y coma se reconoce en statement.
+// Asignación simple o compuesta a una variable.
 assignment
-    : IDENT ASSIGN expression
+    : IDENT assignmentOp expression
     ;
 
-// Retorno con o sin valor.
+// El análisis semántico comprobará mutabilidad,
+// inicialización y compatibilidad de tipos.
+assignmentOp
+    : ASSIGN
+    | PLUS_ASSIGN
+    | MINUS_ASSIGN
+    | STAR_ASSIGN
+    | SLASH_ASSIGN
+    ;
 returnStmt
     : RETURN expression? SEMICOLON
     ;
 
-// Condicional con else o else if opcional.
 ifStmt
     : IF expression block (ELSE (block | ifStmt))?
     ;
 
-// Repite un bloque mientras la condición sea verdadera.
-// Ejemplo: while contador < 10 { ... }
-//
-// La condición debe ser bool.
-// Esa comprobación corresponde al análisis semántico.
 whileStmt
     : WHILE expression block
     ;
 
-// Sale del ciclo más cercano.
-// La semántica comprobará que esté dentro de un ciclo.
+// Ciclo sin condición.
+// break permite salir y continue inicia otra iteración.
+loopStmt
+    : LOOP block
+    ;
+
 breakStmt
     : BREAK SEMICOLON
     ;
 
-// Pasa a la siguiente iteración del ciclo más cercano.
-// La semántica comprobará que esté dentro de un ciclo.
 continueStmt
     : CONTINUE SEMICOLON
     ;
 
 // =====================================================
-// 3. EXPRESIONES Y PRIORIDAD
+// 3. LLAMADAS A FUNCIONES
+// =====================================================
+
+functionCall
+    : IDENT LPAREN argumentList? RPAREN
+    ;
+
+argumentList
+    : expression (COMMA expression)* COMMA?
+    ;
+
+// =====================================================
+// 4. EXPRESIONES Y PRIORIDAD
 // =====================================================
 
 expression
     : logicalOr
     ;
 
-// O lógico.
 logicalOr
     : logicalAnd (OR logicalAnd)*
     ;
 
-// Y lógico: mayor prioridad que ||.
 logicalAnd
     : comparison (AND comparison)*
     ;
 
-// Comparación opcional entre expresiones aritméticas.
 comparison
     : additive (relOp additive)?
     ;
 
-// Operadores de comparación.
 relOp
     : EQ
     | NEQ
@@ -119,20 +145,24 @@ relOp
     | GE
     ;
 
-// Suma y resta.
 additive
     : multiplicative ((PLUS | MINUS) multiplicative)*
     ;
 
-// Multiplicación, división y residuo.
-// Mayor prioridad que suma y resta.
 multiplicative
     : unary ((STAR | SLASH | PERCENT) unary)*
     ;
 
-// Signo negativo o negación lógica opcional.
+// Los operadores unarios se aplican después de los accesos.
+// Ejemplo: -numeros[0].
 unary
-    : (MINUS | NOT)? primary
+    : (MINUS | NOT)? postfix
+    ;
+
+// Acceso a elementos de arreglos.
+// Permite accesos anidados: matriz[0][1].
+postfix
+    : primary (LBRACKET expression RBRACKET)*
     ;
 
 // Valores básicos y expresiones entre paréntesis.
@@ -141,46 +171,59 @@ primary
     | FLOAT
     | TRUE
     | FALSE
+    | CHAR_LITERAL
+    | STRING_LITERAL
+    | arrayLiteral
+    | functionCall
     | IDENT
     | LPAREN expression RPAREN
     ;
 
+// Elementos separados por comas.
+// Permite un arreglo vacío y una coma final.
+arrayLiteral
+    : LBRACKET (expression (COMMA expression)* COMMA?)? RBRACKET
+    ;
 // =====================================================
-// 4. PALABRAS RESERVADAS
+// 5. PALABRAS RESERVADAS
 // =====================================================
 
-// Se colocan antes de IDENT para distinguirlas
-// de los nombres de variables y funciones.
 FN       : 'fn';
 RETURN   : 'return';
 LET      : 'let';
 MUT      : 'mut';
+CONST    : 'const';
 IF       : 'if';
 ELSE     : 'else';
 WHILE    : 'while';
+LOOP     : 'loop';
 BREAK    : 'break';
 CONTINUE : 'continue';
 
-I32    : 'i32';
-F64    : 'f64';
-BOOL   : 'bool';
+I32      : 'i32';
+F64      : 'f64';
+BOOL     : 'bool';
+CHAR     : 'char';
+STRING   : 'String';
 
-TRUE   : 'true';
-FALSE  : 'false';
+TRUE     : 'true';
+FALSE    : 'false';
 
 // =====================================================
-// 5. SÍMBOLOS Y OPERADORES
+// 6. SÍMBOLOS Y OPERADORES
 // =====================================================
 
 LPAREN    : '(';
 RPAREN    : ')';
 LBRACE    : '{';
 RBRACE    : '}';
+LBRACKET  : '[';
+RBRACKET  : ']';
 ARROW     : '->';
 SEMICOLON : ';';
 COLON     : ':';
+COMMA     : ',';
 
-// Comparaciones.
 EQ     : '==';
 NEQ    : '!=';
 LE     : '<=';
@@ -188,12 +231,16 @@ GE     : '>=';
 LT     : '<';
 GT     : '>';
 
-// Operadores lógicos.
 AND    : '&&';
 OR     : '||';
 NOT    : '!';
 
-// Asignación y aritmética.
+// Operadores de asignación compuesta.
+PLUS_ASSIGN  : '+=';
+MINUS_ASSIGN : '-=';
+STAR_ASSIGN  : '*=';
+SLASH_ASSIGN : '/=';
+
 ASSIGN  : '=';
 PLUS    : '+';
 MINUS   : '-';
@@ -202,40 +249,64 @@ SLASH   : '/';
 PERCENT : '%';
 
 // =====================================================
-// 6. IDENTIFICADORES Y LITERALES
+// 7. IDENTIFICADORES Y NÚMEROS
 // =====================================================
 
-// Nombres que comienzan con una letra o guion bajo.
 IDENT
     : [a-zA-Z_] [a-zA-Z_0-9]*
     ;
 
-// Decimales con dígitos antes y después del punto.
 FLOAT
     : [0-9]+ '.' [0-9]+
     ;
 
-// Enteros sin signo.
-// El signo negativo se reconoce en unary.
 INT
     : [0-9]+
     ;
 
 // =====================================================
-// 7. COMENTARIOS Y ESPACIOS
+// 8. CARACTERES Y CADENAS
 // =====================================================
 
-// Ignorar comentarios de línea.
+// Exactamente un carácter normal o una secuencia de escape.
+// Ejemplos: 'A', 'ñ', '\n' y '\''.
+// No permite un carácter vacío ni varios caracteres.
+CHAR_LITERAL
+    : '\'' (ESCAPE_SEQUENCE | ~['\\\r\n]) '\''
+    ;
+
+// Cero o más caracteres entre comillas dobles.
+// No permite saltos de línea escritos directamente.
+// Para representarlos se utiliza \n.
+STRING_LITERAL
+    : '"' (ESCAPE_SEQUENCE | ~["\\\r\n])* '"'
+    ;
+
+// Fragmento auxiliar: no produce un token independiente.
+// Escapes admitidos:
+// \n  salto de línea
+// \r  retorno de carro
+// \t  tabulación
+// \0  carácter nulo
+// \"  comilla doble
+// \'  comilla simple
+// \\  barra invertida
+fragment ESCAPE_SEQUENCE
+    : '\\' [nrt0"'\\]
+    ;
+
+// =====================================================
+// 9. COMENTARIOS Y ESPACIOS
+// =====================================================
+
 LINE_COMMENT
     : '//' ~[\r\n]* -> skip
     ;
 
-// Ignorar comentarios de bloque sin anidamiento.
 BLOCK_COMMENT
     : '/*' .*? '*/' -> skip
     ;
 
-// Ignorar espacios, tabulaciones y saltos de línea.
 WS
     : [ \t\r\n]+ -> skip
     ;
