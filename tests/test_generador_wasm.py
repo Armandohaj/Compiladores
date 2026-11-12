@@ -3,7 +3,12 @@ import math
 import pytest
 import wasmtime
 
-from generador_wasm import ErrorGeneracion, compilar_programa, ejecutar_modulo_wasm
+from generador_wasm import (
+    ErrorGeneracion,
+    compilar_programa,
+    ejecutar_modulo_wasm,
+    ejecutar_string_wasm,
+)
 from main import analizar_programa
 
 
@@ -55,9 +60,9 @@ def test_programa_invalido_no_genera_wasm():
     assert resultado["wasm"] is None
 
 
-def test_tipos_no_soportados_no_generan_wasm():
+def test_arreglos_no_soportados_no_generan_wasm():
     resultado = compilar_programa("""fn main() -> i32 {
-    let texto: String;
+    let valores: [i32; 2] = [1, 2];
     return 10;
 }""")
 
@@ -789,10 +794,12 @@ fn main() -> char {
         ("'ñ'", ord("ñ")),
         ("'中'", ord("中")),
         (r"'\n'", 10),
+        (r"'\r'", 13),
         (r"'\t'", 9),
         (r"'\0'", 0),
         (r"'\\'", 92),
         (r"'\''", 39),
+        (r"'\"'", 34),
     ],
 )
 def test_literales_char_unicode_y_escapes(literal, esperado):
@@ -857,6 +864,106 @@ fn main() -> i32 {
     ],
 )
 def test_chars_invalidos_o_con_operaciones_no_permitidas_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
+
+
+def test_string_prueba_principal_y_memoria_exportada():
+    resultado = compilar_programa("""fn identidad(texto: String) -> String {
+    return texto;
+}
+
+fn main() -> String {
+    let mensaje: String = "Hola";
+    return identidad(mensaje);
+}""")
+
+    assert resultado["valido"]
+    assert '(memory (export "memory") 1)' in resultado["wat"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "Hola"
+
+
+@pytest.mark.parametrize(
+    ("literal", "esperado"),
+    [
+        ('""', ""),
+        ('"Adiós"', "Adiós"),
+        ('"ñ"', "ñ"),
+        ('"中"', "中"),
+        (r'"línea\nfinal"', "línea\nfinal"),
+        (r'"a\rb"', "a\rb"),
+        (r'"a\tb"', "a\tb"),
+        (r'"a\0b"', "a\0b"),
+        (r'"\"cita\""', '"cita"'),
+        (r'"a\\b"', "a\\b"),
+    ],
+)
+def test_strings_unicode_vacias_y_escapes(literal, esperado):
+    resultado = compilar_programa(f"""fn main() -> String {{
+    return {literal};
+}}""")
+
+    assert resultado["valido"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == esperado
+
+
+def test_variables_asignaciones_y_llamadas_anidadas_string():
+    resultado = compilar_programa("""fn identidad(texto: String) -> String {
+    return texto;
+}
+
+fn envolver(texto: String) -> String {
+    let mut copia = texto;
+    copia = "final";
+    return identidad(copia);
+}
+
+fn main() -> String {
+    let mensaje = "inicial";
+    return envolver(mensaje);
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_string_wasm(resultado["wasm"]) == "final"
+
+
+def test_igualdad_string_por_contenido_y_condicionales():
+    resultado = compilar_programa("""fn iguales(a: String, b: String) -> bool {
+    return a == b;
+}
+
+fn main() -> i32 {
+    let primero = "Hola";
+    let segundo = "Hola";
+    let distinto = "Holaa";
+    if iguales(primero, segundo) && primero != distinto {
+        return 1;
+    }
+    return 0;
+}""")
+
+    assert resultado["valido"]
+    assert "call $string_eq" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        """fn main() -> String {
+    return "a" + "b";
+}""",
+        """fn main() -> bool {
+    return "a" < "b";
+}""",
+        """fn main() -> String {
+    return 1;
+}""",
+    ],
+)
+def test_operaciones_y_tipos_string_invalidos_no_generan_wasm(codigo):
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]

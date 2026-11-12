@@ -9,6 +9,31 @@ import wasmtime
 from main import analizar_programa
 
 
+class MemoriaStrings:
+    def __init__(self):
+        self.cursor = 0
+        self.segmentos = []
+
+    def agregar(self, texto):
+        datos = texto.encode("utf-8")
+        descriptor = self.cursor
+        inicio = descriptor + 8
+        contenido = inicio.to_bytes(4, "little") + len(datos).to_bytes(4, "little") + datos
+        self.segmentos.append((descriptor, contenido))
+        self.cursor += len(contenido)
+        return descriptor
+
+    def wat(self):
+        return "\n".join(
+            f"  (data (i32.const {direccion}) \""
+            f"{''.join(f'\\{byte:02x}' for byte in datos)}\")"
+            for direccion, datos in self.segmentos
+        )
+
+
+_memoria_strings = None
+
+
 @dataclass
 class ErrorGeneracion(Exception):
     """Error controlado al encontrar sintaxis aún no soportada."""
@@ -33,7 +58,25 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo):
-    return "i32" if tipo in {"bool", "char"} else tipo
+    return "i32" if tipo in {"bool", "char", "String"} else tipo
+
+
+def _valor_string(literal, contexto):
+    contenido = literal[1:-1]
+    escapes = {"n": "\n", "r": "\r", "t": "\t", "0": "\0", '"': '"', "'": "'", "\\": "\\"}
+    resultado = []
+    indice = 0
+    while indice < len(contenido):
+        caracter = contenido[indice]
+        if caracter != "\\":
+            resultado.append(caracter)
+            indice += 1
+            continue
+        if indice + 1 >= len(contenido) or contenido[indice + 1] not in escapes:
+            _error("Literal String no soportado.", contexto)
+        resultado.append(escapes[contenido[indice + 1]])
+        indice += 2
+    return "".join(resultado)
 
 
 def _valor_char(literal, contexto):
@@ -92,6 +135,13 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
         _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion, tipos)
     )
     tipo = tipos[operandos[0]]
+    if tipo == "String":
+        if operador not in {"==", "!="}:
+            _error("Las cadenas solo admiten == y !=.", contexto)
+        instrucciones.append("call $string_eq")
+        if operador == "!=":
+            instrucciones.append("i32.eqz")
+        return instrucciones
     if tipo == "f64":
         instrucciones.append({
             "==": "f64.eq", "!=": "f64.ne", "<": "f64.lt",
@@ -126,6 +176,60 @@ def _wat_if(rama_cierta, rama_falsa=None):
         falsa = "\n        ".join(rama_falsa) if rama_falsa else "nop"
         wat += f"\n      (else\n        {falsa}\n      )"
     return wat + "\n    )"
+
+
+def _wat_string_eq():
+    return """  (func $string_eq (param $izquierda i32) (param $derecha i32) (result i32)
+    (local $puntero_izquierdo i32)
+    (local $longitud_izquierda i32)
+    (local $puntero_derecho i32)
+    (local $longitud_derecha i32)
+    (local $indice i32)
+    local.get $izquierda
+    i32.load
+    local.set $puntero_izquierdo
+    local.get $izquierda
+    i32.const 4
+    i32.add
+    i32.load
+    local.set $longitud_izquierda
+    local.get $derecha
+    i32.load
+    local.set $puntero_derecho
+    local.get $derecha
+    i32.const 4
+    i32.add
+    i32.load
+    local.set $longitud_derecha
+    local.get $longitud_izquierda
+    local.get $longitud_derecha
+    i32.ne
+    (if (then i32.const 0 return))
+    (block $fin
+      (loop $comparar
+        local.get $indice
+        local.get $longitud_izquierda
+        i32.ge_u
+        br_if $fin
+        local.get $puntero_izquierdo
+        local.get $indice
+        i32.add
+        i32.load8_u
+        local.get $puntero_derecho
+        local.get $indice
+        i32.add
+        i32.load8_u
+        i32.ne
+        (if (then i32.const 0 return))
+        local.get $indice
+        i32.const 1
+        i32.add
+        local.set $indice
+        br $comparar
+      )
+    )
+    i32.const 1
+  )"""
 
 
 def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion, tipos):
@@ -233,6 +337,9 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
     caracter = contexto.CHAR_LITERAL()
     if caracter is not None:
         return [f"i32.const {_valor_char(caracter.getText(), contexto)}"]
+    cadena = contexto.STRING_LITERAL()
+    if cadena is not None:
+        return [f"i32.const {_memoria_strings.agregar(_valor_string(cadena.getText(), contexto))}"]
     if contexto.TRUE() is not None:
         return ["i32.const 1"]
     if contexto.FALSE() is not None:
@@ -308,9 +415,9 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
     firma = funciones.get(nombre)
     if firma is None or nombre not in nombres_funcion:
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
-    if any(tipo not in {"i32", "bool", "f64", "char"} for tipo in firma["parametros"]):
+    if any(tipo not in {"i32", "bool", "f64", "char", "String"} for tipo in firma["parametros"]):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
-    if firma["retorno"] not in {"i32", "bool", "f64", "char", "unit"}:
+    if firma["retorno"] not in {"i32", "bool", "f64", "char", "String", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", llamada)
 
     argumentos = []
@@ -473,7 +580,7 @@ def _compilar_sentencia(
 def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     nombre = funcion.IDENT().getText()
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
-    if tipo_retorno not in {"i32", "bool", "f64", "char", "unit"}:
+    if tipo_retorno not in {"i32", "bool", "f64", "char", "String", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", funcion)
     variables = {
         identificador
@@ -488,8 +595,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     }
     variables.update(parametros)
     for identificador in variables:
-        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool", "f64", "char"}:
-            _error("Solo se admiten parámetros y variables i32, bool, f64 o char.", funcion)
+        if analisis["simbolos"][identificador]["tipo"] not in {"i32", "bool", "f64", "char", "String"}:
+            _error("El tipo de parámetro o variable no está implementado.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "
         f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'])})"
@@ -535,34 +642,47 @@ def compilar_programa(codigo):
     analisis = analizar_programa(codigo)
     if not analisis["valido"]:
         return {"valido": False, "errores": analisis["errores"], "wat": None, "wasm": None}
-    arbol = analisis["arbol"]
+    global _memoria_strings
+    memoria_anterior = _memoria_strings
+    _memoria_strings = MemoriaStrings()
     try:
-        if arbol.constDecl():
-            _error("Las constantes globales todavía no están implementadas.", arbol.constDecl(0))
-        funciones = arbol.functionDecl()
-        if not funciones:
-            _error("El programa debe declarar al menos una función.", arbol)
-        nombres_funcion = {
-            funcion.IDENT().getText(): indice
-            for indice, funcion in enumerate(funciones)
-        }
-        wat_funciones = [
-            _compilar_funcion(funcion, analisis, indice, nombres_funcion)
-            for indice, funcion in enumerate(funciones)
-        ]
-        wat = "(module\n" + "\n".join(wat_funciones) + "\n)"
-        wasm = wasmtime.wat2wasm(wat)
-        wasmtime.Module(wasmtime.Engine(), wasm)
-    except ErrorGeneracion as error:
-        return {"valido": False, "errores": [error.como_error()], "wat": None, "wasm": None}
-    except wasmtime.WasmtimeError as error:
-        return {
-            "valido": False,
-            "errores": [{"fase": "generacion", "mensaje": str(error), "linea": 1, "columna": 1}],
-            "wat": None,
-            "wasm": None,
-        }
-    return {"valido": True, "errores": [], "wat": wat, "wasm": wasm}
+        try:
+            arbol = analisis["arbol"]
+            if arbol.constDecl():
+                _error("Las constantes globales todavía no están implementadas.", arbol.constDecl(0))
+            funciones = arbol.functionDecl()
+            if not funciones:
+                _error("El programa debe declarar al menos una función.", arbol)
+            nombres_funcion = {
+                funcion.IDENT().getText(): indice
+                for indice, funcion in enumerate(funciones)
+            }
+            wat_funciones = [
+                _compilar_funcion(funcion, analisis, indice, nombres_funcion)
+                for indice, funcion in enumerate(funciones)
+            ]
+            datos = _memoria_strings.wat()
+            wat = (
+                "(module\n  (memory (export \"memory\") 1)\n"
+                + _wat_string_eq() + "\n"
+                + "\n".join(wat_funciones)
+                + ("\n" + datos if datos else "")
+                + "\n)"
+            )
+            wasm = wasmtime.wat2wasm(wat)
+            wasmtime.Module(wasmtime.Engine(), wasm)
+        except ErrorGeneracion as error:
+            return {"valido": False, "errores": [error.como_error()], "wat": None, "wasm": None}
+        except wasmtime.WasmtimeError as error:
+            return {
+                "valido": False,
+                "errores": [{"fase": "generacion", "mensaje": str(error), "linea": 1, "columna": 1}],
+                "wat": None,
+                "wasm": None,
+            }
+        return {"valido": True, "errores": [], "wat": wat, "wasm": wasm}
+    finally:
+        _memoria_strings = memoria_anterior
 
 
 def ejecutar_modulo_wasm(wasm, funcion="main", *argumentos):
@@ -572,3 +692,16 @@ def ejecutar_modulo_wasm(wasm, funcion="main", *argumentos):
     almacen = wasmtime.Store(motor)
     instancia = wasmtime.Instance(almacen, modulo, [])
     return instancia.exports(almacen)[funcion](almacen, *argumentos)
+
+
+def ejecutar_string_wasm(wasm, funcion="main", *argumentos):
+    motor = wasmtime.Engine()
+    modulo = wasmtime.Module(motor, wasm)
+    almacen = wasmtime.Store(motor)
+    instancia = wasmtime.Instance(almacen, modulo, [])
+    descriptor = instancia.exports(almacen)[funcion](almacen, *argumentos)
+    memoria = instancia.exports(almacen)["memory"]
+    cabecera = bytes(memoria.read(almacen, descriptor, descriptor + 8))
+    puntero = int.from_bytes(cabecera[:4], "little")
+    longitud = int.from_bytes(cabecera[4:], "little")
+    return bytes(memoria.read(almacen, puntero, puntero + longitud)).decode("utf-8")

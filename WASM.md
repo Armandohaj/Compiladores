@@ -26,6 +26,15 @@ else:
     print(resultado["errores"])
 ```
 
+Para recuperar el resultado de una función `String`, usa el decodificador
+explícito que lee la memoria exportada:
+
+```python
+from generador_wasm import ejecutar_string_wasm
+
+texto = ejecutar_string_wasm(resultado["wasm"])
+```
+
 `compilar_programa` devuelve `valido`, `errores`, `wat` y `wasm`. Cuando el
 análisis o la generación fallan, `wat` y `wasm` son `None`; los errores de
 características no implementadas tienen fase `generacion` y posición fuente.
@@ -59,6 +68,13 @@ WebAssembly. Se admiten literales Unicode y los escapes `\n`, `\r`, `\t`,
 `\0`, `\"`, `\'` y `\\`; `char` admite comparación por igualdad o diferencia,
 pero no aritmética ni comparaciones de orden.
 
+Cada `String` es un `i32` que apunta a un descriptor de ocho bytes en la
+memoria WebAssembly exportada: cuatro bytes little-endian para la dirección
+UTF-8 y cuatro para su longitud. Los literales se almacenan como segmentos de
+datos; `==` y `!=` invocan una rutina WAT que compara longitud y bytes, no
+direcciones. Se admiten cadenas vacías, Unicode y los mismos escapes que la
+gramática reconoce.
+
 También se admiten parámetros `i32`, `f64`, `bool` y `char`, incluidos parámetros mutables,
 llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
@@ -74,5 +90,5 @@ etiquetas únicas. `break` salta a la salida del ciclo más cercano y `continue`
 vuelve al encabezado de ese ciclo; en `while` esto vuelve a evaluar la
 condición.
 
-Se rechazan controladamente constantes globales, arreglos, `String` y todos
-los demás tipos o sentencias.
+Se rechazan controladamente constantes globales, arreglos y todos los demás
+tipos o sentencias.
