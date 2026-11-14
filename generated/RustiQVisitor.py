@@ -64,6 +64,11 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#tupleAccess.
+    def visitTupleAccess(self, ctx:RustiQParser.TupleAccessContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#assignmentOp.
     def visitAssignmentOp(self, ctx:RustiQParser.AssignmentOpContext):
         return self.visitChildren(ctx)
@@ -156,6 +161,11 @@ class RustiQVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by RustiQParser#primary.
     def visitPrimary(self, ctx:RustiQParser.PrimaryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#tupleLiteral.
+    def visitTupleLiteral(self, ctx:RustiQParser.TupleLiteralContext):
         return self.visitChildren(ctx)
 
 

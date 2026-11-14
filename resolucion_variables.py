@@ -1,5 +1,6 @@
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
+from tipos_compuestos import normalizar_tipo
 
 
 class ResolucionVariables(RustiQVisitor):
@@ -46,12 +47,7 @@ class ResolucionVariables(RustiQVisitor):
 
     def obtener_tipo_declarado(self, ctx):
         nodo = ctx.getTypedRuleContext(RustiQParser.TypeContext, 0)
-        def normalizar(tipo):
-            interior = tipo.getTypedRuleContext(RustiQParser.TypeContext, 0)
-            if interior is None:
-                return tipo.getText()
-            return f"[{normalizar(interior)};{int(tipo.INT().getText())}]"
-        return normalizar(nodo) if nodo is not None else None
+        return normalizar_tipo(nodo) if nodo is not None else None
 
     def buscar(self, nombre):
         for ambito in reversed(self.ambitos):

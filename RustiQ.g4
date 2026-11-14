@@ -38,6 +38,7 @@ type
     | CHAR
     | STRING
     | LBRACKET type SEMICOLON INT RBRACKET
+    | LPAREN type COMMA type (COMMA type)* COMMA? RPAREN
     ;
 // =====================================================
 // 2. BLOQUES Y SENTENCIAS
@@ -66,7 +67,7 @@ letDecl
 
 // Asignación simple o compuesta a una variable.
 assignment
-    : IDENT indexAccess* assignmentOp expression
+    : IDENT (indexAccess | tupleAccess)* assignmentOp expression
     ;
 
 // Cada acceso mantiene su propia expresión de índice.
@@ -74,6 +75,14 @@ assignment
 // al identificador y al valor de las asignaciones existentes.
 indexAccess
     : LBRACKET expression RBRACKET
+    ;
+
+// Acceso por posición a una tupla, por ejemplo dato.0.
+// TUPLE_FIELD evita que dato.0.1 se confunda con un decimal.
+// La alternativa DOT INT admite espacios entre el punto y el número.
+tupleAccess
+    : TUPLE_FIELD
+    | DOT INT
     ;
 
 // El análisis semántico comprobará mutabilidad,
@@ -169,7 +178,7 @@ unary
 // Acceso a elementos de arreglos.
 // Permite accesos anidados: matriz[0][1].
 postfix
-    : primary (LBRACKET expression RBRACKET)*
+    : primary (LBRACKET expression RBRACKET | tupleAccess)*
     ;
 
 // Valores básicos y expresiones entre paréntesis.
@@ -181,9 +190,16 @@ primary
     | CHAR_LITERAL
     | STRING_LITERAL
     | arrayLiteral
+    | tupleLiteral
     | functionCall
     | IDENT
     | LPAREN expression RPAREN
+    ;
+
+// Tupla de dos o más elementos, que pueden tener distintos tipos.
+// Una sola expresión entre paréntesis sigue siendo agrupación.
+tupleLiteral
+    : LPAREN expression COMMA expression (COMMA expression)* COMMA? RPAREN
     ;
 
 // Elementos separados por comas.
@@ -230,6 +246,9 @@ ARROW     : '->';
 SEMICOLON : ';';
 COLON     : ':';
 COMMA     : ',';
+// Un campo completo permite encadenar .0.1 sin consumir FLOAT.
+TUPLE_FIELD : '.' [0-9]+;
+DOT         : '.';
 
 EQ     : '==';
 NEQ    : '!=';

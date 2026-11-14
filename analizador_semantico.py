@@ -2,6 +2,9 @@ from copy import copy, deepcopy
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 from gestor_constantes import GestorConstantes
+from tipos_compuestos import (
+    normalizar_tipo, separar_tipo_tupla, accesos_lectura, accesos_escritura,
+)
 
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
@@ -19,7 +22,7 @@ class AnalizadorSemantico(RustiQVisitor):
         # Tipo calculado para cada nodo de expresión.
         self.tipos_expresiones = {}
 
-        # Tipo contextual de literales de arreglo, incluidos los vacíos.
+        # Tipo contextual de arreglos y tuplas, incluidos arreglos vacíos.
         # Las claves son nodos del mismo árbol, sin crear un AST adicional.
         self.tipos_esperados = {}
 
@@ -46,14 +49,10 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.normalizar_tipo(nodo) if nodo is not None else None
 
     def normalizar_tipo(self, nodo):
-        # Normalizar el tamaño: [i32;00] y [i32;0] son el mismo tipo.
-        interior = nodo.getTypedRuleContext(RustiQParser.TypeContext, 0)
-        if interior is None:
-            return nodo.getText()
-        return f"[{self.normalizar_tipo(interior)};{int(nodo.INT().getText())}]"
+        return normalizar_tipo(nodo)
 
     def visitar_con_tipo(self, ctx, esperado=None):
-        """Propaga el tipo esperado solo a un literal directo o entre paréntesis.
+        """Propaga el tipo esperado a literales compuestos directos o entre paréntesis.
 
         No se propaga a operandos aritméticos, índices o llamadas: esos
         contextos tienen sus propias reglas de tipos.
@@ -61,12 +60,14 @@ class AnalizadorSemantico(RustiQVisitor):
         if esperado is not None:
             nodo = ctx
             while nodo is not None:
-                if isinstance(nodo, RustiQParser.ArrayLiteralContext):
+                if isinstance(nodo, (RustiQParser.ArrayLiteralContext, RustiQParser.TupleLiteralContext)):
                     self.tipos_esperados[nodo] = esperado
                     break
                 if isinstance(nodo, RustiQParser.PrimaryContext):
                     if nodo.arrayLiteral() is not None:
                         nodo = nodo.arrayLiteral()
+                    elif nodo.tupleLiteral() is not None:
+                        nodo = nodo.tupleLiteral()
                     elif nodo.expression() is not None:
                         nodo = nodo.expression()
                     else:
@@ -530,7 +531,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitAssignment(self, ctx):
         # Conservar el comportamiento de las asignaciones simples.
-        if ctx.indexAccess():
+        if ctx.indexAccess() or ctx.tupleAccess():
             return self.visitar_asignacion_elemento(ctx)
 
         token = ctx.IDENT().getSymbol()
@@ -893,19 +894,43 @@ class AnalizadorSemantico(RustiQVisitor):
                 self.guardar_tipo(nodos[posicion], tipo)
         return tipo
 
+    def comprobar_accesos(self, tipo, accesos):
+        """Aplica accesos de arreglo y de tupla en el orden escrito."""
+        for clase, nodo in accesos:
+            if clase == "indice":
+                es_destino = isinstance(nodo, RustiQParser.IndexAccessContext)
+                expresion = nodo.expression() if es_destino else nodo
+                tipo = self.comprobar_indices(
+                    tipo, [expresion], [nodo] if es_destino else None,
+                )
+            elif tipo is not None:
+                campos = separar_tipo_tupla(tipo)
+                posicion = int(nodo.getText()[1:])
+                if campos is None:
+                    self.reportar(nodo.start, f"No se puede acceder a un campo de tupla en un valor de tipo {tipo}.")
+                    tipo = None
+                elif posicion >= len(campos):
+                    self.reportar(
+                        nodo.start,
+                        f"Campo {posicion} fuera de rango para una tupla de {len(campos)} elementos."
+                    )
+                    tipo = None
+                else:
+                    tipo = campos[posicion]
+                    self.guardar_tipo(nodo, tipo)
+        return tipo
+
     def visitPostfix(self, ctx):
-        tipo = self.comprobar_indices(self.visit(ctx.primary()), ctx.expression())
+        tipo = self.comprobar_accesos(self.visit(ctx.primary()), accesos_lectura(ctx))
         return self.guardar_tipo(ctx, tipo)
 
     def visitar_asignacion_elemento(self, ctx):
         token = ctx.IDENT().getSymbol()
         variable = self.buscar_variable(token.text)
         errores_antes = len(self.errores)
-        accesos = ctx.indexAccess()
-        tipo_destino = self.comprobar_indices(
+        tipo_destino = self.comprobar_accesos(
             variable["tipo"] if variable is not None else None,
-            [acceso.expression() for acceso in accesos],
-            accesos,
+            accesos_escritura(ctx),
         )
         tipo_valor = self.visitar_con_tipo(ctx.expression(), tipo_destino)
         # También registrar el tipo del destino completo para el backend.
@@ -914,8 +939,8 @@ class AnalizadorSemantico(RustiQVisitor):
         if variable is None:
             self.reportar(token, f"La variable '{token.text}' no está declarada.")
             return
-        # Asignar un elemento requiere un arreglo ya inicializado.
-        # No se deduce inicialización parcial elemento por elemento.
+        # Escribir un elemento o campo exige inicializar el valor completo.
+        # No se deduce inicialización parcial por elementos o campos.
         if not variable["inicializada"]:
             self.reportar(token, f"La variable '{token.text}' se usa antes de inicializarla.")
             return
@@ -969,6 +994,22 @@ class AnalizadorSemantico(RustiQVisitor):
                 valido = False
         return self.guardar_tipo(ctx, f"[{elemento};{len(expresiones)}]" if valido else None)
 
+    def visitTupleLiteral(self, ctx):
+        # Cada posición tiene su propio tipo. El contexto permite
+        # resolver arreglos vacíos dentro de una tupla anotada.
+        esperados = separar_tipo_tupla(self.tipos_esperados.get(ctx)) or []
+        tipos = [
+            self.visitar_con_tipo(expresion, esperados[i] if i < len(esperados) else None)
+            for i, expresion in enumerate(ctx.expression())
+        ]
+        if any(tipo is None for tipo in tipos):
+            return self.guardar_tipo(ctx, None)
+        for expresion, tipo in zip(ctx.expression(), tipos):
+            if tipo == "unit":
+                self.reportar(expresion.start, "Una tupla no puede contener valores unit.")
+                return self.guardar_tipo(ctx, None)
+        return self.guardar_tipo(ctx, "(" + ",".join(tipos) + ")")
+
     def visitPrimary(self, ctx):
         if ctx.INT() is not None:
             tipo = "i32"
@@ -988,6 +1029,9 @@ class AnalizadorSemantico(RustiQVisitor):
         # Determinar el tipo y tamaño de un arreglo literal.
         elif ctx.arrayLiteral() is not None:
             tipo = self.visit(ctx.arrayLiteral())
+
+        elif ctx.tupleLiteral() is not None:
+            tipo = self.visit(ctx.tupleLiteral())
 
         elif ctx.functionCall() is not None:
             tipo = self.visit(ctx.functionCall())

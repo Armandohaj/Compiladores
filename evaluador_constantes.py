@@ -1,6 +1,7 @@
 import math
 
 from generated.RustiQVisitor import RustiQVisitor
+from tipos_compuestos import accesos_lectura
 
 
 class ErrorConstante(Exception):
@@ -206,37 +207,29 @@ class EvaluadorConstantes(RustiQVisitor):
 
     def visitPostfix(self, ctx):
         valor = self.visit(ctx.primary())
-
-        for expresion_indice in ctx.expression():
-            indice = self.visit(expresion_indice)
-
-            # El semántico comprueba los tipos antes de evaluar.
-            # Estas guardas evitan filtrar excepciones de Python
-            # si se utiliza el evaluador directamente.
+        for clase, nodo in accesos_lectura(ctx):
+            if clase == "campo":
+                posicion = int(nodo.getText()[1:])
+                if not isinstance(valor, tuple):
+                    raise ErrorConstante(nodo.start, "Solo se pueden acceder campos de una tupla constante.")
+                if posicion >= len(valor):
+                    raise ErrorConstante(nodo.start, f"Campo {posicion} fuera de rango para una tupla de {len(valor)} elementos.")
+                valor = valor[posicion]
+                continue
+            indice = self.visit(nodo)
             if not isinstance(valor, list):
-                raise ErrorConstante(
-                    expresion_indice.start,
-                    "Solo se pueden indexar arreglos en una constante."
-                )
-
+                raise ErrorConstante(nodo.start, "Solo se pueden indexar arreglos en una constante.")
             if type(indice) is not int:
-                raise ErrorConstante(
-                    expresion_indice.start,
-                    "El índice de un arreglo debe ser i32."
-                )
-
-            # Python acepta índices negativos; RustiQ los rechaza.
-            # También comprobar índices calculados como 1 + 2.
+                raise ErrorConstante(nodo.start, "El índice de un arreglo debe ser i32.")
+            # No permitir los índices negativos que Python sí acepta.
             if indice < 0 or indice >= len(valor):
-                raise ErrorConstante(
-                    expresion_indice.start,
-                    f"Índice {indice} fuera de rango "
-                    f"para un arreglo de tamaño {len(valor)}."
-                )
-
+                raise ErrorConstante(nodo.start, f"Índice {indice} fuera de rango para un arreglo de tamaño {len(valor)}.")
             valor = valor[indice]
-
         return valor
+
+    def visitTupleLiteral(self, ctx):
+        # tuple preserva la diferencia entre una tupla y un arreglo.
+        return tuple(self.visit(expresion) for expresion in ctx.expression())
 
     def visitArrayLiteral(self, ctx):
         # Cada elemento puede ser otra expresión o un arreglo.
@@ -297,6 +290,9 @@ class EvaluadorConstantes(RustiQVisitor):
 
         if ctx.arrayLiteral() is not None:
             return self.visit(ctx.arrayLiteral())
+
+        if ctx.tupleLiteral() is not None:
+            return self.visit(ctx.tupleLiteral())
 
         if ctx.functionCall() is not None:
             raise ErrorConstante(
