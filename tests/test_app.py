@@ -30,6 +30,7 @@ def test_compilar_devuelve_wasm_base64_valido():
     assert respuesta.status_code == 200
     assert datos["valido"]
     assert datos["errores"] == []
+    assert datos["main"] == {"parametros": [], "retorno": "i32"}
     wasm = base64.b64decode(datos["wasm_base64"], validate=True)
     assert wasm.startswith(b"\x00asm")
     wasmtime.Module(wasmtime.Engine(), wasm)
@@ -46,6 +47,7 @@ def test_compilar_informa_programa_invalido_sin_wasm():
     assert respuesta.status_code == 200
     assert not datos["valido"]
     assert datos["wasm_base64"] is None
+    assert datos["main"] is None
     assert any(error["fase"] == "lexico" for error in datos["errores"])
 
 
@@ -66,7 +68,21 @@ def test_compilar_rechaza_funcionalidad_wasm_no_implementada():
     assert respuesta.status_code == 200
     assert not datos["valido"]
     assert datos["wasm_base64"] is None
+    assert datos["main"] is None
     assert datos["errores"][0]["fase"] == "generacion"
+
+
+def test_compilar_informa_firma_main_no_ejecutable_en_el_editor():
+    cliente = app.test_client()
+    respuesta = cliente.post(
+        "/api/compilar",
+        json={"codigo": "fn main() -> bool { return true; }"},
+    )
+
+    datos = respuesta.get_json()
+    assert respuesta.status_code == 200
+    assert datos["valido"]
+    assert datos["main"] == {"parametros": [], "retorno": "bool"}
 
 
 def test_compilar_requiere_codigo_de_texto():

@@ -36,14 +36,18 @@ def compilar():
 
     resultado = compilar_programa(datos["codigo"])
     wasm_base64 = None
+    firma_main = None
     if resultado["valido"]:
         # Base64 permite transportar el binario Wasm sin ejecutar código en Flask.
         wasm_base64 = base64.b64encode(resultado["wasm"]).decode("ascii")
+        # El navegador recibe la firma calculada por el análisis semántico.
+        firma_main = analizar_programa(datos["codigo"])["funciones"].get("main")
 
     return jsonify({
         "valido": resultado["valido"],
         "errores": resultado["errores"],
         "wasm_base64": wasm_base64,
+        "main": firma_main,
     })
 
 
