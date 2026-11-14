@@ -45,6 +45,19 @@ exportación con argumentos, por ejemplo:
 ejecutar_modulo_wasm(resultado["wasm"], "doble", 21)
 ```
 
+## Ejecución desde PowerShell
+
+Para compilar un archivo RustiQ, guardar el binario junto al archivo fuente y
+ejecutar `main()` con Wasmtime en un proceso separado:
+
+```powershell
+python .\ejecutar_escritorio.py .\programa.rustiq
+```
+
+Por ahora el ejecutor admite `main()` sin parámetros con retorno `i32`. La
+ejecución tiene un límite de tres segundos; si no termina, el proceso Wasm se
+detiene y se informa el límite superado.
+
 ## Alcance actual
 
 Se admiten funciones que retornan `i32`, `f64`, `char`, `bool` o `String`
