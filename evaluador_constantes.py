@@ -185,7 +185,9 @@ class EvaluadorConstantes(RustiQVisitor):
     # =================================================
 
     def visitUnary(self, ctx):
-        valor = self.visit(ctx.primary())
+        # La gramática aplica los unarios al resultado de postfix,
+        # que también puede contener uno o varios accesos a arreglos.
+        valor = self.visit(ctx.postfix())
 
         if ctx.MINUS() is not None:
             valor = -valor
@@ -201,6 +203,44 @@ class EvaluadorConstantes(RustiQVisitor):
     # =================================================
     # 5. LITERALES Y REFERENCIAS
     # =================================================
+
+    def visitPostfix(self, ctx):
+        valor = self.visit(ctx.primary())
+
+        for expresion_indice in ctx.expression():
+            indice = self.visit(expresion_indice)
+
+            # El semántico comprueba los tipos antes de evaluar.
+            # Estas guardas evitan filtrar excepciones de Python
+            # si se utiliza el evaluador directamente.
+            if not isinstance(valor, list):
+                raise ErrorConstante(
+                    expresion_indice.start,
+                    "Solo se pueden indexar arreglos en una constante."
+                )
+
+            if type(indice) is not int:
+                raise ErrorConstante(
+                    expresion_indice.start,
+                    "El índice de un arreglo debe ser i32."
+                )
+
+            # Python acepta índices negativos; RustiQ los rechaza.
+            # También comprobar índices calculados como 1 + 2.
+            if indice < 0 or indice >= len(valor):
+                raise ErrorConstante(
+                    expresion_indice.start,
+                    f"Índice {indice} fuera de rango "
+                    f"para un arreglo de tamaño {len(valor)}."
+                )
+
+            valor = valor[indice]
+
+        return valor
+
+    def visitArrayLiteral(self, ctx):
+        # Cada elemento puede ser otra expresión o un arreglo.
+        return [self.visit(expresion) for expresion in ctx.expression()]
 
     def decodificar_texto(self, texto):
         # Quitar las comillas y traducir los escapes
@@ -254,6 +294,9 @@ class EvaluadorConstantes(RustiQVisitor):
             return self.decodificar_texto(
                 ctx.STRING_LITERAL().getText()
             )
+
+        if ctx.arrayLiteral() is not None:
+            return self.visit(ctx.arrayLiteral())
 
         if ctx.functionCall() is not None:
             raise ErrorConstante(
