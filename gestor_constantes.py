@@ -79,8 +79,8 @@ class GestorConstantes:
                         "con una llamada a función."
                     )
 
-            tipo = self.semantico.visit(ctx.expression())
             esperado = self.simbolos[nombre]["tipo"]
+            tipo = self.semantico.visitar_con_tipo(ctx.expression(), esperado)
 
             if tipo is not None and tipo != esperado:
                 self.semantico.reportar(

@@ -1,7 +1,7 @@
 """Regresión de arreglos e índices; no ejecuta el backend Wasm.
 
 Ejecutar con: python pruebas_arreglos.py
-Los arreglos vacíos siguen siendo un caso rechazado de forma controlada.
+Los arreglos vacíos requieren un tipo proporcionado por el contexto.
 """
 
 from main import analizar_programa
@@ -96,8 +96,8 @@ INVALIDAS = [
      "no puede inicializarse con una llamada"),
     ("Ciclo de dependencias con arreglo",
      "const A: [i32; 1] = [X]; const X: i32 = A[0];", "Dependencia circular"),
-    ("Arreglo vacío aún no admitido",
-     "fn main() { let a: [i32; 0] = []; }", "arreglo vacío"),
+    ("Arreglo vacío sin tipo contextual",
+     "fn main() { let a = []; }", "arreglo vacío"),
     ("Desbordamiento en un elemento constante",
      "const A: [i32; 1] = [2147483647 + 1];", "fuera del rango de i32"),
     ("Arreglo sin inicializar",
