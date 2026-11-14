@@ -1,13 +1,22 @@
+"""Análisis semántico: comprueba qué significa un programa ya bien formado.
+
+ANTLR entrega el árbol; este visitor lo recorre y calcula tipos, busca
+identificadores, controla ámbitos, mutabilidad e inicialización y comprueba
+retornos. Los errores son datos estructurados, no mensajes impresos.
+No ejecuta el programa RustiQ ni genera WebAssembly.
+"""
 from copy import copy, deepcopy
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 from gestor_constantes import GestorConstantes
+from gestor_estructuras import GestorEstructuras
 from tipos_compuestos import (
     normalizar_tipo, separar_tipo_tupla, accesos_lectura, accesos_escritura,
 )
 
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
+        """Prepara el estado de un análisis independiente. No reutilizar símbolos entre programas."""
         super().__init__()
 
         # Pila de ámbitos: cada diccionario contiene variables.
@@ -29,6 +38,9 @@ class AnalizadorSemantico(RustiQVisitor):
         # Firmas de funciones: parámetros y tipo de retorno.
         self.funciones = {}
 
+        # Nombre de estructura -> campos y sus tipos.
+        self.estructuras = {}
+
         # Cantidad de ámbitos existentes antes de cada ciclo.
         self.limites_ciclos = []
 
@@ -37,6 +49,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def reportar(self, token, mensaje):
+        """Agrega un diagnóstico semántico. Convierte la columna de ANTLR (base cero) a base uno."""
         self.errores.append({
             "fase": "semantico",
             "mensaje": mensaje,
@@ -45,10 +58,12 @@ class AnalizadorSemantico(RustiQVisitor):
         })
 
     def obtener_tipo_declarado(self, ctx):
+        """Lee la anotación type del nodo; devuelve su nombre canónico o None si se omitió."""
         nodo = ctx.getTypedRuleContext(RustiQParser.TypeContext, 0)
         return self.normalizar_tipo(nodo) if nodo is not None else None
 
     def normalizar_tipo(self, nodo):
+        """Unifica representaciones de tipos compuestos y tamaños, para compararlos como cadenas."""
         return normalizar_tipo(nodo)
 
     def visitar_con_tipo(self, ctx, esperado=None):
@@ -79,11 +94,13 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.visit(ctx)
 
     def guardar_tipo(self, ctx, tipo):
+        """Asocia un nodo con su tipo y devuelve ese mismo tipo. None representa un error previo."""
         self.tipos_expresiones[ctx] = tipo
         return tipo
 
     def buscar_variable_con_ambito(self, nombre):
         # Primero buscar variables y parámetros locales.
+        """Busca desde el bloque interior hacia afuera; después consulta constantes globales. Devuelve símbolo e índice de ámbito."""
         for indice in range(len(self.ambitos) - 1, -1, -1):
             if nombre in self.ambitos[indice]:
                 return self.ambitos[indice][nombre], indice
@@ -99,10 +116,12 @@ class AnalizadorSemantico(RustiQVisitor):
         return None, None
 
     def buscar_variable(self, nombre):
+        """Devuelve los datos del identificador visible, o None si no fue declarado."""
         variable, _ = self.buscar_variable_con_ambito(nombre)
         return variable
 
     def obtener_parametros(self, ctx):
+        """Devuelve nodos de parámetros; una función sin lista produce una lista vacía."""
         lista = ctx.parameterList()
         return lista.parameter() if lista is not None else []
 
@@ -111,6 +130,10 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitProgram(self, ctx):
+        """Registra estructuras, firmas y constantes antes de revisar cuerpos. Así admite referencias adelantadas sin ejecutar funciones."""
+        gestor_estructuras = GestorEstructuras(self)
+        self.estructuras = gestor_estructuras.registrar(ctx)
+        gestor_estructuras.validar(ctx)
         # Registrar todas las funciones antes de revisar cuerpos.
         for funcion in ctx.functionDecl():
             token = funcion.IDENT().getSymbol()
@@ -152,6 +175,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitFunctionDecl(self, ctx):
+        """Aísla el estado de la función, declara parámetros como inicializados y comprueba sus retornos. Restaura el contexto al salir."""
         anteriores = self.ambitos
         retorno_anterior = self.tipo_retorno
         ciclos_anteriores = self.limites_ciclos
@@ -209,6 +233,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitFunctionCall(self, ctx):
+        """Comprueba existencia, cantidad y tipos de argumentos; devuelve el tipo de retorno. Visita argumentos aunque haya otros errores."""
         token = ctx.IDENT().getSymbol()
         nombre = token.text
         lista = ctx.argumentList()
@@ -280,6 +305,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def bloque_garantiza_retorno(self, ctx):
+        """Devuelve si este bloque garantiza retorno según el análisis conservador actual. Un ciclo no se considera suficiente por sí solo."""
         for sentencia in ctx.statement():
             if sentencia.returnStmt() is not None:
                 return True
@@ -304,6 +330,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return False
 
     def if_garantiza_retorno(self, ctx):
+        """Exige else y retorno garantizado en ambas ramas, incluyendo cadenas else if."""
         if ctx.ELSE() is None:
             return False
 
@@ -318,6 +345,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.bloque_garantiza_retorno(bloques[1])
 
     def visitReturnStmt(self, ctx):
+        """Compara el tipo devuelto con el esperado por la función. Un return vacío tiene tipo unit."""
         expresion = ctx.expression()
         tipo = (
             self.visitar_con_tipo(expresion, self.tipo_retorno)
@@ -338,6 +366,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitBlock(self, ctx):
+        """Abre un ámbito, visita las sentencias y lo cierra siempre. Las variables locales dejan de ser visibles al salir."""
         self.ambitos.append({})
 
         try:
@@ -347,6 +376,7 @@ class AnalizadorSemantico(RustiQVisitor):
             self.ambitos.pop()
 
     def visitIfStmt(self, ctx):
+        """Analiza ambas ramas desde copias del mismo estado. Una variable solo queda inicializada si lo está en todos los caminos que continúan."""
         tipo = self.visit(ctx.expression())
 
         if tipo is not None and tipo != "bool":
@@ -408,6 +438,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitWhileStmt(self, ctx):
+        """Exige condición bool y analiza el cuerpo en contexto de ciclo. Restaura inicialización externa porque puede ejecutarse cero veces."""
         tipo = self.visit(ctx.expression())
 
         if tipo is not None and tipo != "bool":
@@ -429,6 +460,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitLoopStmt(self, ctx):
         # Guardar el estado de las variables externas.
+        """Habilita break y continue dentro del cuerpo. La inicialización al salir sigue siendo conservadora hasta modelar todos los caminos de break."""
         inicial = deepcopy(self.ambitos)
 
         # Registrar que estamos dentro de un ciclo.
@@ -446,6 +478,7 @@ class AnalizadorSemantico(RustiQVisitor):
             self.ambitos = inicial
 
     def visitBreakStmt(self, ctx):
+        """Rechaza break si no existe un ciclo envolvente."""
         if not self.limites_ciclos:
             self.reportar(
                 ctx.BREAK().getSymbol(),
@@ -453,6 +486,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
 
     def visitContinueStmt(self, ctx):
+        """Rechaza continue si no existe un ciclo envolvente."""
         if not self.limites_ciclos:
             self.reportar(
                 ctx.CONTINUE().getSymbol(),
@@ -464,6 +498,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitLetDecl(self, ctx):
+        """Analiza el valor antes de registrar el nombre, infiere o comprueba el tipo y registra mutabilidad e inicialización."""
         token = ctx.IDENT().getSymbol()
         nombre = token.text
         ambito = self.ambitos[-1]
@@ -531,7 +566,8 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitAssignment(self, ctx):
         # Conservar el comportamiento de las asignaciones simples.
-        if ctx.indexAccess() or ctx.tupleAccess():
+        """Distingue reemplazo completo de escritura de un campo o elemento. Comprueba lectura previa en asignaciones compuestas."""
+        if ctx.indexAccess() or ctx.tupleAccess() or ctx.fieldAccess():
             return self.visitar_asignacion_elemento(ctx)
 
         token = ctx.IDENT().getSymbol()
@@ -655,9 +691,11 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitExpression(self, ctx):
+        """Devuelve y registra el tipo que calcula la expresión de menor prioridad, logicalOr."""
         return self.guardar_tipo(ctx, self.visit(ctx.logicalOr()))
 
     def comprobar_logica(self, izquierdo, derecho, token):
+        """Exige dos operandos bool y devuelve bool. Propaga None sin duplicar errores de operandos."""
         if izquierdo is None or derecho is None:
             return None
 
@@ -672,6 +710,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return "bool"
 
     def visitLogicalOr(self, ctx):
+        """Comprueba los operandos de ||. El semántico revisa todos aunque en ejecución exista cortocircuito."""
         operandos = ctx.logicalAnd()
         tipo = self.visit(operandos[0])
 
@@ -684,6 +723,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, tipo)
 
     def visitLogicalAnd(self, ctx):
+        """Comprueba los operandos de && y registra el tipo final."""
         operandos = ctx.comparison()
         tipo = self.visit(operandos[0])
 
@@ -700,6 +740,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitComparison(self, ctx):
+        """Exige tipos compatibles; las comparaciones de orden siguen limitadas a números. Una comparación válida produce bool."""
         operandos = ctx.additive()
         izquierdo = self.visit(operandos[0])
 
@@ -755,6 +796,7 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def comprobar_operacion(self, izquierdo, derecho, token):
+        """Valida aritmética: números del mismo tipo y módulo solo i32. No introduce conversiones implícitas."""
         if izquierdo is None or derecho is None:
             return None
 
@@ -786,6 +828,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return izquierdo
 
     def visitAdditive(self, ctx):
+        """Comprueba sumas y restas de izquierda a derecha, respetando la prioridad ya expresada por el parser."""
         operandos = ctx.multiplicative()
         tipo = self.visit(operandos[0])
 
@@ -799,6 +842,7 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.guardar_tipo(ctx, tipo)
 
     def visitMultiplicative(self, ctx):
+        """Comprueba multiplicación, división y módulo antes de que se apliquen sumas o restas."""
         operandos = ctx.unary()
         tipo = self.visit(operandos[0])
 
@@ -818,6 +862,7 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitUnary(self, ctx):
         # Primero resolver el valor y sus accesos:
         # por ejemplo, numeros[0].
+        """Calcula el tipo tras los accesos y después comprueba - o !. No calcula el valor numérico."""
         tipo = self.visit(ctx.postfix())
 
         if tipo is not None:
@@ -903,7 +948,19 @@ class AnalizadorSemantico(RustiQVisitor):
                 tipo = self.comprobar_indices(
                     tipo, [expresion], [nodo] if es_destino else None,
                 )
-            elif tipo is not None:
+            elif clase == "nombre" and tipo is not None:
+                nombre = nodo.IDENT().getText()
+                campos = self.estructuras.get(tipo)
+                if campos is None:
+                    self.reportar(nodo.start, f"No se puede acceder al campo '{nombre}' en un valor de tipo {tipo}.")
+                    tipo = None
+                elif nombre not in campos:
+                    self.reportar(nodo.IDENT().getSymbol(), f"La estructura '{tipo}' no tiene el campo '{nombre}'.")
+                    tipo = None
+                else:
+                    tipo = campos[nombre]
+                    self.guardar_tipo(nodo, tipo)
+            elif clase == "campo" and tipo is not None:
                 campos = separar_tipo_tupla(tipo)
                 posicion = int(nodo.getText()[1:])
                 if campos is None:
@@ -921,10 +978,12 @@ class AnalizadorSemantico(RustiQVisitor):
         return tipo
 
     def visitPostfix(self, ctx):
+        """Devuelve el tipo final de una lectura, como grupo.personas[0].edad."""
         tipo = self.comprobar_accesos(self.visit(ctx.primary()), accesos_lectura(ctx))
         return self.guardar_tipo(ctx, tipo)
 
     def visitar_asignacion_elemento(self, ctx):
+        """Exige un valor completo inicializado y mutable; comprueba tipo del destino y del valor. No inicializa parcialmente por campos."""
         token = ctx.IDENT().getSymbol()
         variable = self.buscar_variable(token.text)
         errores_antes = len(self.errores)
@@ -967,6 +1026,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
 
     def visitArrayLiteral(self, ctx):
+        """Infiere un tipo homogéneo con tamaño fijo. Para [] necesita un contexto que indique el tipo de elemento."""
         expresiones = ctx.expression()
         esperado = self.separar_tipo_arreglo(self.tipos_esperados.get(ctx))
         if not expresiones:
@@ -997,6 +1057,7 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitTupleLiteral(self, ctx):
         # Cada posición tiene su propio tipo. El contexto permite
         # resolver arreglos vacíos dentro de una tupla anotada.
+        """Calcula un tipo por posición; los elementos pueden tener tipos distintos. Propaga contexto a arreglos vacíos interiores."""
         esperados = separar_tipo_tupla(self.tipos_esperados.get(ctx)) or []
         tipos = [
             self.visitar_con_tipo(expresion, esperados[i] if i < len(esperados) else None)
@@ -1010,7 +1071,41 @@ class AnalizadorSemantico(RustiQVisitor):
                 return self.guardar_tipo(ctx, None)
         return self.guardar_tipo(ctx, "(" + ",".join(tipos) + ")")
 
+    def visitStructLiteral(self, ctx):
+        """Comprueba un constructor y devuelve su tipo nominal.
+
+        Aunque el orden puede variar, cada campo debe aparecer una vez.
+        Se visitan todos los valores para no ocultar errores en ellos.
+        """
+        token = ctx.IDENT().getSymbol()
+        nombre = token.text
+        campos = self.estructuras.get(nombre)
+        errores_antes = len(self.errores)
+        if campos is None:
+            self.reportar(token, f"La estructura '{nombre}' no está declarada.")
+        vistos = set()
+        for campo in ctx.fieldInit():
+            identificador = campo.IDENT().getSymbol()
+            esperado = campos.get(identificador.text) if campos is not None else None
+            tipo = self.visitar_con_tipo(campo.expression(), esperado)
+            if identificador.text in vistos:
+                self.reportar(identificador, f"El campo '{identificador.text}' está repetido al construir '{nombre}'.")
+            vistos.add(identificador.text)
+            if campos is not None:
+                if identificador.text not in campos:
+                    self.reportar(identificador, f"La estructura '{nombre}' no tiene el campo '{identificador.text}'.")
+                elif tipo is not None and tipo != esperado:
+                    self.reportar(identificador, f"Tipo incompatible en '{nombre}.{identificador.text}': se esperaba {esperado}, pero se recibió {tipo}.")
+        if campos is not None:
+            # Mantener el orden de declaración en los diagnósticos.
+            for faltante in campos:
+                if faltante not in vistos:
+                    self.reportar(token, f"Falta el campo '{faltante}' al construir '{nombre}'.")
+        valido = campos is not None and len(self.errores) == errores_antes
+        return self.guardar_tipo(ctx, nombre if valido else None)
+
     def visitPrimary(self, ctx):
+        """Determina tipos de literales, identificadores, constructores, llamadas y expresiones agrupadas."""
         if ctx.INT() is not None:
             tipo = "i32"
 
@@ -1035,6 +1130,9 @@ class AnalizadorSemantico(RustiQVisitor):
 
         elif ctx.functionCall() is not None:
             tipo = self.visit(ctx.functionCall())
+
+        elif ctx.structLiteral() is not None:
+            tipo = self.visit(ctx.structLiteral())
 
         elif ctx.IDENT() is not None:
             token = ctx.IDENT().getSymbol()

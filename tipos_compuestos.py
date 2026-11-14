@@ -38,6 +38,8 @@ def accesos_lectura(ctx):
             yield "indice", nodo
         elif isinstance(nodo, RustiQParser.TupleAccessContext):
             yield "campo", nodo
+        elif isinstance(nodo, RustiQParser.FieldAccessContext):
+            yield "nombre", nodo
 
 
 def accesos_escritura(ctx):
@@ -47,3 +49,5 @@ def accesos_escritura(ctx):
             yield "indice", nodo
         elif isinstance(nodo, RustiQParser.TupleAccessContext):
             yield "campo", nodo
+        elif isinstance(nodo, RustiQParser.FieldAccessContext):
+            yield "nombre", nodo

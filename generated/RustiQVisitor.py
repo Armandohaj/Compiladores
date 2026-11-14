@@ -14,6 +14,16 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#structDecl.
+    def visitStructDecl(self, ctx:RustiQParser.StructDeclContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#fieldDecl.
+    def visitFieldDecl(self, ctx:RustiQParser.FieldDeclContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#constDecl.
     def visitConstDecl(self, ctx:RustiQParser.ConstDeclContext):
         return self.visitChildren(ctx)
@@ -66,6 +76,11 @@ class RustiQVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by RustiQParser#tupleAccess.
     def visitTupleAccess(self, ctx:RustiQParser.TupleAccessContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#fieldAccess.
+    def visitFieldAccess(self, ctx:RustiQParser.FieldAccessContext):
         return self.visitChildren(ctx)
 
 
@@ -161,6 +176,16 @@ class RustiQVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by RustiQParser#primary.
     def visitPrimary(self, ctx:RustiQParser.PrimaryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#structLiteral.
+    def visitStructLiteral(self, ctx:RustiQParser.StructLiteralContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#fieldInit.
+    def visitFieldInit(self, ctx:RustiQParser.FieldInitContext):
         return self.visitChildren(ctx)
 
 

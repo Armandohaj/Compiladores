@@ -4,9 +4,19 @@ grammar RustiQ;
 // 1. PROGRAMA, FUNCIONES Y TIPOS
 // =====================================================
 
-// El archivo puede contener funciones y constantes globales.
+// El archivo puede contener funciones, constantes globales y estructuras.
 program
-    : (functionDecl | constDecl)* EOF
+    : (functionDecl | constDecl | structDecl)* EOF
+    ;
+
+// Estructura nominal: cada nombre define un tipo diferente.
+// Todos sus campos deben indicarse al construir un valor.
+structDecl
+    : STRUCT IDENT LBRACE (fieldDecl (COMMA fieldDecl)* COMMA?)? RBRACE
+    ;
+
+fieldDecl
+    : IDENT COLON type
     ;
 
 // Constante global con tipo y valor obligatorios.
@@ -39,6 +49,7 @@ type
     | STRING
     | LBRACKET type SEMICOLON INT RBRACKET
     | LPAREN type COMMA type (COMMA type)* COMMA? RPAREN
+    | IDENT
     ;
 // =====================================================
 // 2. BLOQUES Y SENTENCIAS
@@ -67,7 +78,7 @@ letDecl
 
 // Asignación simple o compuesta a una variable.
 assignment
-    : IDENT (indexAccess | tupleAccess)* assignmentOp expression
+    : IDENT (indexAccess | tupleAccess | fieldAccess)* assignmentOp expression
     ;
 
 // Cada acceso mantiene su propia expresión de índice.
@@ -83,6 +94,11 @@ indexAccess
 tupleAccess
     : TUPLE_FIELD
     | DOT INT
+    ;
+
+// Acceso a un campo por nombre: persona.edad.
+fieldAccess
+    : DOT IDENT
     ;
 
 // El análisis semántico comprobará mutabilidad,
@@ -178,10 +194,13 @@ unary
 // Acceso a elementos de arreglos.
 // Permite accesos anidados: matriz[0][1].
 postfix
-    : primary (LBRACKET expression RBRACKET | tupleAccess)*
+    : primary (LBRACKET expression RBRACKET | tupleAccess | fieldAccess)*
     ;
 
 // Valores básicos y expresiones entre paréntesis.
+// IDENT precede al constructor para que, ante una ambigüedad real,
+// "if activo {} {}" conserve una condición seguida de dos bloques.
+// El contexto completo permite distinguir un constructor en un valor.
 primary
     : INT
     | FLOAT
@@ -193,7 +212,18 @@ primary
     | tupleLiteral
     | functionCall
     | IDENT
+    | structLiteral
     | LPAREN expression RPAREN
+    ;
+
+// Construcción de una estructura. El orden de los campos puede variar.
+// Ejemplo: Persona { edad: 20, activo: true }.
+structLiteral
+    : IDENT LBRACE (fieldInit (COMMA fieldInit)* COMMA?)? RBRACE
+    ;
+
+fieldInit
+    : IDENT COLON expression
     ;
 
 // Tupla de dos o más elementos, que pueden tener distintos tipos.
@@ -211,6 +241,7 @@ arrayLiteral
 // 5. PALABRAS RESERVADAS
 // =====================================================
 
+STRUCT   : 'struct';
 FN       : 'fn';
 RETURN   : 'return';
 LET      : 'let';

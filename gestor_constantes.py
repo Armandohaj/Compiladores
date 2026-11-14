@@ -1,3 +1,9 @@
+"""Coordina el registro, validación y cálculo de constantes globales.
+
+Las firmas se conocen antes de revisar inicializadores. El registro de
+constantes permite referencias adelantadas; el conjunto en_proceso evita
+recursión infinita al detectar dependencias circulares.
+"""
 from generated.RustiQParser import RustiQParser
 from evaluador_constantes import EvaluadorConstantes, ErrorConstante
 
@@ -6,6 +12,7 @@ class GestorConstantes:
     """Registra, valida y calcula las constantes globales."""
 
     def __init__(self, semantico):
+        """Prepara registros de declaraciones, tipos y valores, además del conjunto de constantes en evaluación."""
         self.semantico = semantico
 
         # Nombre -> nodo de declaración.
@@ -22,6 +29,7 @@ class GestorConstantes:
         self.en_proceso = set()
 
     def recorrer(self, nodo):
+        """Recorre recursivamente nodos del árbol de ANTLR para encontrar dependencias y llamadas prohibidas."""
         yield nodo
 
         for hijo in nodo.getChildren():
@@ -33,6 +41,7 @@ class GestorConstantes:
     # =================================================
 
     def registrar(self, declaraciones):
+        """Registra nombres y tipos antes de evaluar expresiones. Rechaza constantes duplicadas o nombres de funciones."""
         for ctx in declaraciones:
             token = ctx.IDENT().getSymbol()
             nombre = token.text
@@ -66,6 +75,7 @@ class GestorConstantes:
     # =================================================
 
     def validar_y_calcular(self):
+        """Comprueba tipos de todos los inicializadores antes de calcularlos y convierte ErrorConstante en diagnósticos."""
         errores_antes = len(self.semantico.errores)
 
         for nombre, ctx in self.declaraciones.items():
@@ -104,6 +114,7 @@ class GestorConstantes:
     # =================================================
 
     def calcular(self, token):
+        """Devuelve un valor en caché o resuelve sus dependencias. Detecta ciclos y siempre limpia el estado en_proceso."""
         nombre = token.text
 
         if nombre in self.valores:

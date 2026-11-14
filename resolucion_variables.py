@@ -1,3 +1,9 @@
+"""Prepara identidades de símbolos para el backend después del semántico.
+
+Dos declaraciones llamadas igual reciben identificadores diferentes.
+Los mapas usan nodos del árbol original como claves para vincular lecturas,
+destinos y declaraciones sin introducir otro árbol de representación.
+"""
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 from tipos_compuestos import normalizar_tipo
@@ -12,6 +18,7 @@ class ResolucionVariables(RustiQVisitor):
     """
 
     def __init__(self, tipos_expresiones, valores_constantes=None):
+        """Prepara mapas vacíos para un recorrido de resolución independiente."""
         super().__init__()
 
         self.tipos_expresiones = tipos_expresiones
@@ -46,10 +53,12 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def obtener_tipo_declarado(self, ctx):
+        """Usa la misma normalización del semántico para no entregar tipos distintos al backend."""
         nodo = ctx.getTypedRuleContext(RustiQParser.TypeContext, 0)
         return normalizar_tipo(nodo) if nodo is not None else None
 
     def buscar(self, nombre):
+        """Busca el ID visible desde el ámbito interior. Si falla tras validar semántica, señala una inconsistencia interna."""
         for ambito in reversed(self.ambitos):
             if nombre in ambito:
                 return ambito[nombre]
@@ -61,6 +70,7 @@ class ResolucionVariables(RustiQVisitor):
     def registrar(
         self, ctx, tipo, es_parametro=False, es_constante=False
     ):
+        """Crea un ID único y registra nombre, tipo y ubicación; las constantes también guardan su valor calculado."""
         token = ctx.IDENT().getSymbol()
         identificador = self.siguiente_id
         self.siguiente_id += 1
@@ -96,6 +106,7 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitProgram(self, ctx):
+        """Registra primero todas las constantes y después vincula inicializadores y cuerpos de funciones."""
         self.ambitos = [self.globales]
 
         # Registrar todas las constantes antes de recorrer
@@ -120,6 +131,7 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitFunctionDecl(self, ctx):
+        """Comparte el ámbito global de constantes y crea un ámbito local para parámetros y variables de la función."""
         ambitos_anteriores = self.ambitos
         funcion_anterior = self.funcion_actual
 
@@ -147,6 +159,7 @@ class ResolucionVariables(RustiQVisitor):
             self.funcion_actual = funcion_anterior
 
     def visitBlock(self, ctx):
+        """Limita la visibilidad de declaraciones locales al bloque actual."""
         self.ambitos.append({})
 
         try:
@@ -160,6 +173,7 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitLetDecl(self, ctx):
+        """Resuelve primero el inicializador y después crea el nuevo símbolo, respetando el sombreado de nombres."""
         expresion = ctx.expression()
         tipo = self.obtener_tipo_declarado(ctx)
 
@@ -178,6 +192,7 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitAssignment(self, ctx):
+        """Vincula el destino con su símbolo y recorre las variables leídas en índices y en el valor derecho."""
         nombre = ctx.IDENT().getText()
         self.referencias[ctx] = self.buscar(nombre)
         # Un índice puede leer otras variables: datos[posicion] = valor.
@@ -185,7 +200,15 @@ class ResolucionVariables(RustiQVisitor):
             self.visit(acceso.expression())
         self.visit(ctx.expression())
 
+    def visitStructLiteral(self, ctx):
+        # El nombre del tipo y los nombres de campo no son variables.
+        # Sus expresiones sí pueden leer variables o constantes.
+        """Recorre valores de campos; el nombre del tipo y los nombres de campos no son variables."""
+        for campo in ctx.fieldInit():
+            self.visit(campo.expression())
+
     def visitPrimary(self, ctx):
+        """Vincula lecturas de identificadores; en otros valores sigue recorriendo hijos para encontrar lecturas interiores."""
         if ctx.IDENT() is not None:
             nombre = ctx.IDENT().getText()
             self.referencias[ctx] = self.buscar(nombre)
