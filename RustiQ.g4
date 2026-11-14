@@ -66,7 +66,14 @@ letDecl
 
 // Asignación simple o compuesta a una variable.
 assignment
-    : IDENT assignmentOp expression
+    : IDENT indexAccess* assignmentOp expression
+    ;
+
+// Cada acceso mantiene su propia expresión de índice.
+// Permite destinos como matriz[0][1] sin cambiar el acceso
+// al identificador y al valor de las asignaciones existentes.
+indexAccess
+    : LBRACKET expression RBRACKET
     ;
 
 // El análisis semántico comprobará mutabilidad,

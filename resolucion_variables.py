@@ -45,10 +45,13 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def obtener_tipo_declarado(self, ctx):
-        nodo = ctx.getTypedRuleContext(
-            RustiQParser.TypeContext, 0
-        )
-        return nodo.getText() if nodo is not None else None
+        nodo = ctx.getTypedRuleContext(RustiQParser.TypeContext, 0)
+        def normalizar(tipo):
+            interior = tipo.getTypedRuleContext(RustiQParser.TypeContext, 0)
+            if interior is None:
+                return tipo.getText()
+            return f"[{normalizar(interior)};{int(tipo.INT().getText())}]"
+        return normalizar(nodo) if nodo is not None else None
 
     def buscar(self, nombre):
         for ambito in reversed(self.ambitos):
@@ -181,6 +184,9 @@ class ResolucionVariables(RustiQVisitor):
     def visitAssignment(self, ctx):
         nombre = ctx.IDENT().getText()
         self.referencias[ctx] = self.buscar(nombre)
+        # Un índice puede leer otras variables: datos[posicion] = valor.
+        for acceso in ctx.indexAccess():
+            self.visit(acceso.expression())
         self.visit(ctx.expression())
 
     def visitPrimary(self, ctx):

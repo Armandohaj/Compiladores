@@ -19,6 +19,10 @@ class AnalizadorSemantico(RustiQVisitor):
         # Tipo calculado para cada nodo de expresión.
         self.tipos_expresiones = {}
 
+        # Tipo contextual de literales de arreglo, incluidos los vacíos.
+        # Las claves son nodos del mismo árbol, sin crear un AST adicional.
+        self.tipos_esperados = {}
+
         # Firmas de funciones: parámetros y tipo de retorno.
         self.funciones = {}
 
@@ -38,11 +42,40 @@ class AnalizadorSemantico(RustiQVisitor):
         })
 
     def obtener_tipo_declarado(self, ctx):
-        # Accedemos directamente a la regla type de ANTLR.
-        nodo = ctx.getTypedRuleContext(
-            RustiQParser.TypeContext, 0
-        )
-        return nodo.getText() if nodo is not None else None
+        nodo = ctx.getTypedRuleContext(RustiQParser.TypeContext, 0)
+        return self.normalizar_tipo(nodo) if nodo is not None else None
+
+    def normalizar_tipo(self, nodo):
+        # Normalizar el tamaño: [i32;00] y [i32;0] son el mismo tipo.
+        interior = nodo.getTypedRuleContext(RustiQParser.TypeContext, 0)
+        if interior is None:
+            return nodo.getText()
+        return f"[{self.normalizar_tipo(interior)};{int(nodo.INT().getText())}]"
+
+    def visitar_con_tipo(self, ctx, esperado=None):
+        """Propaga el tipo esperado solo a un literal directo o entre paréntesis.
+
+        No se propaga a operandos aritméticos, índices o llamadas: esos
+        contextos tienen sus propias reglas de tipos.
+        """
+        if esperado is not None:
+            nodo = ctx
+            while nodo is not None:
+                if isinstance(nodo, RustiQParser.ArrayLiteralContext):
+                    self.tipos_esperados[nodo] = esperado
+                    break
+                if isinstance(nodo, RustiQParser.PrimaryContext):
+                    if nodo.arrayLiteral() is not None:
+                        nodo = nodo.arrayLiteral()
+                    elif nodo.expression() is not None:
+                        nodo = nodo.expression()
+                    else:
+                        break
+                elif nodo.getChildCount() == 1 and hasattr(nodo.getChild(0), "getChildren"):
+                    nodo = nodo.getChild(0)
+                else:
+                    break
+        return self.visit(ctx)
 
     def guardar_tipo(self, ctx, tipo):
         self.tipos_expresiones[ctx] = tipo
@@ -185,7 +218,14 @@ class AnalizadorSemantico(RustiQVisitor):
 
         # Revisamos todos los argumentos, aunque la función
         # no exista, para detectar errores dentro de ellos.
-        tipos = [self.visit(argumento) for argumento in argumentos]
+        tipos_esperados = self.funciones.get(nombre, {}).get("parametros", [])
+        tipos = [
+            self.visitar_con_tipo(
+                argumento,
+                tipos_esperados[indice] if indice < len(tipos_esperados) else None,
+            )
+            for indice, argumento in enumerate(argumentos)
+        ]
 
         # Una variable local con este nombre oculta la función.
         if self.buscar_variable(nombre) is not None:
@@ -279,7 +319,7 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitReturnStmt(self, ctx):
         expresion = ctx.expression()
         tipo = (
-            self.visit(expresion)
+            self.visitar_con_tipo(expresion, self.tipo_retorno)
             if expresion is not None
             else "unit"
         )
@@ -431,7 +471,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
         errores_antes = len(self.errores)
         tipo_valor = (
-            self.visit(expresion)
+            self.visitar_con_tipo(expresion, declarado)
             if expresion is not None
             else None
         )
@@ -489,6 +529,10 @@ class AnalizadorSemantico(RustiQVisitor):
         }
 
     def visitAssignment(self, ctx):
+        # Conservar el comportamiento de las asignaciones simples.
+        if ctx.indexAccess():
+            return self.visitar_asignacion_elemento(ctx)
+
         token = ctx.IDENT().getSymbol()
         nombre = token.text
 
@@ -501,7 +545,9 @@ class AnalizadorSemantico(RustiQVisitor):
         es_compuesta = operador.text != "="
 
         errores_antes = len(self.errores)
-        tipo_valor = self.visit(ctx.expression())
+        tipo_valor = self.visitar_con_tipo(
+            ctx.expression(), variable["tipo"] if variable is not None else None
+        )
 
         if variable is None:
             self.reportar(
@@ -810,20 +856,13 @@ class AnalizadorSemantico(RustiQVisitor):
         elemento, cantidad = contenido.rsplit(";", 1)
         return elemento, int(cantidad)
 
-    def visitPostfix(self, ctx):
-        # Tipo del valor antes de aplicar índices.
-        tipo = self.visit(ctx.primary())
-
-        for expresion_indice in ctx.expression():
+    def comprobar_indices(self, tipo, expresiones, nodos=None):
+        """Comprueba lecturas y destinos con las mismas reglas de índices."""
+        for posicion, expresion_indice in enumerate(expresiones):
             tipo_indice = self.visit(expresion_indice)
-
-            # Visitar todos los índices aunque un acceso anterior
-            # haya fallado, para recoger sus posibles errores.
             if tipo is None:
                 continue
-
             arreglo = self.separar_tipo_arreglo(tipo)
-
             if arreglo is None:
                 self.reportar(
                     expresion_indice.start,
@@ -831,95 +870,104 @@ class AnalizadorSemantico(RustiQVisitor):
                 )
                 tipo = None
                 continue
-
             if tipo_indice is None:
                 tipo = None
                 continue
-
             if tipo_indice != "i32":
+                self.reportar(expresion_indice.start, "El índice de un arreglo debe ser i32.")
+                tipo = None
+                continue
+            elemento, cantidad = arreglo
+            texto = expresion_indice.getText()
+            digitos = texto[1:] if texto.startswith("-") else texto
+            if cantidad == 0 or (digitos.isdigit() and not 0 <= int(texto) < cantidad):
                 self.reportar(
                     expresion_indice.start,
-                    "El índice de un arreglo debe ser i32."
+                    f"Índice {texto} fuera de rango para un arreglo de tamaño {cantidad}."
                 )
                 tipo = None
                 continue
-
-            elemento, cantidad = arreglo
-
-            # Detectar índices escritos como enteros simples.
-            # Otros índices necesitarán comprobación en ejecución.
-            texto = expresion_indice.getText()
-            digitos = texto[1:] if texto.startswith("-") else texto
-
-            if digitos.isdigit():
-                indice = int(texto)
-
-                if indice < 0 or indice >= cantidad:
-                    self.reportar(
-                        expresion_indice.start,
-                        f"Índice {indice} fuera de rango "
-                        f"para un arreglo de tamaño {cantidad}."
-                    )
-                    tipo = None
-                    continue
-
-            # Un acceso devuelve el tipo del elemento.
-            # Si es otro arreglo, el siguiente índice lo utiliza.
+            # Los índices dinámicos requieren una guarda en el backend.
             tipo = elemento
+            if nodos is not None:
+                self.guardar_tipo(nodos[posicion], tipo)
+        return tipo
 
+    def visitPostfix(self, ctx):
+        tipo = self.comprobar_indices(self.visit(ctx.primary()), ctx.expression())
         return self.guardar_tipo(ctx, tipo)
+
+    def visitar_asignacion_elemento(self, ctx):
+        token = ctx.IDENT().getSymbol()
+        variable = self.buscar_variable(token.text)
+        errores_antes = len(self.errores)
+        accesos = ctx.indexAccess()
+        tipo_destino = self.comprobar_indices(
+            variable["tipo"] if variable is not None else None,
+            [acceso.expression() for acceso in accesos],
+            accesos,
+        )
+        tipo_valor = self.visitar_con_tipo(ctx.expression(), tipo_destino)
+        # También registrar el tipo del destino completo para el backend.
+        self.guardar_tipo(ctx, tipo_destino)
+
+        if variable is None:
+            self.reportar(token, f"La variable '{token.text}' no está declarada.")
+            return
+        # Asignar un elemento requiere un arreglo ya inicializado.
+        # No se deduce inicialización parcial elemento por elemento.
+        if not variable["inicializada"]:
+            self.reportar(token, f"La variable '{token.text}' se usa antes de inicializarla.")
+            return
+        if not variable["mutable"]:
+            self.reportar(
+                token,
+                f"No se puede modificar '{token.text}' porque no fue declarada con 'mut'."
+            )
+            return
+        if tipo_destino is None or tipo_valor is None or len(self.errores) != errores_antes:
+            return
+        operador = ctx.assignmentOp().start
+        if operador.text == "=":
+            if tipo_destino != tipo_valor:
+                self.reportar(
+                    token,
+                    f"Tipos incompatibles en el elemento de '{token.text}': "
+                    f"se esperaba {tipo_destino}, pero se recibió {tipo_valor}."
+                )
+        else:
+            aritmetico = copy(operador)
+            aritmetico.text = operador.text[:-1]
+            self.comprobar_operacion(tipo_destino, tipo_valor, aritmetico)
 
 
     def visitArrayLiteral(self, ctx):
         expresiones = ctx.expression()
-
-        # El arreglo vacío necesita un tipo proporcionado
-        # por su contexto. Agregaremos ese caso después.
+        esperado = self.separar_tipo_arreglo(self.tipos_esperados.get(ctx))
         if not expresiones:
-            self.reportar(
-                ctx.start,
-                "Todavía no se admite inferir el tipo "
-                "de un arreglo vacío."
-            )
-            return self.guardar_tipo(ctx, None)
+            if esperado is None:
+                self.reportar(ctx.start, "No se puede inferir el tipo de un arreglo vacío: indicá un tipo.")
+                return self.guardar_tipo(ctx, None)
+            # Mantener tamaño cero real: el llamador detecta si esperaba otro tamaño.
+            return self.guardar_tipo(ctx, f"[{esperado[0]};0]")
 
-        # Revisar todos los elementos para recoger sus errores.
-        tipos = [
-            self.visit(expresion)
-            for expresion in expresiones
-        ]
-
+        tipo_contextual = esperado[0] if esperado is not None else None
+        tipos = [self.visitar_con_tipo(e, tipo_contextual) for e in expresiones]
         if any(tipo is None for tipo in tipos):
             return self.guardar_tipo(ctx, None)
-
-        tipo_elemento = tipos[0]
+        elemento = tipos[0]
         valido = True
-
-        # Una función sin retorno no aporta un elemento.
-        if tipo_elemento == "unit":
-            self.reportar(
-                expresiones[0].start,
-                "Un arreglo no puede contener valores unit."
-            )
+        if elemento == "unit":
+            self.reportar(expresiones[0].start, "Un arreglo no puede contener valores unit.")
             valido = False
-
-        for indice in range(1, len(tipos)):
-            if tipos[indice] != tipo_elemento:
+        for indice, tipo in enumerate(tipos[1:], start=1):
+            if tipo != elemento:
                 self.reportar(
                     expresiones[indice].start,
-                    f"El elemento {indice + 1} del arreglo "
-                    f"debe ser {tipo_elemento}, "
-                    f"pero se recibió {tipos[indice]}."
+                    f"El elemento {indice + 1} del arreglo debe ser {elemento}, pero se recibió {tipo}."
                 )
                 valido = False
-
-        if not valido:
-            return self.guardar_tipo(ctx, None)
-
-        # Utilizar el mismo formato que type.getText().
-        # Ejemplo: [i32;3].
-        tipo = f"[{tipo_elemento};{len(expresiones)}]"
-        return self.guardar_tipo(ctx, tipo)
+        return self.guardar_tipo(ctx, f"[{elemento};{len(expresiones)}]" if valido else None)
 
     def visitPrimary(self, ctx):
         if ctx.INT() is not None:
