@@ -151,6 +151,12 @@ def analizar_programa(codigo):
         "declaraciones": declaraciones,
         "referencias": referencias,
         "estructuras": estructuras,
+
+        # Solo entregar tipos de enumeraciones al backend
+        # cuando el programa completo sea válido.
+        "enumeraciones": (
+            semantico.enumeraciones if valido else {}
+        ),
     }
 
 

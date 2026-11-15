@@ -149,6 +149,7 @@ class GestorConstantes:
             evaluador = EvaluadorConstantes(
                 self.semantico.tipos_expresiones,
                 self.calcular,
+                self.semantico.enumeraciones,
             )
 
             valor = evaluador.visit(ctx.expression())

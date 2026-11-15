@@ -44,44 +44,98 @@ class GestorEstructuras:
         return self.estructuras
 
     def validar(self, programa):
-        """Rechaza tipos desconocidos y definiciones recursivas por valor.
-
-        Todavía no existen referencias en el lenguaje implementado.
-        Se rechazan ciclos incluso a través de tuplas o arreglos.
         """
-        for nodo in self.recorrer(programa):
-            if isinstance(nodo, RustiQParser.TypeContext) and nodo.IDENT() is not None:
-                token = nodo.IDENT().getSymbol()
-                if token.text not in self.estructuras:
-                    self.semantico.reportar(token, f"El tipo '{token.text}' no está declarado.")
+        Comprueba tipos nombrados y dependencias por valor.
 
+        Ahora las dependencias pueden pasar por estructuras
+        y por datos asociados a variantes de enumeraciones.
+        """
+
+        enumeraciones = getattr(
+            self.semantico,
+            "enumeraciones",
+            {},
+        )
+
+        # Una anotación puede nombrar una estructura o un enum.
+        for nodo in self.recorrer(programa):
+            if (
+                isinstance(nodo, RustiQParser.TypeContext)
+                and nodo.IDENT() is not None
+            ):
+                token = nodo.IDENT().getSymbol()
+
+                if (
+                    token.text not in self.estructuras
+                    and token.text not in enumeraciones
+                ):
+                    self.semantico.reportar(
+                        token,
+                        f"El tipo '{token.text}' no está declarado."
+                    )
+
+        # Reunir las declaraciones de ambos tipos nominales.
+        # Copiar el diccionario evita modificar el registro original.
+        declaraciones = dict(self.declaraciones)
+
+        for enumeracion in programa.enumDecl():
+            nombre = enumeracion.IDENT().getText()
+            declaraciones.setdefault(nombre, enumeracion)
+
+        # Crear un grafo:
+        # nombre del tipo -> tipos que contiene por valor.
+        #
+        # El recorrido también encuentra tipos dentro de
+        # arreglos, tuplas y listas de datos de variantes.
         dependencias = {}
-        for nombre, ctx in self.declaraciones.items():
+
+        for nombre, declaracion in declaraciones.items():
             dependencias[nombre] = {
                 nodo.IDENT().getText()
-                for campo in ctx.fieldDecl()
-                for nodo in self.recorrer(campo)
-                if isinstance(nodo, RustiQParser.TypeContext)
-                and nodo.IDENT() is not None
-                and nodo.IDENT().getText() in self.estructuras
+                for nodo in self.recorrer(declaracion)
+                if (
+                    isinstance(nodo, RustiQParser.TypeContext)
+                    and nodo.IDENT() is not None
+                    and nodo.IDENT().getText() in declaraciones
+                )
             }
+
         visitados = set()
         activos = set()
 
         def revisar(nombre):
+            """
+            Recorre las dependencias en profundidad.
+
+            activos contiene los tipos del camino actual.
+            Encontrar uno nuevamente significa que hay un ciclo.
+            """
+
             if nombre in activos:
+                clase = (
+                    "estructura"
+                    if nombre in self.estructuras
+                    else "enumeración"
+                )
+
                 self.semantico.reportar(
-                    self.declaraciones[nombre].IDENT().getSymbol(),
-                    f"La estructura '{nombre}' tiene una dependencia recursiva por valor."
+                    declaraciones[nombre].IDENT().getSymbol(),
+                    f"La {clase} '{nombre}' tiene una "
+                    "dependencia recursiva por valor."
                 )
                 return
+
             if nombre in visitados:
                 return
+
             activos.add(nombre)
+
+            # Ordenar hace que los diagnósticos sean reproducibles.
             for dependencia in sorted(dependencias[nombre]):
                 revisar(dependencia)
+
             activos.remove(nombre)
             visitados.add(nombre)
 
-        for nombre in self.estructuras:
+        for nombre in declaraciones:
             revisar(nombre)

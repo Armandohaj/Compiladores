@@ -4,9 +4,40 @@ grammar RustiQ;
 // 1. PROGRAMA, FUNCIONES Y TIPOS
 // =====================================================
 
-// El archivo puede contener funciones, constantes globales y estructuras.
+// Declaraciones permitidas en el archivo.
 program
-    : (functionDecl | constDecl | structDecl)* EOF
+    : (functionDecl | constDecl | structDecl | enumDecl)* EOF
+    ;
+// Una enumeración debe declarar al menos una variante.
+// Ejemplo: enum Estado { Pendiente, Completado }
+enumDecl
+    : ENUM IDENT LBRACE variantDecl (COMMA variantDecl)* COMMA? RBRACE
+    ;
+
+// Variante sin datos o con tipos asociados.
+// Ejemplos: Vacio, Correcto(i32), Coordenada(i32, i32).
+variantDecl
+    : IDENT (LPAREN variantTypeList RPAREN)?
+    ;
+
+// Lista de tipos que necesita la variante.
+// Separa los tipos con comas y permite una coma final.
+variantTypeList
+    : type (COMMA type)* COMMA?
+    ;
+
+// Construcción de un valor de enumeración.
+//
+// Ejemplos:
+// Resultado::Vacio
+// Resultado::Correcto(10)
+// Resultado::Error("Archivo no encontrado")
+//
+// La gramática reconoce la forma de la llamada.
+// El semántico comprobará si la variante necesita datos,
+// cuántos recibe y si sus tipos son compatibles.
+enumValue
+    : IDENT DOUBLE_COLON IDENT (LPAREN argumentList? RPAREN)?
     ;
 
 // Estructura nominal: cada nombre define un tipo diferente.
@@ -211,6 +242,7 @@ primary
     | arrayLiteral
     | tupleLiteral
     | functionCall
+    | enumValue
     | IDENT
     | structLiteral
     | LPAREN expression RPAREN
@@ -242,6 +274,7 @@ arrayLiteral
 // =====================================================
 
 STRUCT   : 'struct';
+ENUM     : 'enum';
 FN       : 'fn';
 RETURN   : 'return';
 LET      : 'let';
@@ -275,6 +308,7 @@ LBRACKET  : '[';
 RBRACKET  : ']';
 ARROW     : '->';
 SEMICOLON : ';';
+DOUBLE_COLON : '::';
 COLON     : ':';
 COMMA     : ',';
 // Un campo completo permite encadenar .0.1 sin consumir FLOAT.

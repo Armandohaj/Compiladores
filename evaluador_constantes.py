@@ -32,11 +32,26 @@ class EvaluadorConstantes(RustiQVisitor):
     No utiliza eval ni ejecuta funciones RustiQ.
     """
 
-    def __init__(self, tipos_expresiones, resolver_nombre):
-        """Recibe los tipos del semántico y una función para resolver valores de otras constantes."""
+    def __init__(
+        self,
+        tipos_expresiones,
+        resolver_nombre,
+        enumeraciones=None,
+    ):
         super().__init__()
+
+        # Tipos que ya comprobó el semántico.
         self.tipos_expresiones = tipos_expresiones
+
+        # Función que obtiene el valor de otra constante.
         self.resolver_nombre = resolver_nombre
+
+        # Registro de enums y etiquetas de sus variantes.
+        self.enumeraciones = (
+            enumeraciones
+            if enumeraciones is not None
+            else {}
+        )
 
     # =================================================
     # 1. EXPRESIONES Y OPERADORES LÓGICOS
@@ -303,8 +318,91 @@ class EvaluadorConstantes(RustiQVisitor):
 
         return "".join(resultado)
 
+
+    def visitEnumValue(self, ctx):
+        """
+        Calcula una variante de enumeración constante.
+
+        Conserva:
+        - Nombre del enum.
+        - Nombre de la variante.
+        - Etiqueta numérica.
+        - Valores asociados, si la variante recibe datos.
+
+        El semántico ya comprobó los tipos de los argumentos.
+        """
+
+        token_tipo = ctx.IDENT(0).getSymbol()
+        token_variante = ctx.IDENT(1).getSymbol()
+
+        nombre = token_tipo.text
+        variante = token_variante.text
+
+        enumeracion = self.enumeraciones.get(nombre)
+
+        if enumeracion is None:
+            raise ErrorConstante(
+                token_tipo,
+                f"La enumeración '{nombre}' no está declarada."
+            )
+
+        variantes = enumeracion["variantes"]
+
+        if variante not in variantes:
+            raise ErrorConstante(
+                token_variante,
+                f"La enumeración '{nombre}' "
+                f"no tiene la variante '{variante}'."
+            )
+
+        esperados = enumeracion.get(
+            "datos_variantes", {}
+        ).get(variante, [])
+
+        lista = ctx.argumentList()
+        argumentos = (
+            lista.expression() if lista is not None else []
+        )
+
+        # Estas comprobaciones también protegen al evaluador
+        # si se utiliza directamente fuera del flujo habitual.
+        if len(argumentos) != len(esperados):
+            raise ErrorConstante(
+                token_variante,
+                f"La variante '{nombre}::{variante}' espera "
+                f"{len(esperados)} argumentos, pero recibió "
+                f"{len(argumentos)}."
+            )
+
+        tiene_parentesis = ctx.LPAREN() is not None
+
+        if bool(esperados) != tiene_parentesis:
+            raise ErrorConstante(
+                token_variante,
+                f"Uso incorrecto de paréntesis en "
+                f"'{nombre}::{variante}'."
+            )
+
+        resultado = {
+            "enumeracion": nombre,
+            "variante": variante,
+            "etiqueta": variantes[variante],
+        }
+
+        if esperados:
+            # Cada argumento puede ser otra expresión constante,
+            # un arreglo, una tupla, una estructura u otro enum.
+            resultado["datos"] = [
+                self.visit(argumento)
+                for argumento in argumentos
+            ]
+
+        # Las variantes sin datos conservan su formato anterior.
+        return resultado
+
     def visitPrimary(self, ctx):
-        """Convierte literales en valores y resuelve identificadores constantes; las llamadas de usuario se rechazan."""
+        """Calcula valores cuyo tipo ya fue validado."""
+
         if ctx.INT() is not None:
             return int(ctx.INT().getText())
 
@@ -333,6 +431,12 @@ class EvaluadorConstantes(RustiQVisitor):
         if ctx.tupleLiteral() is not None:
             return self.visit(ctx.tupleLiteral())
 
+        if ctx.structLiteral() is not None:
+            return self.visit(ctx.structLiteral())
+
+        if ctx.enumValue() is not None:
+            return self.visit(ctx.enumValue())
+
         if ctx.functionCall() is not None:
             raise ErrorConstante(
                 ctx.functionCall().IDENT().getSymbol(),
@@ -340,10 +444,10 @@ class EvaluadorConstantes(RustiQVisitor):
                 "con una llamada a función."
             )
 
-        if ctx.structLiteral() is not None:
-            return self.visit(ctx.structLiteral())
-
         if ctx.IDENT() is not None:
-            return self.resolver_nombre(ctx.IDENT().getSymbol())
+            return self.resolver_nombre(
+                ctx.IDENT().getSymbol()
+            )
 
+        # Expresión entre paréntesis.
         return self.visit(ctx.expression())

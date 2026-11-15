@@ -13,6 +13,7 @@ from gestor_estructuras import GestorEstructuras
 from tipos_compuestos import (
     normalizar_tipo, separar_tipo_tupla, accesos_lectura, accesos_escritura,
 )
+from gestor_enumeraciones import GestorEnumeraciones
 
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
@@ -130,11 +131,30 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitProgram(self, ctx):
-        """Registra estructuras, firmas y constantes antes de revisar cuerpos. Así admite referencias adelantadas sin ejecutar funciones."""
+        """
+        Registra las declaraciones globales antes de revisar cuerpos.
+
+        Orden:
+        1. Enumeraciones.
+        2. Estructuras y sus tipos.
+        3. Firmas de funciones.
+        4. Constantes.
+        5. Cuerpos de funciones.
+        """
+
+        # Conocer primero los enums permite utilizarlos
+        # en campos de estructuras y firmas de funciones.
+        gestor_enumeraciones = GestorEnumeraciones(self)
+        self.enumeraciones = gestor_enumeraciones.registrar(ctx)
+
+        # Registrar estructuras antes de validar los tipos
+        # permite referencias a estructuras declaradas después.
         gestor_estructuras = GestorEstructuras(self)
         self.estructuras = gestor_estructuras.registrar(ctx)
         gestor_estructuras.validar(ctx)
-        # Registrar todas las funciones antes de revisar cuerpos.
+
+        # Registrar todas las firmas antes de visitar cuerpos.
+        # Esto permite llamadas adelantadas y recursión.
         for funcion in ctx.functionDecl():
             token = funcion.IDENT().getSymbol()
             nombre = token.text
@@ -156,17 +176,16 @@ class AnalizadorSemantico(RustiQVisitor):
                 ),
             }
 
-        # Registrar los nombres y tipos de las constantes.
-        gestor = GestorConstantes(self)
-        gestor.registrar(ctx.constDecl())
+        # Registrar, comprobar y calcular constantes.
+        gestor_constantes = GestorConstantes(self)
+        gestor_constantes.registrar(ctx.constDecl())
 
-        # La búsqueda de identificadores utiliza este registro.
-        self.constantes = gestor.simbolos
+        self.constantes = gestor_constantes.simbolos
 
-        # Comprobar tipos y calcular valores antes de los cuerpos.
-        gestor.validar_y_calcular()
-        self.valores_constantes = gestor.valores
+        gestor_constantes.validar_y_calcular()
+        self.valores_constantes = gestor_constantes.valores
 
+        # Con los registros disponibles, revisar cada función.
         for funcion in ctx.functionDecl():
             self.visit(funcion)
 
@@ -1104,8 +1123,130 @@ class AnalizadorSemantico(RustiQVisitor):
         valido = campos is not None and len(self.errores) == errores_antes
         return self.guardar_tipo(ctx, nombre if valido else None)
 
+
+    def visitEnumValue(self, ctx):
+        """
+        Comprueba un constructor como Resultado::Correcto(10).
+
+        Verifica:
+        - Existencia del enum y de la variante.
+        - Uso correcto de los paréntesis.
+        - Cantidad de argumentos.
+        - Tipo de cada argumento.
+
+        Devuelve el nombre del enum si todo es correcto.
+        """
+
+        token_tipo = ctx.IDENT(0).getSymbol()
+        token_variante = ctx.IDENT(1).getSymbol()
+
+        nombre = token_tipo.text
+        variante = token_variante.text
+
+        enumeracion = self.enumeraciones.get(nombre)
+        lista = ctx.argumentList()
+
+        argumentos = (
+            lista.expression() if lista is not None else []
+        )
+
+        if enumeracion is None:
+            # Revisar también los argumentos para recoger
+            # errores dentro de sus expresiones.
+            for argumento in argumentos:
+                self.visit(argumento)
+
+            self.reportar(
+                token_tipo,
+                f"La enumeración '{nombre}' no está declarada."
+            )
+            return self.guardar_tipo(ctx, None)
+
+        if variante not in enumeracion["variantes"]:
+            for argumento in argumentos:
+                self.visit(argumento)
+
+            self.reportar(
+                token_variante,
+                f"La enumeración '{nombre}' "
+                f"no tiene la variante '{variante}'."
+            )
+            return self.guardar_tipo(ctx, None)
+
+        # Los enums antiguos no necesitan datos_variantes.
+        # Una variante sin datos espera una lista vacía.
+        esperados = enumeracion.get(
+            "datos_variantes", {}
+        ).get(variante, [])
+
+        errores_antes = len(self.errores)
+        tiene_parentesis = ctx.LPAREN() is not None
+
+        if esperados and not tiene_parentesis:
+            self.reportar(
+                token_variante,
+                f"La variante '{nombre}::{variante}' "
+                "requiere argumentos entre paréntesis."
+            )
+
+        elif not esperados and tiene_parentesis:
+            self.reportar(
+                token_variante,
+                f"La variante '{nombre}::{variante}' "
+                "no recibe argumentos ni utiliza paréntesis."
+            )
+
+        if len(argumentos) != len(esperados):
+            self.reportar(
+                token_variante,
+                f"La variante '{nombre}::{variante}' espera "
+                f"{len(esperados)} argumentos, pero recibió "
+                f"{len(argumentos)}."
+            )
+
+        for indice, argumento in enumerate(argumentos):
+            esperado = (
+                esperados[indice]
+                if indice < len(esperados)
+                else None
+            )
+
+            # El contexto permite, por ejemplo, pasar []
+            # si la variante espera un arreglo [i32;0].
+            recibido = self.visitar_con_tipo(
+                argumento,
+                esperado,
+            )
+
+            if (
+                esperado is not None
+                and recibido is not None
+                and recibido != esperado
+            ):
+                self.reportar(
+                    argumento.start,
+                    f"Argumento {indice + 1} de "
+                    f"'{nombre}::{variante}': "
+                    f"se esperaba {esperado}, "
+                    f"pero se recibió {recibido}."
+                )
+
+        valido = len(self.errores) == errores_antes
+
+        return self.guardar_tipo(
+            ctx,
+            nombre if valido else None,
+        )
+
     def visitPrimary(self, ctx):
-        """Determina tipos de literales, identificadores, constructores, llamadas y expresiones agrupadas."""
+        """
+        Determina el tipo de un valor básico o compuesto.
+
+        Los literales tienen tipos conocidos.
+        Las variables se buscan en los ámbitos.
+        Los constructores se comprueban en sus propios métodos.
+        """
+
         if ctx.INT() is not None:
             tipo = "i32"
 
@@ -1121,18 +1262,20 @@ class AnalizadorSemantico(RustiQVisitor):
         elif ctx.STRING_LITERAL() is not None:
             tipo = "String"
 
-        # Determinar el tipo y tamaño de un arreglo literal.
         elif ctx.arrayLiteral() is not None:
             tipo = self.visit(ctx.arrayLiteral())
 
         elif ctx.tupleLiteral() is not None:
             tipo = self.visit(ctx.tupleLiteral())
 
-        elif ctx.functionCall() is not None:
-            tipo = self.visit(ctx.functionCall())
-
         elif ctx.structLiteral() is not None:
             tipo = self.visit(ctx.structLiteral())
+
+        elif ctx.enumValue() is not None:
+            tipo = self.visit(ctx.enumValue())
+
+        elif ctx.functionCall() is not None:
+            tipo = self.visit(ctx.functionCall())
 
         elif ctx.IDENT() is not None:
             token = ctx.IDENT().getSymbol()
@@ -1157,7 +1300,7 @@ class AnalizadorSemantico(RustiQVisitor):
                 tipo = variable["tipo"]
 
         else:
-            # Expresión entre paréntesis.
+            # Los paréntesis conservan el tipo de la expresión.
             tipo = self.visit(ctx.expression())
 
         return self.guardar_tipo(ctx, tipo)

@@ -14,6 +14,26 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#enumDecl.
+    def visitEnumDecl(self, ctx:RustiQParser.EnumDeclContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#variantDecl.
+    def visitVariantDecl(self, ctx:RustiQParser.VariantDeclContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#variantTypeList.
+    def visitVariantTypeList(self, ctx:RustiQParser.VariantTypeListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#enumValue.
+    def visitEnumValue(self, ctx:RustiQParser.EnumValueContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#structDecl.
     def visitStructDecl(self, ctx:RustiQParser.StructDeclContext):
         return self.visitChildren(ctx)
