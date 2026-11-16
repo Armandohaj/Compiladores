@@ -480,7 +480,11 @@ class AnalizadorSemantico(RustiQVisitor):
         """Analiza ambas ramas desde copias del mismo estado. Una variable solo queda inicializada si lo está en todos los caminos que continúan."""
         tipo = self.visit(ctx.expression())
 
-        if tipo is not None and tipo != "bool":
+        if (
+                tipo is not None
+                and tipo != "bool"
+                and "normal" in salidas_control(ctx.expression())
+        ):
             self.reportar(
                 ctx.IF().getSymbol(),
                 "La condición del if debe ser bool."
@@ -542,7 +546,11 @@ class AnalizadorSemantico(RustiQVisitor):
         """Exige condición bool y analiza el cuerpo en contexto de ciclo. Restaura inicialización externa porque puede ejecutarse cero veces."""
         tipo = self.visit(ctx.expression())
 
-        if tipo is not None and tipo != "bool":
+        if (
+                tipo is not None
+                and tipo != "bool"
+                and "normal" in salidas_control(ctx.expression())
+        ):
             self.reportar(
                 ctx.WHILE().getSymbol(),
                 "La condición del while debe ser bool."
@@ -614,7 +622,9 @@ class AnalizadorSemantico(RustiQVisitor):
             if expresion is not None
             else None
         )
-
+        # El inicializador puede contener visitantes que sustituyan
+        # los mapas de ámbitos. Usamos el que sigue vigente.
+        ambito = self.ambitos[-1]
         if nombre in ambito:
             self.reportar(
                 token,
@@ -697,12 +707,33 @@ class AnalizadorSemantico(RustiQVisitor):
             ctx.expression(), variable["tipo"] if variable is not None else None
         )
 
+        # El valor derecho puede contener bloques y condicionales.
+        # Recuperamos el destino desde los ámbitos que siguen vigentes.
+        variable, indice_ambito = self.buscar_variable_con_ambito(
+            nombre
+        )
+
         if variable is None:
             self.reportar(
                 token,
                 f"La variable '{nombre}' no está declarada."
             )
             return
+
+        # Si evaluar el valor derecho provoca un salto,
+        # no se llega a escribir ni a inicializar el destino.
+        if "normal" not in salidas_control(ctx.expression()):
+            # La asignación compuesta también necesita leer
+            # el valor anterior de la variable.
+            if es_compuesta and not variable["inicializada"]:
+                self.reportar(
+                    token,
+                    f"La variable '{nombre}' se usa "
+                    "antes de inicializarla."
+                )
+            return
+
+
 
         if es_compuesta:
             # Una asignación compuesta lee el valor anterior.
