@@ -154,18 +154,30 @@ class ResolucionVariables(RustiQVisitor):
             # comparten el mismo ámbito local.
             for sentencia in ctx.block().statement():
                 self.visit(sentencia)
+                # La expresión final puede leer los parámetros
+                # y las variables declaradas en el cuerpo.
+            if ctx.block().expression() is not None:
+                self.visit(ctx.block().expression())
         finally:
             self.ambitos = ambitos_anteriores
             self.funcion_actual = funcion_anterior
 
     def visitBlock(self, ctx):
-        """Limita la visibilidad de declaraciones locales al bloque actual."""
+        """Vincula los usos de variables dentro de todo el bloque."""
         self.ambitos.append({})
 
         try:
+            # Registrar declaraciones y resolver las instrucciones.
             for sentencia in ctx.statement():
                 self.visit(sentencia)
+
+            # Resolver también las variables de la expresión final.
+            # Todavía estamos dentro del ámbito del bloque.
+            if ctx.expression() is not None:
+                self.visit(ctx.expression())
+
         finally:
+            # Las variables del bloque dejan de estar disponibles.
             self.ambitos.pop()
 
     # =================================================

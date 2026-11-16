@@ -86,10 +86,21 @@ type
 // 2. BLOQUES Y SENTENCIAS
 // =====================================================
 
+// Un bloque contiene sentencias y una expresión final opcional.
+// Las sentencias realizan acciones.
+// La expresión final, sin punto y coma, produce el valor del bloque.
+//
+// Ejemplo:
+// {
+//     let base = 10;
+//     base + 1
+// }
+//
+// Si no tiene expresión final, su tipo será unit.
+// El analizador semántico comprobará esos tipos.
 block
-    : LBRACE statement* RBRACE
+    : LBRACE statement* expression? RBRACE
     ;
-
 statement
     : letDecl
     | assignment SEMICOLON
@@ -244,6 +255,7 @@ primary
     | IDENT
     | structLiteral
     | matchExpr
+    | block
     | LPAREN expression RPAREN
     ;
 // =====================================================

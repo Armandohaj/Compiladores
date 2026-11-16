@@ -205,15 +205,14 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
     # 3. CUERPOS DE FUNCIONES Y PARÁMETROS
     # =================================================
-
     def visitFunctionDecl(self, ctx):
-        """Aísla el estado de la función, declara parámetros como inicializados y comprueba sus retornos. Restaura el contexto al salir."""
+        """Analiza parámetros, instrucciones y retorno de una función."""
         anteriores = self.ambitos
         retorno_anterior = self.tipo_retorno
         ciclos_anteriores = self.limites_ciclos
 
-        # Los parámetros comparten ámbito con las variables
-        # declaradas directamente en el cuerpo de la función.
+        # Cada función tiene sus propias variables y ciclos.
+        # Los parámetros comparten ámbito con el cuerpo principal.
         self.ambitos = [{}]
         self.limites_ciclos = []
         self.tipo_retorno = (
@@ -225,6 +224,7 @@ class AnalizadorSemantico(RustiQVisitor):
                 token = parametro.IDENT().getSymbol()
                 nombre = token.text
 
+                # read y print no pueden usarse como parámetros.
                 if self.nombre_incorporado(token):
                     continue
 
@@ -235,8 +235,7 @@ class AnalizadorSemantico(RustiQVisitor):
                     )
                     continue
 
-                # Un parámetro recibe su valor al llamar
-                # a la función, por eso está inicializado.
+                # Los parámetros reciben un valor al llamar la función.
                 self.ambitos[-1][nombre] = {
                     "tipo": self.obtener_tipo_declarado(parametro),
                     "mutable": parametro.MUT() is not None,
@@ -244,13 +243,42 @@ class AnalizadorSemantico(RustiQVisitor):
                     "puede_inicializada": True,
                 }
 
-            # No usamos visitBlock aquí porque crearía
-            # otro ámbito entre parámetros y variables locales.
+            # No llamamos a visitBlock porque crearía otro ámbito
+            # entre los parámetros y las variables del cuerpo.
             for sentencia in ctx.block().statement():
                 self.visit(sentencia)
 
+            expresion_final = ctx.block().expression()
+            tipo_final = "unit"
+
+            if expresion_final is not None:
+                # La expresión final funciona como retorno implícito.
+                # El tipo esperado también permite analizar literales
+                # compuestos que necesitan contexto, como un arreglo vacío.
+                tipo_final = self.visitar_con_tipo(
+                    expresion_final,
+                    self.tipo_retorno,
+                )
+
+                if (
+                    tipo_final is not None
+                    and tipo_final != self.tipo_retorno
+                ):
+                    self.reportar(
+                        expresion_final.start,
+                        "Retorno implícito incompatible: "
+                        f"se esperaba {self.tipo_retorno}, "
+                        f"pero se recibió {tipo_final}.",
+                    )
+
+            # Registrar el tipo de la expresión final del cuerpo.
+            self.guardar_tipo(ctx.block(), tipo_final)
+
+            # Sin expresión final, seguimos exigiendo retornos
+            # explícitos en todos los caminos de una función con valor.
             if (
                 self.tipo_retorno != "unit"
+                and expresion_final is None
                 and not self.bloque_garantiza_retorno(ctx.block())
             ):
                 self.reportar(
@@ -258,7 +286,9 @@ class AnalizadorSemantico(RustiQVisitor):
                     "La función debe retornar un valor "
                     f"{self.tipo_retorno} en todos los caminos."
                 )
+
         finally:
+            # Restaurar el contexto que existía antes de esta función.
             self.ambitos = anteriores
             self.tipo_retorno = retorno_anterior
             self.limites_ciclos = ciclos_anteriores
@@ -417,13 +447,31 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def visitBlock(self, ctx):
-        """Abre un ámbito, visita las sentencias y lo cierra siempre. Las variables locales dejan de ser visibles al salir."""
+        """Analiza el bloque y obtiene el tipo de su expresión final."""
         self.ambitos.append({})
 
         try:
+            # Primero analizamos las instrucciones.
+            # Las variables declaradas aquí siguen visibles
+            # mientras analizamos la expresión final.
             for sentencia in ctx.statement():
                 self.visit(sentencia)
+
+            expresion = ctx.expression()
+
+            # Sin expresión final, el bloque no produce un valor.
+            tipo = (
+                self.visit(expresion)
+                if expresion is not None
+                else "unit"
+            )
+
+            # Guardamos el tipo del bloque para el backend.
+            return self.guardar_tipo(ctx, tipo)
+
         finally:
+            # Al salir, desaparecen las variables locales.
+            # Esto también ocurre si se produce una excepción.
             self.ambitos.pop()
 
     def visitIfStmt(self, ctx):
@@ -1311,6 +1359,11 @@ class AnalizadorSemantico(RustiQVisitor):
 
         elif ctx.enumValue() is not None:
             tipo = self.visit(ctx.enumValue())
+
+        elif ctx.block() is not None:
+            # Un bloque puede utilizarse como una expresión.
+            # Su tipo depende de su expresión final.
+            tipo = self.visit(ctx.block())
 
         elif ctx.matchExpr() is not None:
             tipo = self.visit(ctx.matchExpr())

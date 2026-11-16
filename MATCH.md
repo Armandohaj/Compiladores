@@ -26,14 +26,30 @@ Los nombres read y print continúan protegidos también en los patrones.
 Armando debe adaptar la generación de estos nodos; estas pruebas no ejecutan WASM.
 No se modifica el backend ni se agregan claves al contrato público.
 
+## Bloques con valor y retornos implícitos
+
+Se admiten bloques con expresión final sin punto y coma.
+También se admite el retorno implícito de las funciones.
+
+BlockContext.expression() contiene la expresión final opcional.
+Su tipo queda registrado en tipos_expresiones.
+
+El backend debe evaluar esa expresión al finalizar el bloque y utilizarla
+como retorno cuando corresponda al cuerpo de una función.
+
+La inicialización posterior a match combina los estados de todos sus brazos.
+Una variable queda definitivamente inicializada si recibe valor en todos ellos.
+
 ## Pendiente
 
-Aún no se incorporan bloques como expresiones ni expresiones finales sin punto
-y coma. Usar por ahora return match ...; o let resultado = match ...;.
 Los match en constantes globales se rechazan con un diagnóstico controlado;
-su evaluación en compilación queda pendiente. No se detectan brazos redundantes.
-Ownership y borrowing se implementarán después de acordar sus reglas.
+su evaluación en compilación queda pendiente.
 
+No se detectan brazos redundantes. El tratamiento de saltos dentro de
+expresiones requiere una revisión adicional.
+
+Ownership y borrowing se implementarán después de acordar sus reglas.
+La ejecución WASM de las nuevas construcciones requiere integración del backend.
 ## Ejemplos
 
 ```rust
@@ -53,6 +69,13 @@ fn main() -> i32 {
 }
 ```
 
-Ejecutar python pruebas_match.py y python ejecutar_pruebas.py.
-Validación local: 32/32 nuevas, total 582/582 en 21 suites,
-Python 3.12 y runtime ANTLR 4.13.2.
+## Pruebas
+
+Ejecutar desde la carpeta principal con el entorno virtual activo:
+
+- python pruebas_match.py
+- python pruebas_bloques.py
+- python ejecutar_pruebas.py
+
+Resultado verificado: 602/602 comprobaciones en 22 suites.
+Estas pruebas validan el frontend; no ejecutan WebAssembly.
