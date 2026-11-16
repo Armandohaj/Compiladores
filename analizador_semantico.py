@@ -810,28 +810,73 @@ class AnalizadorSemantico(RustiQVisitor):
 
         return "bool"
 
+    def visitar_operando_condicional(self, nodo):
+        """Analiza un operando que puede omitirse por cortocircuito."""
+        originales = self.ambitos
+        antes = deepcopy(originales)
+
+        try:
+            # Revisamos el operando para detectar errores,
+            # aunque durante la ejecución podría omitirse.
+            self.ambitos = deepcopy(antes)
+            tipo = self.visit(nodo)
+            despues = deepcopy(self.ambitos)
+
+        finally:
+            # Conservamos la identidad de los ámbitos originales.
+            self.ambitos = originales
+
+        # Hay dos caminos: ejecutar el operando u omitirlo.
+        # Una asignación opcional no garantiza inicialización.
+        for indice, ambito in enumerate(originales):
+            for nombre, variable in ambito.items():
+                previo = antes[indice][nombre]
+                posterior = despues[indice][nombre]
+
+                variable["inicializada"] = (
+                    previo["inicializada"]
+                    and posterior["inicializada"]
+                )
+
+                # Sí puede haber recibido valor. Esto impide
+                # una posible segunda asignación sin mut.
+                variable["puede_inicializada"] = (
+                    previo["puede_inicializada"]
+                    or posterior["puede_inicializada"]
+                )
+
+        return tipo
+
     def visitLogicalOr(self, ctx):
-        """Comprueba los operandos de ||. El semántico revisa todos aunque en ejecución exista cortocircuito."""
+        """El primer operando se evalúa; los siguientes pueden omitirse."""
         operandos = ctx.logicalAnd()
         tipo = self.visit(operandos[0])
 
         for indice in range(1, len(operandos)):
-            derecho = self.visit(operandos[indice])
+            derecho = self.visitar_operando_condicional(
+                operandos[indice]
+            )
             tipo = self.comprobar_logica(
-                tipo, derecho, ctx.OR(indice - 1).getSymbol()
+                tipo,
+                derecho,
+                ctx.OR(indice - 1).getSymbol(),
             )
 
         return self.guardar_tipo(ctx, tipo)
 
     def visitLogicalAnd(self, ctx):
-        """Comprueba los operandos de && y registra el tipo final."""
+        """Comprueba booleanos y contempla el cortocircuito de AND."""
         operandos = ctx.comparison()
         tipo = self.visit(operandos[0])
 
         for indice in range(1, len(operandos)):
-            derecho = self.visit(operandos[indice])
+            derecho = self.visitar_operando_condicional(
+                operandos[indice]
+            )
             tipo = self.comprobar_logica(
-                tipo, derecho, ctx.AND(indice - 1).getSymbol()
+                tipo,
+                derecho,
+                ctx.AND(indice - 1).getSymbol(),
             )
 
         return self.guardar_tipo(ctx, tipo)
