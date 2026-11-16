@@ -4,6 +4,7 @@ Las descripciones temporales de cobertura solo sirven para comprobar casos;
 no sustituyen los nodos del compilador ni se entregan al backend.
 """
 from copy import deepcopy
+from flujo_control import salidas_control
 from tipos_compuestos import separar_tipo_tupla
 
 
@@ -108,91 +109,68 @@ def comprobar_patron(sem, ctx, esperado, nombres):
 
 
 def analizar_match(sem, ctx):
-    """Comprueba los brazos y combina sus estados de inicialización."""
+    """Analiza cada brazo desde el mismo estado y une su inicialización."""
     inicio = len(sem.errores)
     tipo = sem.visit(ctx.expression())
 
-    # Todos los brazos parten del estado posterior a evaluar
-    # el valor que estamos comparando.
+    # Evaluar el valor del match puede tener efectos sobre las variables.
+    # Ese estado, anterior a seleccionar un brazo, es el punto de partida.
     originales = sem.ambitos
     inicial = deepcopy(originales)
-
     estados = []
     filas = []
     resultado = None
 
     try:
         for brazo in ctx.matchArm():
-            # Una asignación en un brazo no afecta el análisis
-            # de los otros: solo uno se ejecutará.
+            # Ningún brazo hereda las asignaciones de otro.
             sem.ambitos = deepcopy(inicial)
             sem.ambitos.append({})
-
             try:
-                patron = comprobar_patron(
-                    sem, brazo.pattern(), tipo, set()
-                )
+                patron = comprobar_patron(sem, brazo.pattern(), tipo, set())
                 filas.append([patron])
-
                 recibido = sem.visit(brazo.expression())
                 sem.guardar_tipo(brazo, recibido)
-
-                if resultado is None:
+                continua = 'normal' in salidas_control(brazo.expression())
+                if continua and resultado is None:
                     resultado = recibido
-                elif recibido is not None and recibido != resultado:
+                elif continua and recibido is not None and recibido != resultado:
                     sem.reportar(
                         brazo.expression().start,
-                        "Brazos de match incompatibles: "
-                        f"{resultado} y {recibido}.",
+                        f'Brazos de match incompatibles: {resultado} y {recibido}.',
                     )
-
             finally:
-                # Los nombres introducidos por el patrón
-                # desaparecen cuando termina su brazo.
+                # Los receptores del patrón no salen de su brazo.
                 sem.ambitos.pop()
-
-            estados.append(deepcopy(sem.ambitos))
-
+            # Solo los caminos que continúan afectan las variables posteriores.
+            if continua:
+                estados.append(deepcopy(sem.ambitos))
     finally:
-        # Conservamos los diccionarios originales.
-        # Una declaración que analiza su inicializador
-        # puede mantener una referencia a su ámbito.
+        # Conservar los diccionarios originales: una declaración que está
+        # analizando su inicializador puede mantener una referencia a ellos.
         sem.ambitos = originales
 
-    # Comprobar que ningún valor posible quede sin cubrir.
     if tipo is not None and len(sem.errores) == inicio:
         if not cubre_todo(filas, [tipo], sem.enumeraciones):
             sem.reportar(
                 ctx.start,
-                "El match no es exhaustivo: "
-                "faltan valores o variantes por cubrir.",
+                'El match no es exhaustivo: faltan valores o variantes por cubrir.',
             )
 
-    # Solo combinamos estados de un match válido.
-    # Por ahora consideramos conservadoramente todos los brazos.
+    # Solo un match válido permite establecer garantías posteriores.
+    # Conservadoramente se consideran todos los brazos, aunque alguno
+    # pueda ser redundante. El análisis de saltos se completará aparte.
     if len(sem.errores) == inicio and estados:
         for indice, ambito in enumerate(sem.ambitos):
             for nombre, variable in ambito.items():
-                alternativas = [
-                    estado[indice][nombre]
-                    for estado in estados
-                ]
-
-                # Garantizada: recibió valor en TODOS los brazos.
-                variable["inicializada"] = all(
-                    alternativa["inicializada"]
-                    for alternativa in alternativas
+                alternativas = [estado[indice][nombre] for estado in estados]
+                variable['inicializada'] = all(
+                    alternativa['inicializada'] for alternativa in alternativas
                 )
-
-                # Posible: recibió valor en ALGÚN brazo.
-                # Esto permite detectar una posible segunda
-                # asignación a una variable sin mut.
-                variable["puede_inicializada"] = any(
-                    alternativa["puede_inicializada"]
-                    for alternativa in alternativas
+                variable['puede_inicializada'] = any(
+                    alternativa['puede_inicializada'] for alternativa in alternativas
                 )
 
     return sem.guardar_tipo(
-        ctx,
-        resultado if len(sem.errores) == inicio else None,
+        ctx, (resultado or 'unit') if len(sem.errores) == inicio else None
     )

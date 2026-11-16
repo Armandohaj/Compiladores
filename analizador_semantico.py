@@ -15,6 +15,7 @@ from tipos_compuestos import (
     normalizar_tipo, separar_tipo_tupla, accesos_lectura, accesos_escritura,
 )
 from gestor_enumeraciones import GestorEnumeraciones
+from flujo_control import salidas_control
 
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
@@ -263,6 +264,7 @@ class AnalizadorSemantico(RustiQVisitor):
                 if (
                     tipo_final is not None
                     and tipo_final != self.tipo_retorno
+                    and "normal" in salidas_control(expresion_final)
                 ):
                     self.reportar(
                         expresion_final.start,
@@ -386,30 +388,10 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
 
     def bloque_garantiza_retorno(self, ctx):
-        """Devuelve si este bloque garantiza retorno según el análisis conservador actual. Un ciclo no se considera suficiente por sí solo."""
-        for sentencia in ctx.statement():
-            if sentencia.returnStmt() is not None:
-                return True
-
-            if (
-                sentencia.breakStmt() is not None
-                or sentencia.continueStmt() is not None
-            ):
-                return False
-
-            if sentencia.block() is not None:
-                if self.bloque_garantiza_retorno(sentencia.block()):
-                    return True
-
-            if sentencia.ifStmt() is not None:
-                if self.if_garantiza_retorno(sentencia.ifStmt()):
-                    return True
-
-            # Un while podría ejecutarse cero veces.
-            # Por eso no garantiza un retorno.
-
-        return False
-
+        """Comprueba que todos los caminos terminen con return."""
+        # No basta encontrar un return: no debe existir otro camino
+        # que continúe normalmente, haga break o haga continue.
+        return salidas_control(ctx) == {"return"}
     def if_garantiza_retorno(self, ctx):
         """Exige else y retorno garantizado en ambas ramas, incluyendo cadenas else if."""
         if ctx.ELSE() is None:
@@ -426,15 +408,24 @@ class AnalizadorSemantico(RustiQVisitor):
         return self.bloque_garantiza_retorno(bloques[1])
 
     def visitReturnStmt(self, ctx):
-        """Compara el tipo devuelto con el esperado por la función. Un return vacío tiene tipo unit."""
+        """Comprueba el valor retornado si su evaluación termina normalmente."""
         expresion = ctx.expression()
+
         tipo = (
             self.visitar_con_tipo(expresion, self.tipo_retorno)
             if expresion is not None
             else "unit"
         )
 
-        if tipo is not None and tipo != self.tipo_retorno:
+        # Una expresión puede contener otro return o un salto.
+        # Solo comparamos el valor si llega hasta este return exterior.
+        continua = "normal" in salidas_control(expresion)
+
+        if (
+            continua
+            and tipo is not None
+            and tipo != self.tipo_retorno
+        ):
             self.reportar(
                 ctx.RETURN().getSymbol(),
                 "Retorno incompatible: "
