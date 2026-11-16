@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 import wasmtime
 
+from ejecutar_wasm import ejecutar_main_con_entradas
 from generador_wasm import compilar_programa
 from visor_wasm import cargar_archivo_wasm
 
@@ -34,6 +35,19 @@ def test_visor_carga_un_binario_generado_por_rustiq(tmp_path):
     archivo.write_bytes(resultado["wasm"])
 
     assert cargar_archivo_wasm(archivo) == resultado["wasm"]
+
+
+def test_visor_carga_y_ejecuta_binario_con_read_y_print(tmp_path):
+    resultado = compilar_programa(
+        "fn main() -> i32 { let valor = read(); print(valor); return valor; }"
+    )
+    archivo = tmp_path / "entrada-salida.wasm"
+    archivo.write_bytes(resultado["wasm"])
+
+    wasm = cargar_archivo_wasm(archivo)
+
+    assert resultado["valido"]
+    assert ejecutar_main_con_entradas(wasm, [37]) == (37, [37])
 
 
 @pytest.mark.parametrize(

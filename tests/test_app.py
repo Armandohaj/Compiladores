@@ -1,8 +1,10 @@
 import base64
+import hashlib
 
 import wasmtime
 
 from app import app
+from ejecutar_wasm import ejecutar_archivo_wasm
 
 
 def test_editor_y_analizar_conservan_su_comportamiento():
@@ -90,6 +92,29 @@ fn main() -> i32 { return DOBLE + 5; }"""
     assert datos["valido"]
     assert datos["errores"] == []
     assert datos["wasm_base64"] is not None
+
+
+def test_compilar_read_y_print_entrega_importaciones_wasm(tmp_path, capsys):
+    cliente = app.test_client()
+    respuesta = cliente.post(
+        "/api/compilar",
+        json={"codigo": "fn main() -> i32 { let x = read(); print(x); return x; }"},
+    )
+
+    datos = respuesta.get_json()
+    wasm = base64.b64decode(datos["wasm_base64"])
+    modulo = wasmtime.Module(wasmtime.Engine(), wasm)
+    importaciones = {(item.module, item.name) for item in modulo.imports}
+    archivo = tmp_path / "programa.wasm"
+    archivo.write_bytes(wasm)
+    antes = hashlib.sha256(archivo.read_bytes()).hexdigest()
+
+    assert respuesta.status_code == 200
+    assert datos["valido"]
+    assert importaciones == {("env", "read_i32"), ("env", "print_i32")}
+    assert ejecutar_archivo_wasm(archivo, entradas=[37]) == 0
+    assert "Salida: 37" in capsys.readouterr().out
+    assert hashlib.sha256(archivo.read_bytes()).hexdigest() == antes
 
 
 def test_compilar_informa_firma_main_no_ejecutable_en_el_editor():

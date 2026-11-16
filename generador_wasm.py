@@ -51,6 +51,8 @@ class EstadoModulo:
     nombres_funcion: dict
     memoria: MemoriaStrings
     constantes: dict
+    llamadas_incorporadas: dict
+    incorporadas_usadas: set
 
 
 @dataclass
@@ -809,6 +811,19 @@ def _compilar_direccion_asignacion(
 
 
 def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion, tipos):
+    incorporada = nombres_funcion.llamadas_incorporadas.get(llamada)
+    if incorporada is not None:
+        nombres_funcion.incorporadas_usadas.add(incorporada)
+        if incorporada == "read":
+            return ["call $read_i32"], "i32"
+        argumentos = llamada.argumentList().expression()
+        return [
+            *_compilar_expresion(
+                argumentos[0], referencias, locales, funciones, nombres_funcion, tipos
+            ),
+            "call $print_i32",
+        ], "unit"
+
     nombre = llamada.IDENT().getText()
     firma = funciones.get(nombre)
     if firma is None or nombre not in nombres_funcion.nombres_funcion:
@@ -1059,6 +1074,16 @@ def _validar_constantes_globales(arbol, declaraciones, constantes):
             )
 
 
+def _imports_incorporados(incorporadas_usadas):
+    """Declara solamente las importaciones que requieren las llamadas del programa."""
+    imports = []
+    if "read" in incorporadas_usadas:
+        imports.append('  (import "env" "read_i32" (func $read_i32 (result i32)))')
+    if "print" in incorporadas_usadas:
+        imports.append('  (import "env" "print_i32" (func $print_i32 (param i32)))')
+    return "\n".join(imports)
+
+
 def compilar_programa(codigo):
     """Compila RustiQ a WebAssembly y devuelve ``valido`, `errores`, `wat`, `wasm`."""
     analisis = analizar_programa(codigo)
@@ -1082,14 +1107,19 @@ def compilar_programa(codigo):
             },
             MemoriaStrings(),
             constantes,
+            analisis["llamadas_incorporadas"],
+            set(),
         )
         wat_funciones = [
             _compilar_funcion(funcion, analisis, indice, estado)
             for indice, funcion in enumerate(funciones)
         ]
         datos = estado.memoria.wat()
+        imports = _imports_incorporados(estado.incorporadas_usadas)
         wat = (
-            f"(module\n  (memory (export \"memory\") {estado.memoria.paginas_necesarias()})\n"
+            "(module\n"
+            + (imports + "\n" if imports else "")
+            + f"  (memory (export \"memory\") {estado.memoria.paginas_necesarias()})\n"
             + _wat_string_eq() + "\n"
             + _wat_arreglos((estado.memoria.cursor + 3) & ~3) + "\n"
             + "\n".join(wat_funciones)

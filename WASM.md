@@ -180,6 +180,12 @@ etiquetas únicas. `break` salta a la salida del ciclo más cercano y `continue`
 vuelve al encabezado de ese ciclo; en `while` esto vuelve a evaluar la
 condición.
 
+Las llamadas incorporadas `read()` y `print(i32)` generan, respectivamente,
+los imports `env.read_i32` y `env.print_i32`. Los módulos que no usan estas
+operaciones no declaran imports adicionales. La validación de firmas y usos
+incorrectos corresponde al frontend; el generador solo consulta
+`llamadas_incorporadas` para emitir las llamadas WebAssembly.
+
 Las constantes globales `i32`, `f64`, `bool`, `char` y `String` se incorporan
 como literales Wasm a partir del valor ya calculado por el análisis semántico;
 por ello admiten dependencias y referencias adelantadas sin reevaluarse en el

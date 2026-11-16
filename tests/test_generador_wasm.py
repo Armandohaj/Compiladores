@@ -1,3 +1,4 @@
+import hashlib
 import math
 from concurrent.futures import ThreadPoolExecutor
 
@@ -11,6 +12,7 @@ from generador_wasm import (
     ejecutar_modulo_wasm,
     ejecutar_string_wasm,
 )
+from ejecutar_wasm import ejecutar_archivo_wasm, ejecutar_main_con_entradas
 from main import analizar_programa
 
 
@@ -26,6 +28,67 @@ def test_compila_y_ejecuta_la_prueba_obligatoria(tmp_path):
     archivo.write_bytes(resultado["wasm"])
     wasmtime.Module(wasmtime.Engine(), archivo.read_bytes())
     assert ejecutar_modulo_wasm(resultado["wasm"]) == 30
+
+
+def test_read_y_print_generan_imports_y_ejecutan_el_programa_obligatorio(tmp_path, capsys):
+    resultado = compilar_programa("""fn main() -> i32 {
+    let primero: i32 = read();
+    let segundo: i32 = read();
+    let resultado = primero + segundo;
+    print(primero);
+    print(segundo);
+    print(resultado);
+    return resultado;
+}""")
+
+    assert resultado["valido"]
+    assert '(import "env" "read_i32" (func $read_i32 (result i32)))' in resultado["wat"]
+    assert '(import "env" "print_i32" (func $print_i32 (param i32)))' in resultado["wat"]
+    assert ejecutar_main_con_entradas(resultado["wasm"], [15, 22]) == (37, [15, 22, 37])
+
+    archivo = tmp_path / "entrada-salida.wasm"
+    archivo.write_bytes(resultado["wasm"])
+    antes = hashlib.sha256(archivo.read_bytes()).hexdigest()
+    assert ejecutar_archivo_wasm(archivo, entradas=[15, 22]) == 0
+    assert "Salida: 37" in capsys.readouterr().out
+    assert hashlib.sha256(archivo.read_bytes()).hexdigest() == antes
+
+
+def test_read_y_print_funcionan_en_funciones_condiciones_y_ciclos():
+    resultado = compilar_programa("""fn doble_entrada() -> i32 {
+    return read() * 2;
+}
+
+fn main() -> i32 {
+    let mut total = 0;
+    if read() > 0 {
+        total = doble_entrada();
+    }
+    while total < 6 {
+        print(total);
+        total += 1;
+    }
+    return total;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_main_con_entradas(resultado["wasm"], [1, 2]) == (6, [4, 5])
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        "fn main() -> i32 { return read(1); }",
+        "fn main() -> i32 { let valor = print(1); return 0; }",
+        "fn read() -> i32 { return 1; }",
+        "fn main() -> i32 { return print(1); }",
+    ],
+)
+def test_errores_semanticos_de_read_y_print_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
 
 
 def test_respeta_parentesis_y_precedencia():
