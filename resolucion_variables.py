@@ -7,7 +7,7 @@ destinos y declaraciones sin introducir otro árbol de representación.
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 from tipos_compuestos import normalizar_tipo
-
+from flujo_control import salidas_control
 
 class ResolucionVariables(RustiQVisitor):
     """
@@ -185,14 +185,18 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitLetDecl(self, ctx):
-        """Resuelve primero el inicializador y después crea el nuevo símbolo, respetando el sombreado de nombres."""
+        """Resuelve el inicializador antes de registrar la variable."""
         expresion = ctx.expression()
         tipo = self.obtener_tipo_declarado(ctx)
 
-        # Resolver el inicializador antes de registrar
-        # la nueva variable.
         if expresion is not None:
+            # Vincular primero las lecturas del inicializador.
             self.visit(expresion)
+
+            # Coincide con el semántico: si hay un salto
+            # incondicional, no se crea esta declaración.
+            if "normal" not in salidas_control(expresion):
+                return
 
             if tipo is None:
                 tipo = self.tipos_expresiones[expresion]

@@ -79,3 +79,27 @@ Ejecutar desde la carpeta principal con el entorno virtual activo:
 
 Resultado verificado: 602/602 comprobaciones en 22 suites.
 Estas pruebas validan el frontend; no ejecutan WebAssembly.
+
+
+## Saltos en argumentos e inicializadores
+
+Las llamadas conservan la validación de existencia, cantidad de argumentos
+y tipos. Un argumento que no termina normalmente no necesita producir
+un valor del tipo esperado.
+
+El backend debe evaluar los argumentos en orden y respetar cualquier salto
+antes de emitir la llamada.
+
+Si el inicializador de un let no tiene continuación normal, la declaración
+no se crea: su nodo no aparece en declaraciones ni genera un símbolo.
+
+El auxiliar salidas_control, definido en flujo_control.py, permite distinguir
+continuación normal, return, break y continue sobre el árbol ANTLR.
+La ausencia de normal indica que la evaluación no produce un valor
+para la operación siguiente.
+
+Esta información debe considerarse junto con tipos_expresiones.
+No se agregan campos al resultado público de analizar_programa.
+
+Validación actual del frontend: 652/652 comprobaciones en 26 suites.
+La ejecución WASM requiere adaptación y pruebas del backend.

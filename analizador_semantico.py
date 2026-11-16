@@ -362,7 +362,10 @@ class AnalizadorSemantico(RustiQVisitor):
         ):
             if recibido is None:
                 llamada_valida = False
-            elif recibido != esperado:
+            elif (
+                    "normal" in salidas_control(argumentos[indice - 1])
+                    and recibido != esperado
+                ):
                 self.reportar(
                     argumentos[indice - 1].start,
                     f"Argumento {indice} de '{nombre}': "
@@ -373,7 +376,15 @@ class AnalizadorSemantico(RustiQVisitor):
 
         # print no produce un valor. Solo se permite esta llamada
         # como sentencia directa, nunca como argumento, retorno o inicializador.
-        if nombre in self.incorporadas and funcion["retorno"] == "unit" and not isinstance(ctx.parentCtx, RustiQParser.StatementContext):
+        if (
+                nombre in self.incorporadas
+                and funcion["retorno"] == "unit"
+                and "normal" in salidas_control(ctx)
+                and not isinstance(
+                    ctx.parentCtx,
+                    RustiQParser.StatementContext,
+                )
+            ):
             self.reportar(token, "Una función unit no puede utilizarse como valor; usala como instrucción independiente.")
             llamada_valida = False
 
@@ -612,6 +623,14 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return
 
+        # Si el inicializador termina mediante un salto,
+        # nunca se llega a crear la variable.
+        # No inventamos un tipo para un valor que no existe.
+        if (
+            expresion is not None
+            and "normal" not in salidas_control(expresion)
+        ):
+            return
         if declarado is None and expresion is None:
             self.reportar(
                 token,
