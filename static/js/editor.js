@@ -2,10 +2,12 @@ const codigo = document.querySelector("#codigo");
 const lineas = document.querySelector("#lineas");
 const botonAnalizar = document.querySelector("#analizar");
 const botonEjecutar = document.querySelector("#ejecutar");
+const botonDescargarWasm = document.querySelector("#descargar-wasm");
 const archivo = document.querySelector("#archivo");
 const estado = document.querySelector("#estado");
 const listaErrores = document.querySelector("#errores");
 const LIMITE_EJECUCION_MS = 3000;
+let wasmCompilado = null;
 
 function actualizarLineas() {
   const total = codigo.value.split("\n").length;
@@ -38,14 +40,20 @@ function mostrarMensaje(mensaje, clase = "") {
   estado.className = clase;
 }
 
-// Convierte la respuesta Base64 del servidor al buffer transferible del Worker.
+// Invalida el binario al cambiar el código para evitar descargas desactualizadas.
+function invalidarWasm() {
+  wasmCompilado = null;
+  botonDescargarWasm.disabled = true;
+}
+
+// Convierte la respuesta Base64 del servidor en bytes reutilizables.
 function decodificarWasm(wasmBase64) {
   const binario = atob(wasmBase64);
   const bytes = new Uint8Array(binario.length);
   for (let indice = 0; indice < binario.length; indice += 1) {
     bytes[indice] = binario.charCodeAt(indice);
   }
-  return bytes.buffer;
+  return bytes;
 }
 
 // Termina el Worker al recibir un resultado o al superar el límite de ejecución.
@@ -74,8 +82,22 @@ function ejecutarEnWorker(wasm) {
       finalizar();
       rechazar(new Error("No se pudo ejecutar el módulo WebAssembly."));
     };
-    worker.postMessage({ wasm }, [wasm]);
+    // Se transfiere una copia para conservar los mismos bytes descargables.
+    const copiaTransferible = wasm.slice().buffer;
+    worker.postMessage({ wasm: copiaTransferible }, [copiaTransferible]);
   });
+}
+
+// Descarga exactamente el binario conservado tras la última compilación válida.
+function descargarWasm() {
+  if (!wasmCompilado) return;
+  const archivoWasm = new Blob([wasmCompilado], { type: "application/wasm" });
+  const url = URL.createObjectURL(archivoWasm);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = "programa.wasm";
+  enlace.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 async function analizar() {
@@ -103,6 +125,7 @@ async function analizar() {
 async function ejecutar() {
   const codigoEnviado = codigo.value;
   botonEjecutar.disabled = true;
+  invalidarWasm();
   mostrarMensaje("Compilando para ejecutar…");
   try {
     const respuesta = await fetch("/api/compilar", {
@@ -116,17 +139,25 @@ async function ejecutar() {
       mostrarResultado(resultado);
       return;
     }
+    const wasm = decodificarWasm(resultado.wasm_base64);
+    if (codigo.value !== codigoEnviado) {
+      mostrarMensaje("El código cambió durante la compilación. Ejecuta nuevamente.", "error");
+      return;
+    }
+    wasmCompilado = wasm;
+    botonDescargarWasm.disabled = false;
     // La firma llega del análisis semántico; no se infiere desde el texto fuente.
     if (!resultado.main || resultado.main.parametros.length !== 0 || resultado.main.retorno !== "i32") {
       mostrarMensaje("Por ahora solo se puede ejecutar main() sin parámetros que retorne i32.", "error");
       return;
     }
+    mostrarMensaje("Ejecutando main()…");
+    const valor = await ejecutarEnWorker(wasmCompilado);
     if (codigo.value !== codigoEnviado) {
-      mostrarMensaje("El código cambió durante la compilación. Ejecuta nuevamente.", "error");
+      invalidarWasm();
+      mostrarMensaje("El código cambió durante la ejecución. Ejecuta nuevamente.", "error");
       return;
     }
-    mostrarMensaje("Ejecutando main()…");
-    const valor = await ejecutarEnWorker(decodificarWasm(resultado.wasm_base64));
     mostrarMensaje(`Resultado de main(): ${valor}`, "correcto");
   } catch (error) {
     mostrarMensaje(error.message, "error");
@@ -135,15 +166,23 @@ async function ejecutar() {
   }
 }
 
-codigo.addEventListener("input", actualizarLineas);
+codigo.addEventListener("input", () => {
+  actualizarLineas();
+  invalidarWasm();
+});
 codigo.addEventListener("scroll", () => { lineas.scrollTop = codigo.scrollTop; });
 botonAnalizar.addEventListener("click", analizar);
 botonEjecutar.addEventListener("click", ejecutar);
+botonDescargarWasm.addEventListener("click", descargarWasm);
 archivo.addEventListener("change", () => {
   const seleccionado = archivo.files[0];
   if (!seleccionado) return;
   const lector = new FileReader();
-  lector.onload = () => { codigo.value = lector.result; actualizarLineas(); };
+  lector.onload = () => {
+    codigo.value = lector.result;
+    actualizarLineas();
+    invalidarWasm();
+  };
   lector.readAsText(seleccionado);
 });
 actualizarLineas();
