@@ -1,0 +1,130 @@
+"""Patrones y exhaustividad sobre el árbol ANTLR, sin construir otro AST.
+
+Las descripciones temporales de cobertura solo sirven para comprobar casos;
+no sustituyen los nodos del compilador ni se entregan al backend.
+"""
+from tipos_compuestos import separar_tipo_tupla
+
+
+def constructores(tipo, enumeraciones):
+    """Enumera las formas de un tipo finito; None indica dominio abierto."""
+    if tipo == 'bool':
+        return [('true', []), ('false', [])]
+    campos = separar_tipo_tupla(tipo)
+    if campos is not None:
+        return [('tupla', campos)]
+    if tipo in enumeraciones:
+        enum = enumeraciones[tipo]
+        datos = enum.get('datos_variantes', {})
+        return [(nombre, datos.get(nombre, [])) for nombre in enum['variantes']]
+    return None
+
+
+def cubre_todo(filas, tipos, enumeraciones):
+    """Especializa una matriz de patrones para buscar combinaciones sin cubrir.
+
+    None representa un comodín o una variable receptora. Al separar las
+    columnas se comprueban también combinaciones de tuplas y datos de enums;
+    mencionar una variante con un patrón restrictivo no la cubre por completo.
+    """
+    if not tipos:
+        return bool(filas)
+    if not filas:
+        return False
+    formas = constructores(tipos[0], enumeraciones)
+    if formas is None:
+        # Un conjunto finito de literales no cubre un dominio abierto.
+        return cubre_todo([f[1:] for f in filas if f[0] is None], tipos[1:], enumeraciones)
+    for nombre, interiores in formas:
+        especializadas = []
+        for fila in filas:
+            patron = fila[0]
+            if patron is None:
+                especializadas.append([None] * len(interiores) + fila[1:])
+            elif patron[0] == nombre:
+                especializadas.append(patron[1] + fila[1:])
+        if not cubre_todo(especializadas, interiores + tipos[1:], enumeraciones):
+            return False
+    return True
+
+
+def comprobar_patron(sem, ctx, esperado, nombres):
+    """Valida recursivamente y declara las variables del brazo como inmutables."""
+    sem.guardar_tipo(ctx, esperado)
+    if ctx.UNDERSCORE() is not None:
+        return None
+    literal = ctx.patternLiteral()
+    if literal is not None:
+        if literal.INT() is not None:
+            tipo = 'i32'
+            valor = int(literal.getText())
+            if not -(2**31) <= valor < 2**31:
+                sem.reportar(literal.start, 'Literal de patrón fuera del rango i32.')
+        elif literal.FLOAT() is not None:
+            tipo = 'f64'
+        elif literal.TRUE() is not None or literal.FALSE() is not None:
+            tipo = 'bool'
+        elif literal.CHAR_LITERAL() is not None:
+            tipo = 'char'
+        else:
+            tipo = 'String'
+        sem.guardar_tipo(literal, tipo)
+        if esperado is not None and tipo != esperado:
+            sem.reportar(literal.start, f'Patrón incompatible: se esperaba {esperado}, pero se recibió {tipo}.')
+        return (literal.getText(), [])
+    if ctx.DOUBLE_COLON() is not None:
+        enum, variante = [n.getText() for n in ctx.IDENT()]
+        registro = sem.enumeraciones.get(enum)
+        lista = ctx.patternList()
+        hijos = lista.pattern() if lista is not None else []
+        if registro is None or variante not in registro['variantes']:
+            sem.reportar(ctx.start, f"Variante de patrón desconocida: '{enum}::{variante}'.")
+            return ('invalido', [])
+        if esperado is not None and enum != esperado:
+            sem.reportar(ctx.start, f'Patrón incompatible: se esperaba {esperado}, pero se recibió {enum}.')
+        tipos = registro.get('datos_variantes', {}).get(variante, [])
+        if len(hijos) != len(tipos) or (not tipos and ctx.LPAREN() is not None):
+            sem.reportar(ctx.start, f"La variante '{variante}' requiere {len(tipos)} patrones de datos.")
+        return (variante, [comprobar_patron(sem, h, t, nombres) for h, t in zip(hijos, tipos)])
+    if ctx.LPAREN() is not None:
+        tipos = separar_tipo_tupla(esperado)
+        hijos = ctx.pattern()
+        if tipos is None or len(tipos) != len(hijos):
+            sem.reportar(ctx.start, 'El patrón de tupla debe coincidir con el tipo y la cantidad de elementos.')
+            return ('invalido', [])
+        return ('tupla', [comprobar_patron(sem, h, t, nombres) for h, t in zip(hijos, tipos)])
+    # IDENT es una lista porque la alternativa de variante tiene dos nombres.
+    token = ctx.IDENT(0).getSymbol()
+    if token.text in nombres:
+        sem.reportar(token, f"La variable de patrón '{token.text}' está repetida.")
+    elif not sem.nombre_incorporado(token):
+        nombres.add(token.text)
+        sem.ambitos[-1][token.text] = {
+            'tipo': esperado, 'mutable': False,
+            'inicializada': True, 'puede_inicializada': True,
+        }
+    return None
+
+
+def analizar_match(sem, ctx):
+    """Comprueba el valor, aísla cada brazo y exige un resultado compatible."""
+    inicio = len(sem.errores)
+    tipo = sem.visit(ctx.expression())
+    filas = []
+    resultado = None
+    for brazo in ctx.matchArm():
+        sem.ambitos.append({})
+        try:
+            patron = comprobar_patron(sem, brazo.pattern(), tipo, set())
+            filas.append([patron])
+            recibido = sem.visit(brazo.expression())
+            sem.guardar_tipo(brazo, recibido)
+            if resultado is None:
+                resultado = recibido
+            elif recibido is not None and recibido != resultado:
+                sem.reportar(brazo.expression().start, f'Brazos de match incompatibles: {resultado} y {recibido}.')
+        finally:
+            sem.ambitos.pop()
+    if tipo is not None and len(sem.errores) == inicio and not cubre_todo(filas, [tipo], sem.enumeraciones):
+        sem.reportar(ctx.start, 'El match no es exhaustivo: faltan valores o variantes por cubrir.')
+    return sem.guardar_tipo(ctx, resultado if len(sem.errores) == inicio else None)

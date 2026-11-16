@@ -214,3 +214,37 @@ class ResolucionVariables(RustiQVisitor):
             self.referencias[ctx] = self.buscar(nombre)
         else:
             return self.visitChildren(ctx)
+
+    def visitMatchExpr(self, ctx):
+        """Resuelve primero el valor y limita cada variable al brazo que la declara."""
+        self.visit(ctx.expression())
+        for brazo in ctx.matchArm():
+            self.ambitos.append({})
+            try:
+                self.registrar_patron(brazo.pattern())
+                self.visit(brazo.expression())
+            finally:
+                self.ambitos.pop()
+
+    def registrar_patron(self, ctx):
+        """Asigna identidades a receptores; los nombres de variantes no son variables."""
+        if ctx.DOUBLE_COLON() is not None:
+            lista = ctx.patternList()
+            if lista is not None:
+                for hijo in lista.pattern():
+                    self.registrar_patron(hijo)
+        elif ctx.LPAREN() is not None:
+            for hijo in ctx.pattern():
+                self.registrar_patron(hijo)
+        elif ctx.IDENT():
+            token = ctx.IDENT(0).getSymbol()
+            identificador = self.siguiente_id
+            self.siguiente_id += 1
+            self.simbolos[identificador] = {
+                "nombre": token.text, "tipo": self.tipos_expresiones[ctx],
+                "mutable": False, "funcion": self.funcion_actual,
+                "es_parametro": False, "es_constante": False,
+                "linea": token.line, "columna": token.column + 1,
+            }
+            self.ambitos[-1][token.text] = identificador
+            self.declaraciones[ctx] = identificador

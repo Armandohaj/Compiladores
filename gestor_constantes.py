@@ -85,6 +85,10 @@ class GestorConstantes:
             # Revisar todos los nodos, aunque un operador
             # lógico pueda omitirlos al calcular el valor.
             for nodo in self.recorrer(ctx.expression()):
+                if isinstance(nodo, RustiQParser.MatchExprContext):
+                    # La evaluación de match constante se agregará por separado.
+                    # Se rechaza antes de calcular para no visitar nodos no soportados.
+                    self.semantico.reportar(nodo.start, "match todavía no se admite en constantes globales.")
                 if isinstance(nodo, RustiQParser.FunctionCallContext):
                     self.semantico.reportar(
                         nodo.IDENT().getSymbol(),

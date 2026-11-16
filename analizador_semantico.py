@@ -6,6 +6,7 @@ retornos. Los errores son datos estructurados, no mensajes impresos.
 No ejecuta el programa RustiQ ni genera WebAssembly.
 """
 from copy import copy, deepcopy
+from semantica_match import analizar_match
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 from gestor_constantes import GestorConstantes
@@ -1271,6 +1272,10 @@ class AnalizadorSemantico(RustiQVisitor):
             nombre if valido else None,
         )
 
+    def visitMatchExpr(self, ctx):
+        """Delega patrones, ámbitos de brazos, tipos y exhaustividad."""
+        return analizar_match(self, ctx)
+
     def visitPrimary(self, ctx):
         """
         Determina el tipo de un valor básico o compuesto.
@@ -1306,6 +1311,9 @@ class AnalizadorSemantico(RustiQVisitor):
 
         elif ctx.enumValue() is not None:
             tipo = self.visit(ctx.enumValue())
+
+        elif ctx.matchExpr() is not None:
+            tipo = self.visit(ctx.matchExpr())
 
         elif ctx.functionCall() is not None:
             tipo = self.visit(ctx.functionCall())

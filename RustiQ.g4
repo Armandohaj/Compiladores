@@ -228,10 +228,8 @@ postfix
     : primary (LBRACKET expression RBRACKET | tupleAccess | fieldAccess)*
     ;
 
-// Valores básicos y expresiones entre paréntesis.
-// IDENT precede al constructor para que, ante una ambigüedad real,
-// "if activo {} {}" conserve una condición seguida de dos bloques.
-// El contexto completo permite distinguir un constructor en un valor.
+// Valores básicos que pueden formar una expresión.
+// match también produce un valor, como un número o una llamada.
 primary
     : INT
     | FLOAT
@@ -245,7 +243,55 @@ primary
     | enumValue
     | IDENT
     | structLiteral
+    | matchExpr
     | LPAREN expression RPAREN
+    ;
+// =====================================================
+// MATCH Y PATRONES
+// =====================================================
+
+// Evalúa un valor y selecciona el primer brazo compatible.
+// Debe tener al menos un brazo y permite una coma final.
+// Ejemplo: match numero { 0 => 10, _ => 20 }
+matchExpr
+    : MATCH expression LBRACE matchArm (COMMA matchArm)* COMMA? RBRACE
+    ;
+
+// Cada brazo relaciona un patrón con una expresión.
+// La comprobación de tipos corresponde al analizador semántico.
+matchArm
+    : pattern FAT_ARROW expression
+    ;
+
+// Formas de reconocer el valor evaluado:
+// _                        ignora cualquier valor.
+// 10, true, 'a'            comparan un literal.
+// Resultado::Correcto(x)   reconoce una variante y extrae sus datos.
+// (x, _)                  descompone una tupla.
+// nombre                  recibe el valor en una variable local.
+pattern
+    : UNDERSCORE
+    | patternLiteral
+    | IDENT DOUBLE_COLON IDENT (LPAREN patternList RPAREN)?
+    | LPAREN pattern COMMA pattern (COMMA pattern)* COMMA? RPAREN
+    | IDENT
+    ;
+
+// Patrones de los datos asociados a una variante.
+// También permite patrones anidados.
+patternList
+    : pattern (COMMA pattern)* COMMA?
+    ;
+
+// Los números negativos incluyen el signo en el patrón.
+// Aquí no se admiten operaciones como 1 + 2.
+patternLiteral
+    : MINUS? INT
+    | MINUS? FLOAT
+    | TRUE
+    | FALSE
+    | CHAR_LITERAL
+    | STRING_LITERAL
     ;
 
 // Construcción de una estructura. El orden de los campos puede variar.
@@ -272,7 +318,12 @@ arrayLiteral
 // =====================================================
 // 5. PALABRAS RESERVADAS
 // =====================================================
-
+// Palabra reservada y símbolos utilizados por match.
+// UNDERSCORE debe aparecer antes de IDENT para distinguir
+// el comodín "_" de un nombre de variable.
+MATCH      : 'match';
+FAT_ARROW  : '=>';
+UNDERSCORE : '_';
 STRUCT   : 'struct';
 ENUM     : 'enum';
 FN       : 'fn';

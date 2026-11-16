@@ -199,6 +199,31 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#matchExpr.
+    def visitMatchExpr(self, ctx:RustiQParser.MatchExprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#matchArm.
+    def visitMatchArm(self, ctx:RustiQParser.MatchArmContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#pattern.
+    def visitPattern(self, ctx:RustiQParser.PatternContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#patternList.
+    def visitPatternList(self, ctx:RustiQParser.PatternListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#patternLiteral.
+    def visitPatternLiteral(self, ctx:RustiQParser.PatternLiteralContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#structLiteral.
     def visitStructLiteral(self, ctx:RustiQParser.StructLiteralContext):
         return self.visitChildren(ctx)
