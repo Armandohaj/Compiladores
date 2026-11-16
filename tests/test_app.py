@@ -52,7 +52,7 @@ def test_compilar_informa_programa_invalido_sin_wasm():
     assert any(error["fase"] == "lexico" for error in datos["errores"])
 
 
-def test_compilar_rechaza_funcionalidad_wasm_no_implementada():
+def test_compilar_admite_asignacion_a_elemento_de_arreglo():
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -67,10 +67,10 @@ def test_compilar_rechaza_funcionalidad_wasm_no_implementada():
 
     datos = respuesta.get_json()
     assert respuesta.status_code == 200
-    assert not datos["valido"]
-    assert datos["wasm_base64"] is None
-    assert datos["main"] is None
-    assert datos["errores"][0]["fase"] == "generacion"
+    assert datos["valido"]
+    assert datos["errores"] == []
+    assert datos["wasm_base64"] is not None
+    assert datos["main"] == {"parametros": [], "retorno": "i32"}
 
 
 def test_compilar_informa_firma_main_no_ejecutable_en_el_editor():

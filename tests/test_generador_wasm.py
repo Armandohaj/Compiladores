@@ -1182,6 +1182,50 @@ def test_matrices_de_tres_dimensiones_y_asignaciones_se_rechazan_controladamente
         assert resultado["wasm"] is None
 
 
+def test_asignacion_simple_a_elemento_de_arreglo():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut numeros = [10, 20, 30];
+    numeros[1] = 50;
+    return numeros[1];
+}""")
+
+    assert resultado["valido"]
+    assert "call $array_addr" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 50
+
+
+def test_asignacion_a_matriz_y_arreglo_f64():
+    matriz = compilar_programa("""fn main() -> i32 {
+    let mut valores = [[1, 2], [3, 4]];
+    valores[1][0] = 30;
+    valores[0][1] += 8;
+    return valores[1][0] + valores[0][1];
+}""")
+    decimales = compilar_programa("""fn main() -> f64 {
+    let mut valores = [1.5, 2.0];
+    valores[1] *= 3.0;
+    return valores[1];
+}""")
+
+    assert matriz["valido"]
+    assert ejecutar_modulo_wasm(matriz["wasm"]) == 40
+    assert decimales["valido"]
+    assert ejecutar_modulo_wasm(decimales["wasm"]) == pytest.approx(6.0)
+
+
+@pytest.mark.parametrize("indice", ["0 - 1", "1 + 1"])
+def test_asignacion_fuera_de_rango_en_arreglo_produce_trap(indice):
+    resultado = compilar_programa(f"""fn main() -> i32 {{
+    let mut valores = [1, 2];
+    valores[{indice}] = 9;
+    return 0;
+}}""")
+
+    assert resultado["valido"]
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(resultado["wasm"])
+
+
 def test_arreglo_string_explicito_recupera_el_elemento_principal():
     resultado = compilar_programa("""fn main() -> String {
     let mensajes: [String; 3] = ["Hola", "Adiós", "RustiQ"];

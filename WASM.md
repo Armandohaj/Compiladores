@@ -134,9 +134,11 @@ actual. Si el crecimiento de memoria es rechazado por el runtime o se agota el
 espacio direccionable, la ejecución hace `trap`. Los accesos `arreglo[indice]`
 comprueban en WebAssembly que el índice
 sea no negativo y menor que `N`, y hacen `trap` antes de una lectura fuera del
-bloque. En esta etapa solo se admiten literales, lectura e índices `i32` para
-arreglos locales: no hay parámetros, retornos, copia, comparación de arreglos
-ni asignación de arreglos o elementos.
+bloque. En esta etapa se admiten literales, lectura e índices `i32` para
+arreglos locales. También se admite la asignación de elementos con `=` y, para
+elementos `i32` y `f64`, con `+=`, `-=`, `*=` y `/=`; las direcciones conservan
+las mismas comprobaciones de límites antes de cargar o almacenar. No hay
+parámetros, retornos, copia, comparación ni asignación completa de arreglos.
 
 También se admiten matrices locales de dos dimensiones `[[T; columnas];
 filas]` para `i32`, `bool`, `char`, `f64` y `String`. Sus elementos se guardan
@@ -144,8 +146,9 @@ contiguamente por filas en el mismo bloque; `matriz[fila][columna]` usa
 `$array_addr` para comprobar y calcular cada dimensión antes de cargar el
 elemento. Las matrices conservan los tamaños y alineaciones de los arreglos,
 incluida la alineación de ocho bytes para `f64` y los punteros a descriptores
-para `String`. No se admiten más de dos dimensiones, ni parámetros, retornos,
-copias, comparaciones o asignaciones de matrices.
+para `String`. Sus elementos admiten las mismas asignaciones indexadas que los
+arreglos. No se admiten más de dos dimensiones, ni parámetros, retornos,
+copias, comparaciones o asignaciones completas de matrices.
 
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como

@@ -681,16 +681,48 @@ def _compilar_asignacion(
     identificador = referencias[asignacion]
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
-    if _info_arreglo(simbolos[identificador]["tipo"]) is not None or _info_matriz(simbolos[identificador]["tipo"]) is not None:
-        _error("La asignación de arreglos todavía no está implementada.", asignacion)
     operador = asignacion.assignmentOp().getText()
     expresion = _compilar_expresion(
         asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
     )
+    tipo_variable = simbolos[identificador]["tipo"]
+    if asignacion.indexAccess():
+        direccion, tipo = _compilar_direccion_asignacion(
+            asignacion, identificador, referencias, simbolos, locales, funciones,
+            nombres_funcion, tipos,
+        )
+        if operador == "=":
+            return [
+                *direccion,
+                *expresion,
+                _instruccion_almacenamiento_arreglo(tipo, 0),
+            ]
+        if tipo not in {"i32", "f64"}:
+            _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
+        instruccion = {
+            "+=": f"{tipo}.add",
+            "-=": f"{tipo}.sub",
+            "*=": f"{tipo}.mul",
+            "/=": "i32.div_s" if tipo == "i32" else "f64.div",
+        }[operador]
+        # Guardar la dirección evita evaluar el índice dos veces en += y similares.
+        return [
+            *direccion,
+            "local.tee $direccion_asignacion",
+            _instruccion_carga_arreglo(tipo),
+            *expresion,
+            instruccion,
+            f"local.set $valor_asignacion_{tipo}",
+            "local.get $direccion_asignacion",
+            f"local.get $valor_asignacion_{tipo}",
+            _instruccion_almacenamiento_arreglo(tipo, 0),
+        ]
+    if _info_arreglo(tipo_variable) is not None or _info_matriz(tipo_variable) is not None:
+        _error("La asignación completa de arreglos todavía no está implementada.", asignacion)
     if operador == "=":
         return [*expresion, f"local.set $local_{identificador}"]
     instrucciones = [f"local.get $local_{identificador}", *expresion]
-    tipo = simbolos[identificador]["tipo"]
+    tipo = tipo_variable
     if tipo not in {"i32", "f64"}:
         _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
     instrucciones.append({
@@ -701,6 +733,58 @@ def _compilar_asignacion(
     }[operador])
     instrucciones.append(f"local.set $local_{identificador}")
     return instrucciones
+
+
+def _compilar_direccion_asignacion(
+    asignacion, identificador, referencias, simbolos, locales, funciones, nombres_funcion, tipos
+):
+    """Calcula una dirección de elemento con las guardas existentes de $array_addr."""
+    tipo_base = simbolos[identificador]["tipo"]
+    accesos = asignacion.indexAccess()
+    instrucciones = [f"local.get $local_{identificador}"]
+    matriz = _info_matriz(tipo_base)
+    if matriz is not None:
+        tipo_elemento, filas, columnas = matriz
+        if len(accesos) != 2:
+            _error("Las matrices locales requieren exactamente dos índices.", asignacion)
+        bytes_elemento = _tamano_elemento_arreglo(tipo_elemento)
+        instrucciones.extend(
+            _compilar_expresion(
+                accesos[0].expression(), referencias, locales, funciones, nombres_funcion, tipos
+            )
+        )
+        instrucciones.extend([
+            f"i32.const {filas}",
+            f"i32.const {columnas * bytes_elemento}",
+            "call $array_addr",
+        ])
+        instrucciones.extend(
+            _compilar_expresion(
+                accesos[1].expression(), referencias, locales, funciones, nombres_funcion, tipos
+            )
+        )
+        instrucciones.extend([
+            f"i32.const {columnas}",
+            f"i32.const {bytes_elemento}",
+            "call $array_addr",
+        ])
+        return instrucciones, tipo_elemento
+
+    arreglo = _info_arreglo(tipo_base)
+    if arreglo is None or len(accesos) != 1:
+        _error("Solo se admiten asignaciones a arreglos locales de una dimensión.", asignacion)
+    tipo_elemento, tamano = arreglo
+    instrucciones.extend(
+        _compilar_expresion(
+            accesos[0].expression(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+    )
+    instrucciones.extend([
+        f"i32.const {tamano}",
+        f"i32.const {_tamano_elemento_arreglo(tipo_elemento)}",
+        "call $array_addr",
+    ])
+    return instrucciones, tipo_elemento
 
 
 def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion, tipos):
@@ -906,6 +990,11 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'])})"
         for identificador in sorted(variables - parametros)
     )
+    temporales_asignacion = "\n".join([
+        "    (local $direccion_asignacion i32)",
+        "    (local $valor_asignacion_i32 i32)",
+        "    (local $valor_asignacion_f64 f64)",
+    ])
     instrucciones = []
     ciclos = {"siguiente": 0, "activos": []}
     for sentencia in funcion.block().statement():
@@ -926,7 +1015,9 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     if tipo_retorno != "unit":
         instrucciones.append("unreachable")
     cuerpo = "\n    ".join(instrucciones)
-    locales_wat = f"\n{declaraciones_locales}" if declaraciones_locales else ""
+    locales_wat = "\n" + "\n".join(
+        parte for parte in (declaraciones_locales, temporales_asignacion) if parte
+    )
     return (
         f"  (func $funcion_{indice} {parametros_wat}{resultado_wat}{locales_wat}\n"
         f"    {cuerpo}\n"
