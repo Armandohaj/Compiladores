@@ -146,6 +146,11 @@ def analizar_programa(codigo):
         "arbol": arbol if valido else None,
         "errores": errores,
         "funciones": funciones,
+        # FunctionCallContext -> "read" o "print". Vacío si hay errores.
+        # El analizador no lee ni imprime: la ejecución corresponde a WASM.
+        "llamadas_incorporadas": (
+            semantico.llamadas_incorporadas if valido else {}
+        ),
         "tipos_expresiones": tipos_expresiones,
         "simbolos": simbolos,
         "declaraciones": declaraciones,

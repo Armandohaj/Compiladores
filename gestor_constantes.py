@@ -46,6 +46,9 @@ class GestorConstantes:
             token = ctx.IDENT().getSymbol()
             nombre = token.text
 
+            if self.semantico.nombre_incorporado(token):
+                continue
+
             if nombre in self.simbolos:
                 self.semantico.reportar(
                     token,

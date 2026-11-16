@@ -39,6 +39,15 @@ class AnalizadorSemantico(RustiQVisitor):
         # Firmas de funciones: parámetros y tipo de retorno.
         self.funciones = {}
 
+        # Reutilizamos la validación de firmas de las funciones normales.
+        # Este registro interno no altera el mapa público de funciones del usuario.
+        self.incorporadas = {
+            "read": {"parametros": [], "retorno": "i32"},
+            "print": {"parametros": ["i32"], "retorno": "unit"},
+        }
+        # El backend identifica cada operación en el mismo árbol de ANTLR.
+        self.llamadas_incorporadas = {}
+
         # Nombre de estructura -> campos y sus tipos.
         self.estructuras = {}
 
@@ -159,6 +168,9 @@ class AnalizadorSemantico(RustiQVisitor):
             token = funcion.IDENT().getSymbol()
             nombre = token.text
 
+            if self.nombre_incorporado(token):
+                continue
+
             if nombre in self.funciones:
                 self.reportar(
                     token,
@@ -212,6 +224,9 @@ class AnalizadorSemantico(RustiQVisitor):
                 token = parametro.IDENT().getSymbol()
                 nombre = token.text
 
+                if self.nombre_incorporado(token):
+                    continue
+
                 if nombre in self.ambitos[-1]:
                     self.reportar(
                         token,
@@ -251,6 +266,13 @@ class AnalizadorSemantico(RustiQVisitor):
     # 4. LLAMADAS A FUNCIONES
     # =================================================
 
+    def nombre_incorporado(self, token):
+        """Impide que declaraciones del usuario oculten las operaciones de E/S."""
+        if token.text not in self.incorporadas:
+            return False
+        self.reportar(token, f"El nombre '{token.text}' está reservado para una función incorporada.")
+        return True
+
     def visitFunctionCall(self, ctx):
         """Comprueba existencia, cantidad y tipos de argumentos; devuelve el tipo de retorno. Visita argumentos aunque haya otros errores."""
         token = ctx.IDENT().getSymbol()
@@ -263,7 +285,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
         # Revisamos todos los argumentos, aunque la función
         # no exista, para detectar errores dentro de ellos.
-        tipos_esperados = self.funciones.get(nombre, {}).get("parametros", [])
+        tipos_esperados = self.funciones.get(nombre, self.incorporadas.get(nombre, {})).get("parametros", [])
         tipos = [
             self.visitar_con_tipo(
                 argumento,
@@ -281,7 +303,7 @@ class AnalizadorSemantico(RustiQVisitor):
             )
             return self.guardar_tipo(ctx, None)
 
-        funcion = self.funciones.get(nombre)
+        funcion = self.funciones.get(nombre, self.incorporadas.get(nombre))
 
         if funcion is None:
             self.reportar(
@@ -315,6 +337,15 @@ class AnalizadorSemantico(RustiQVisitor):
                     f"pero se recibió {recibido}."
                 )
                 llamada_valida = False
+
+        # print no produce un valor. Solo se permite esta llamada
+        # como sentencia directa, nunca como argumento, retorno o inicializador.
+        if nombre in self.incorporadas and funcion["retorno"] == "unit" and not isinstance(ctx.parentCtx, RustiQParser.StatementContext):
+            self.reportar(token, "Una función unit no puede utilizarse como valor; usala como instrucción independiente.")
+            llamada_valida = False
+
+        if llamada_valida and nombre in self.incorporadas:
+            self.llamadas_incorporadas[ctx] = nombre
 
         tipo = funcion["retorno"] if llamada_valida else None
         return self.guardar_tipo(ctx, tipo)
@@ -520,6 +551,8 @@ class AnalizadorSemantico(RustiQVisitor):
         """Analiza el valor antes de registrar el nombre, infiere o comprueba el tipo y registra mutabilidad e inicialización."""
         token = ctx.IDENT().getSymbol()
         nombre = token.text
+        if self.nombre_incorporado(token):
+            return
         ambito = self.ambitos[-1]
         declarado = self.obtener_tipo_declarado(ctx)
         expresion = ctx.expression()
