@@ -70,6 +70,18 @@ Este ejecutor valida el módulo con Wasmtime y requiere que exporte `main()` sin
 parámetros con retorno `i32`. No modifica el archivo recibido y aplica el mismo
 límite de tres segundos a la ejecución.
 
+También hay una ventana de escritorio básica para demostrar el mismo binario
+descargado desde el editor web. En Windows se abre con:
+
+```powershell
+python .\visor_wasm.py
+```
+
+Selecciona el archivo `.wasm` con **Abrir archivo** y después pulsa
+**Ejecutar**. La ventana valida `main() -> i32`, conserva el binario solo en
+memoria, ejecuta en segundo plano y muestra el resultado o el error sin
+modificar el archivo seleccionado.
+
 ## Alcance actual
 
 Se admiten funciones que retornan `i32`, `f64`, `char`, `bool` o `String`
