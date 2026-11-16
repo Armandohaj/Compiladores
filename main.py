@@ -1,3 +1,9 @@
+"""Punto de entrada del frontend RustiQ y API reutilizable por el servidor.
+
+El flujo es texto -> tokens -> árbol de ANTLR -> análisis semántico ->
+datos para el backend. analizar_programa no imprime y analizar sí muestra
+mensajes en terminal. Importar este módulo no ejecuta el ejemplo final.
+"""
 from antlr4 import InputStream, CommonTokenStream
 from antlr4.error.ErrorListener import ErrorListener
 
@@ -45,6 +51,7 @@ def analizar_programa(codigo):
     - arbol: árbol de ANTLR.
     - errores: errores léxicos, sintácticos o semánticos.
     - funciones: firmas de las funciones.
+    - estructuras: nombre de estructura -> campos y tipos.
     - tipos_expresiones: nodo de expresión -> tipo.
     - simbolos: identificador de variable -> información.
     - declaraciones: nodo de declaración -> identificador.
@@ -112,8 +119,10 @@ def analizar_programa(codigo):
     simbolos = {}
     declaraciones = {}
     referencias = {}
+    estructuras = {}
 
     if valido:
+        estructuras = semantico.estructuras
         funciones = semantico.funciones
         tipos_expresiones = semantico.tipos_expresiones
 
@@ -129,15 +138,30 @@ def analizar_programa(codigo):
         declaraciones = resolucion.declaraciones
         referencias = resolucion.referencias
 
+    # Estos mapas contienen nodos de ANTLR: se consumen dentro de Python.
+    # El servidor puede enviar errores como JSON, pero no serializar el
+    # árbol ni los mapas con nodos como claves directamente al navegador.
     return {
         "valido": valido,
         "arbol": arbol if valido else None,
         "errores": errores,
         "funciones": funciones,
+        # FunctionCallContext -> "read" o "print". Vacío si hay errores.
+        # El analizador no lee ni imprime: la ejecución corresponde a WASM.
+        "llamadas_incorporadas": (
+            semantico.llamadas_incorporadas if valido else {}
+        ),
         "tipos_expresiones": tipos_expresiones,
         "simbolos": simbolos,
         "declaraciones": declaraciones,
         "referencias": referencias,
+        "estructuras": estructuras,
+
+        # Solo entregar tipos de enumeraciones al backend
+        # cuando el programa completo sea válido.
+        "enumeraciones": (
+            semantico.enumeraciones if valido else {}
+        ),
     }
 
 

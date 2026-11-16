@@ -4,9 +4,50 @@ grammar RustiQ;
 // 1. PROGRAMA, FUNCIONES Y TIPOS
 // =====================================================
 
-// El archivo puede contener funciones y constantes globales.
+// Declaraciones permitidas en el archivo.
 program
-    : (functionDecl | constDecl)* EOF
+    : (functionDecl | constDecl | structDecl | enumDecl)* EOF
+    ;
+// Una enumeración debe declarar al menos una variante.
+// Ejemplo: enum Estado { Pendiente, Completado }
+enumDecl
+    : ENUM IDENT LBRACE variantDecl (COMMA variantDecl)* COMMA? RBRACE
+    ;
+
+// Variante sin datos o con tipos asociados.
+// Ejemplos: Vacio, Correcto(i32), Coordenada(i32, i32).
+variantDecl
+    : IDENT (LPAREN variantTypeList RPAREN)?
+    ;
+
+// Lista de tipos que necesita la variante.
+// Separa los tipos con comas y permite una coma final.
+variantTypeList
+    : type (COMMA type)* COMMA?
+    ;
+
+// Construcción de un valor de enumeración.
+//
+// Ejemplos:
+// Resultado::Vacio
+// Resultado::Correcto(10)
+// Resultado::Error("Archivo no encontrado")
+//
+// La gramática reconoce la forma de la llamada.
+// El semántico comprobará si la variante necesita datos,
+// cuántos recibe y si sus tipos son compatibles.
+enumValue
+    : IDENT DOUBLE_COLON IDENT (LPAREN argumentList? RPAREN)?
+    ;
+
+// Estructura nominal: cada nombre define un tipo diferente.
+// Todos sus campos deben indicarse al construir un valor.
+structDecl
+    : STRUCT IDENT LBRACE (fieldDecl (COMMA fieldDecl)* COMMA?)? RBRACE
+    ;
+
+fieldDecl
+    : IDENT COLON type
     ;
 
 // Constante global con tipo y valor obligatorios.
@@ -38,6 +79,8 @@ type
     | CHAR
     | STRING
     | LBRACKET type SEMICOLON INT RBRACKET
+    | LPAREN type COMMA type (COMMA type)* COMMA? RPAREN
+    | IDENT
     ;
 // =====================================================
 // 2. BLOQUES Y SENTENCIAS
@@ -66,7 +109,7 @@ letDecl
 
 // Asignación simple o compuesta a una variable.
 assignment
-    : IDENT indexAccess* assignmentOp expression
+    : IDENT (indexAccess | tupleAccess | fieldAccess)* assignmentOp expression
     ;
 
 // Cada acceso mantiene su propia expresión de índice.
@@ -74,6 +117,19 @@ assignment
 // al identificador y al valor de las asignaciones existentes.
 indexAccess
     : LBRACKET expression RBRACKET
+    ;
+
+// Acceso por posición a una tupla, por ejemplo dato.0.
+// TUPLE_FIELD evita que dato.0.1 se confunda con un decimal.
+// La alternativa DOT INT admite espacios entre el punto y el número.
+tupleAccess
+    : TUPLE_FIELD
+    | DOT INT
+    ;
+
+// Acceso a un campo por nombre: persona.edad.
+fieldAccess
+    : DOT IDENT
     ;
 
 // El análisis semántico comprobará mutabilidad,
@@ -169,10 +225,13 @@ unary
 // Acceso a elementos de arreglos.
 // Permite accesos anidados: matriz[0][1].
 postfix
-    : primary (LBRACKET expression RBRACKET)*
+    : primary (LBRACKET expression RBRACKET | tupleAccess | fieldAccess)*
     ;
 
 // Valores básicos y expresiones entre paréntesis.
+// IDENT precede al constructor para que, ante una ambigüedad real,
+// "if activo {} {}" conserve una condición seguida de dos bloques.
+// El contexto completo permite distinguir un constructor en un valor.
 primary
     : INT
     | FLOAT
@@ -181,9 +240,28 @@ primary
     | CHAR_LITERAL
     | STRING_LITERAL
     | arrayLiteral
+    | tupleLiteral
     | functionCall
+    | enumValue
     | IDENT
+    | structLiteral
     | LPAREN expression RPAREN
+    ;
+
+// Construcción de una estructura. El orden de los campos puede variar.
+// Ejemplo: Persona { edad: 20, activo: true }.
+structLiteral
+    : IDENT LBRACE (fieldInit (COMMA fieldInit)* COMMA?)? RBRACE
+    ;
+
+fieldInit
+    : IDENT COLON expression
+    ;
+
+// Tupla de dos o más elementos, que pueden tener distintos tipos.
+// Una sola expresión entre paréntesis sigue siendo agrupación.
+tupleLiteral
+    : LPAREN expression COMMA expression (COMMA expression)* COMMA? RPAREN
     ;
 
 // Elementos separados por comas.
@@ -195,6 +273,8 @@ arrayLiteral
 // 5. PALABRAS RESERVADAS
 // =====================================================
 
+STRUCT   : 'struct';
+ENUM     : 'enum';
 FN       : 'fn';
 RETURN   : 'return';
 LET      : 'let';
@@ -228,8 +308,12 @@ LBRACKET  : '[';
 RBRACKET  : ']';
 ARROW     : '->';
 SEMICOLON : ';';
+DOUBLE_COLON : '::';
 COLON     : ':';
 COMMA     : ',';
+// Un campo completo permite encadenar .0.1 sin consumir FLOAT.
+TUPLE_FIELD : '.' [0-9]+;
+DOT         : '.';
 
 EQ     : '==';
 NEQ    : '!=';

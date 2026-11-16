@@ -1,3 +1,9 @@
+"""Pruebas de tipos devueltos y ausencia de retornos.
+
+Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
+son éxitos de la prueba cuando se detecta el error correcto. Estas pruebas
+no ejecutan el programa RustiQ ni reemplazan las pruebas del backend Wasm.
+"""
 from main import analizar
 
 
