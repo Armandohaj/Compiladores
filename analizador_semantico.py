@@ -964,34 +964,53 @@ class AnalizadorSemantico(RustiQVisitor):
 
         return izquierdo
 
-    def visitAdditive(self, ctx):
-        """Comprueba sumas y restas de izquierda a derecha, respetando la prioridad ya expresada por el parser."""
-        operandos = ctx.multiplicative()
-        tipo = self.visit(operandos[0])
+    def visitar_operacion_numerica(self, ctx, operandos):
+        """Comprueba aritmética teniendo en cuenta los saltos."""
+        # Revisamos todos los operandos para conservar los errores
+        # de nombres y las validaciones internas.
+        tipos = [self.visit(operando) for operando in operandos]
+        tipo = tipos[0]
+
+        # Sin operador, esta regla únicamente transmite el tipo.
+        if len(operandos) == 1:
+            return self.guardar_tipo(ctx, tipo)
+
+        continua = "normal" in salidas_control(operandos[0])
 
         for indice in range(1, len(operandos)):
-            operador = ctx.getChild(2 * indice - 1).getSymbol()
-            derecho = self.visit(operandos[indice])
-            tipo = self.comprobar_operacion(
-                tipo, derecho, operador
+            derecho_continua = (
+                "normal" in salidas_control(operandos[indice])
             )
 
-        return self.guardar_tipo(ctx, tipo)
+            # Solo se realiza la operación si ambos lados
+            # pueden terminar normalmente y entregar valores.
+            if continua and derecho_continua:
+                tipo = self.comprobar_operacion(
+                    tipo,
+                    tipos[indice],
+                    ctx.getChild(2 * indice - 1).getSymbol(),
+                )
+
+            continua = continua and derecho_continua
+
+        # unit representa ausencia de resultado.
+        # salidas_control distingue un salto de un bloque
+        # unit que sí termina normalmente.
+        return self.guardar_tipo(
+            ctx, tipo if continua else "unit"
+        )
+
+    def visitAdditive(self, ctx):
+        """Comprueba sumas y restas considerando los saltos."""
+        return self.visitar_operacion_numerica(
+            ctx, ctx.multiplicative()
+        )
 
     def visitMultiplicative(self, ctx):
-        """Comprueba multiplicación, división y módulo antes de que se apliquen sumas o restas."""
-        operandos = ctx.unary()
-        tipo = self.visit(operandos[0])
-
-        for indice in range(1, len(operandos)):
-            operador = ctx.getChild(2 * indice - 1).getSymbol()
-            derecho = self.visit(operandos[indice])
-            tipo = self.comprobar_operacion(
-                tipo, derecho, operador
-            )
-
-        return self.guardar_tipo(ctx, tipo)
-
+        """Comprueba multiplicación, división y residuo."""
+        return self.visitar_operacion_numerica(
+            ctx, ctx.unary()
+        )
     # =================================================
     # 12. OPERADORES UNARIOS Y VALORES
     # =================================================
@@ -1001,7 +1020,13 @@ class AnalizadorSemantico(RustiQVisitor):
         # por ejemplo, numeros[0].
         """Calcula el tipo tras los accesos y después comprueba - o !. No calcula el valor numérico."""
         tipo = self.visit(ctx.postfix())
-
+        # Si el operando abandona el contexto, el operador
+        # negativo o lógico no llega a aplicarse.
+        if (
+            (ctx.MINUS() is not None or ctx.NOT() is not None)
+            and "normal" not in salidas_control(ctx.postfix())
+        ):
+            return self.guardar_tipo(ctx, "unit")
         if tipo is not None:
             if (
                 ctx.MINUS() is not None
