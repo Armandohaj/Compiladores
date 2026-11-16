@@ -139,3 +139,20 @@ Un tipo registrado no garantiza que la evaluación produzca un valor.
 
 Validación actual del frontend: 704/704 comprobaciones en 29 suites.
 Estas pruebas no verifican la ejecución WebAssembly.
+
+
+## Tipos esperados en bloques y match
+
+El tipo esperado se propaga a la expresión final de un bloque
+y a las expresiones de los brazos de match.
+
+Esto permite analizar arreglos vacíos cuando existe un tipo declarado,
+también dentro de valores compuestos y constantes globales.
+
+No cambia la gramática ni los campos públicos del analizador.
+
+Limitación: un bloque anidado usado como retorno implícito debe
+escribirse entre paréntesis para evitar que se interprete como sentencia.
+Ejemplo: fn vacio() -> [i32; 0] { ({ [] }) }
+
+Validación actual del frontend: 752/752 comprobaciones en 31 suites.

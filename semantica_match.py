@@ -129,7 +129,10 @@ def analizar_match(sem, ctx):
             try:
                 patron = comprobar_patron(sem, brazo.pattern(), tipo, set())
                 filas.append([patron])
-                recibido = sem.visit(brazo.expression())
+                # Todos los brazos producen el valor esperado por el match.
+                recibido = sem.visitar_con_tipo(
+                    brazo.expression(), sem.tipos_esperados.get(ctx)
+                )
                 sem.guardar_tipo(brazo, recibido)
                 continua = 'normal' in salidas_control(brazo.expression())
                 if continua and resultado is None:

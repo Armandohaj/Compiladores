@@ -79,24 +79,30 @@ class AnalizadorSemantico(RustiQVisitor):
         return normalizar_tipo(nodo)
 
     def visitar_con_tipo(self, ctx, esperado=None):
-        """Propaga el tipo esperado a literales compuestos directos o entre paréntesis.
+        """Propaga el contexto a literales, bloques y match que producen el valor.
 
-        No se propaga a operandos aritméticos, índices o llamadas: esos
-        contextos tienen sus propias reglas de tipos.
+        No lo propaga a operandos, índices ni argumentos de llamadas: allí
+        el tipo esperado se determina por las reglas propias de cada operación.
         """
         if esperado is not None:
             nodo = ctx
+            destinos = (
+                RustiQParser.ArrayLiteralContext,
+                RustiQParser.TupleLiteralContext,
+                RustiQParser.BlockContext,
+                RustiQParser.MatchExprContext,
+            )
             while nodo is not None:
-                if isinstance(nodo, (RustiQParser.ArrayLiteralContext, RustiQParser.TupleLiteralContext)):
+                if isinstance(nodo, destinos):
                     self.tipos_esperados[nodo] = esperado
                     break
+                # Solo atravesar envoltorios de una expresión, no operaciones
+                # con varios hijos. Esto también incluye los paréntesis.
                 if isinstance(nodo, RustiQParser.PrimaryContext):
-                    if nodo.arrayLiteral() is not None:
-                        nodo = nodo.arrayLiteral()
-                    elif nodo.tupleLiteral() is not None:
-                        nodo = nodo.tupleLiteral()
-                    elif nodo.expression() is not None:
+                    if nodo.expression() is not None:
                         nodo = nodo.expression()
+                    elif nodo.getChildCount() == 1 and hasattr(nodo.getChild(0), "getChildren"):
+                        nodo = nodo.getChild(0)
                     else:
                         break
                 elif nodo.getChildCount() == 1 and hasattr(nodo.getChild(0), "getChildren"):
@@ -463,7 +469,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
             # Sin expresión final, el bloque no produce un valor.
             tipo = (
-                self.visit(expresion)
+                self.visitar_con_tipo(expresion, self.tipos_esperados.get(ctx))
                 if expresion is not None
                 else "unit"
             )
