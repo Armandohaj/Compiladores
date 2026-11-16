@@ -103,3 +103,22 @@ No se agregan campos al resultado público de analizar_programa.
 
 Validación actual del frontend: 652/652 comprobaciones en 26 suites.
 La ejecución WASM requiere adaptación y pruebas del backend.
+
+
+## Saltos dentro de constructores
+
+Se contemplan saltos dentro de elementos de arreglos y tuplas,
+campos de estructuras y argumentos de variantes de enumeraciones.
+
+Una expresión que no continúa normalmente no necesita producir
+un valor del tipo esperado. Se conservan las comprobaciones de
+campos obligatorios, nombres, duplicados y cantidad de argumentos.
+
+El backend debe respetar los saltos durante la evaluación:
+si ocurre uno, no se completa la construcción del valor.
+
+tipos_expresiones debe consultarse junto con salidas_control.
+Un tipo registrado no garantiza que la evaluación produzca un valor.
+
+Validación actual del frontend: 704/704 comprobaciones en 29 suites.
+Estas pruebas no verifican la ejecución WebAssembly.

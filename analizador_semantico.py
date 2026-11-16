@@ -1265,49 +1265,63 @@ class AnalizadorSemantico(RustiQVisitor):
 
 
     def visitArrayLiteral(self, ctx):
-        """Infiere un tipo homogéneo con tamaño fijo. Para [] necesita un contexto que indique el tipo de elemento."""
+        """Infiere el elemento del arreglo sin confundir un salto con unit."""
         expresiones = ctx.expression()
         esperado = self.separar_tipo_arreglo(self.tipos_esperados.get(ctx))
         if not expresiones:
             if esperado is None:
                 self.reportar(ctx.start, "No se puede inferir el tipo de un arreglo vacío: indicá un tipo.")
                 return self.guardar_tipo(ctx, None)
-            # Mantener tamaño cero real: el llamador detecta si esperaba otro tamaño.
             return self.guardar_tipo(ctx, f"[{esperado[0]};0]")
 
-        tipo_contextual = esperado[0] if esperado is not None else None
-        tipos = [self.visitar_con_tipo(e, tipo_contextual) for e in expresiones]
+        contextual = esperado[0] if esperado is not None else None
+        tipos = [self.visitar_con_tipo(e, contextual) for e in expresiones]
         if any(tipo is None for tipo in tipos):
             return self.guardar_tipo(ctx, None)
-        elemento = tipos[0]
+
+        # Un elemento que salta no produce un valor para comparar.
+        # Conservamos la posición original para ubicar los errores.
+        normales = [
+            (indice, tipo)
+            for indice, (expresion, tipo) in enumerate(zip(expresiones, tipos))
+            if "normal" in salidas_control(expresion)
+        ]
         valido = True
-        if elemento == "unit":
-            self.reportar(expresiones[0].start, "Un arreglo no puede contener valores unit.")
-            valido = False
-        for indice, tipo in enumerate(tipos[1:], start=1):
-            if tipo != elemento:
+        elemento = normales[0][1] if normales else None
+        for indice, tipo in normales:
+            if tipo == "unit":
+                self.reportar(expresiones[indice].start, "Un arreglo no puede contener valores unit.")
+                valido = False
+            elif tipo != elemento:
                 self.reportar(
                     expresiones[indice].start,
-                    f"El elemento {indice + 1} del arreglo debe ser {elemento}, pero se recibió {tipo}."
+                    f"El elemento {indice + 1} del arreglo debe ser {elemento}, pero se recibió {tipo}.",
                 )
                 valido = False
-        return self.guardar_tipo(ctx, f"[{elemento};{len(expresiones)}]" if valido else None)
+        if not valido:
+            return self.guardar_tipo(ctx, None)
+        if "normal" not in salidas_control(ctx):
+            # No se termina de construir el arreglo: no inventar su elemento.
+            return self.guardar_tipo(ctx, "unit")
+        return self.guardar_tipo(ctx, f"[{elemento};{len(expresiones)}]")
 
     def visitTupleLiteral(self, ctx):
-        # Cada posición tiene su propio tipo. El contexto permite
-        # resolver arreglos vacíos dentro de una tupla anotada.
-        """Calcula un tipo por posición; los elementos pueden tener tipos distintos. Propaga contexto a arreglos vacíos interiores."""
+        """Comprueba posiciones de una tupla y conserva el contexto de tipos."""
         esperados = separar_tipo_tupla(self.tipos_esperados.get(ctx)) or []
+        expresiones = ctx.expression()
         tipos = [
-            self.visitar_con_tipo(expresion, esperados[i] if i < len(esperados) else None)
-            for i, expresion in enumerate(ctx.expression())
+            self.visitar_con_tipo(e, esperados[i] if i < len(esperados) else None)
+            for i, e in enumerate(expresiones)
         ]
         if any(tipo is None for tipo in tipos):
             return self.guardar_tipo(ctx, None)
-        for expresion, tipo in zip(ctx.expression(), tipos):
-            if tipo == "unit":
+        for expresion, tipo in zip(expresiones, tipos):
+            # Un unit normal es inválido como elemento; un salto no es un valor.
+            if "normal" in salidas_control(expresion) and tipo == "unit":
                 self.reportar(expresion.start, "Una tupla no puede contener valores unit.")
                 return self.guardar_tipo(ctx, None)
+        if "normal" not in salidas_control(ctx):
+            return self.guardar_tipo(ctx, "unit")
         return self.guardar_tipo(ctx, "(" + ",".join(tipos) + ")")
 
     def visitStructLiteral(self, ctx):
@@ -1333,7 +1347,9 @@ class AnalizadorSemantico(RustiQVisitor):
             if campos is not None:
                 if identificador.text not in campos:
                     self.reportar(identificador, f"La estructura '{nombre}' no tiene el campo '{identificador.text}'.")
-                elif tipo is not None and tipo != esperado:
+                elif (tipo is not None and tipo != esperado
+                      and "normal" in salidas_control(campo.expression())):
+                    # Solo un campo que entrega un valor debe coincidir en tipo.
                     self.reportar(identificador, f"Tipo incompatible en '{nombre}.{identificador.text}': se esperaba {esperado}, pero se recibió {tipo}.")
         if campos is not None:
             # Mantener el orden de declaración en los diagnósticos.
@@ -1442,6 +1458,7 @@ class AnalizadorSemantico(RustiQVisitor):
                 esperado is not None
                 and recibido is not None
                 and recibido != esperado
+                and "normal" in salidas_control(argumento)
             ):
                 self.reportar(
                     argumento.start,
