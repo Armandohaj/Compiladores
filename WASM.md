@@ -58,6 +58,18 @@ Por ahora el ejecutor admite `main()` sin parámetros con retorno `i32`. La
 ejecución tiene un límite de tres segundos; si no termina, el proceso Wasm se
 detiene y se informa el límite superado.
 
+Para ejecutar directamente un archivo `.wasm` descargado desde el editor, sin
+leer ni recompilar código RustiQ, instala Wasmtime y ejecuta:
+
+```powershell
+python -m pip install wasmtime==50.0.1
+python .\ejecutar_wasm.py .\programa.wasm
+```
+
+Este ejecutor valida el módulo con Wasmtime y requiere que exporte `main()` sin
+parámetros con retorno `i32`. No modifica el archivo recibido y aplica el mismo
+límite de tres segundos a la ejecución.
+
 ## Alcance actual
 
 Se admiten funciones que retornan `i32`, `f64`, `char`, `bool` o `String`
