@@ -1131,6 +1131,17 @@ class AnalizadorSemantico(RustiQVisitor):
             if tipo_indice is None:
                 tipo = None
                 continue
+
+            # Si evaluar el índice provoca un salto, no se llega
+            # a acceder al elemento ni a comprobar sus límites.
+            # Conservamos el tipo nominal del elemento.
+            if "normal" not in salidas_control(expresion_indice):
+                tipo = arreglo[0]
+
+                if nodos is not None:
+                    self.guardar_tipo(nodos[posicion], tipo)
+
+                continue
             if tipo_indice != "i32":
                 self.reportar(expresion_indice.start, "El índice de un arreglo debe ser i32.")
                 tipo = None
@@ -1190,8 +1201,19 @@ class AnalizadorSemantico(RustiQVisitor):
         return tipo
 
     def visitPostfix(self, ctx):
-        """Devuelve el tipo final de una lectura, como grupo.personas[0].edad."""
-        tipo = self.comprobar_accesos(self.visit(ctx.primary()), accesos_lectura(ctx))
+        """Comprueba accesos cuando la base puede producir un valor."""
+        base = ctx.primary()
+        tipo_base = self.visit(base)
+        accesos = list(accesos_lectura(ctx))
+
+        if accesos and "normal" not in salidas_control(base):
+            # La base termina mediante un salto.
+            # Visitamos los índices para detectar errores internos,
+            # pero no exigimos campos de un valor que no se produce.
+            self.comprobar_accesos(None, accesos)
+            return self.guardar_tipo(ctx, "unit")
+
+        tipo = self.comprobar_accesos(tipo_base, accesos)
         return self.guardar_tipo(ctx, tipo)
 
     def visitar_asignacion_elemento(self, ctx):
@@ -1215,6 +1237,11 @@ class AnalizadorSemantico(RustiQVisitor):
         if not variable["inicializada"]:
             self.reportar(token, f"La variable '{token.text}' se usa antes de inicializarla.")
             return
+        # Si un índice o el valor derecho provoca un salto,
+        # no se llega a escribir el elemento o campo.
+        if "normal" not in salidas_control(ctx):
+            return
+
         if not variable["mutable"]:
             self.reportar(
                 token,
