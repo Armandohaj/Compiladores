@@ -42,8 +42,25 @@ Una variable queda definitivamente inicializada si recibe valor en todos ellos.
 
 ## Pendiente
 
-Los match en constantes globales se rechazan con un diagnóstico controlado;
-su evaluación en compilación queda pendiente.
+## Match en constantes globales
+
+Se evalúa durante la compilación el primer brazo cuyo patrón coincide.
+Se admiten literales, receptores, tuplas y variantes de enums con datos.
+
+Los bloques constantes admiten let inmutable y bloques puros.
+Se rechazan llamadas, asignaciones, ciclos, saltos y variables mutables.
+read y print siguen prohibidos, incluso en brazos no seleccionados.
+
+Las dependencias respetan los ámbitos de los patrones y variables locales.
+Se siguen detectando ciclos entre constantes, incluidos los de brazos
+no seleccionados.
+
+El valor calculado conserva el formato existente en simbolos[id]["valor"].
+El backend debe utilizar ese valor; no necesita ejecutar el match constante.
+Los símbolos locales de esta evaluación no representan variables de ejecución.
+
+Validación actual del frontend: 734/734 comprobaciones en 30 suites.
+Estas pruebas no verifican la ejecución WebAssembly.
 
 No se detectan brazos redundantes. El tratamiento de saltos dentro de
 expresiones requiere una revisión adicional.

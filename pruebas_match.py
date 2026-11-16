@@ -23,7 +23,7 @@ def ejecutar_pruebas():
         ('nombre repetido', 'fn main()->i32{return match (1,2){(x,x)=>x};}', False),
         ('read protegido', 'fn main()->i32{return match 1{read=>read};}', False),
         ('print protegido', 'fn main()->i32{return match 1{print=>print};}', False),
-        ('constante controlada', 'const X:i32=match 1{_=>2};', False),
+        ('Match constante válido', 'const X:i32=match 1{_=>2};', True),
         ('match anidado', 'fn main()->i32{return match true{true=>match 1{x=>x},false=>0};}', True),
         ('retorno incompatible', 'fn main()->bool{return match 1{_=>2};}', False),
         ('entrada salida', 'fn main(){print(match read(){0=>1,x=>x});}', True),
