@@ -73,6 +73,24 @@ def test_compilar_admite_asignacion_a_elemento_de_arreglo():
     assert datos["main"] == {"parametros": [], "retorno": "i32"}
 
 
+def test_compilar_admite_constantes_globales():
+    cliente = app.test_client()
+    respuesta = cliente.post(
+        "/api/compilar",
+        json={
+            "codigo": """const LIMITE: i32 = 10;
+const DOBLE: i32 = LIMITE * 2;
+fn main() -> i32 { return DOBLE + 5; }"""
+        },
+    )
+
+    datos = respuesta.get_json()
+    assert respuesta.status_code == 200
+    assert datos["valido"]
+    assert datos["errores"] == []
+    assert datos["wasm_base64"] is not None
+
+
 def test_compilar_informa_firma_main_no_ejecutable_en_el_editor():
     cliente = app.test_client()
     respuesta = cliente.post(

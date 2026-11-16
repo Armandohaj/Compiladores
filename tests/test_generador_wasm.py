@@ -72,6 +72,71 @@ def test_compila_y_ejecuta_el_arreglo_i32_principal():
     assert ejecutar_modulo_wasm(resultado["wasm"]) == 20
 
 
+def test_constantes_globales_i32_dependencias_y_referencias_adelantadas():
+    resultado = compilar_programa("""const LIMITE: i32 = 10;
+const DOBLE: i32 = LIMITE * 2;
+
+fn main() -> i32 {
+    return DOBLE + 5;
+}""")
+    adelantada = compilar_programa("""const DOBLE: i32 = BASE * 2;
+const BASE: i32 = 11;
+
+fn main() -> i32 {
+    return DOBLE;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 25
+    assert adelantada["valido"]
+    assert ejecutar_modulo_wasm(adelantada["wasm"]) == 22
+
+
+def test_constantes_globales_f64_bool_char_y_string():
+    resultado = compilar_programa("""const PI: f64 = 1.5 + 1.5;
+const ACTIVO: bool = 10 > 2 && !false;
+const LETRA: char = 'ñ';
+const MENSAJE: String = "Hola\\nRustiQ";
+
+fn decimal() -> f64 { return PI; }
+fn estado() -> bool { return ACTIVO; }
+fn letra() -> char { return LETRA; }
+fn texto() -> String { return MENSAJE; }
+fn main() -> i32 {
+    if ACTIVO { return 1; }
+    return 0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+    assert ejecutar_modulo_wasm(resultado["wasm"], "decimal") == pytest.approx(3.0)
+    assert ejecutar_modulo_wasm(resultado["wasm"], "estado") == 1
+    assert ejecutar_modulo_wasm(resultado["wasm"], "letra") == ord("ñ")
+    assert ejecutar_string_wasm(resultado["wasm"], "texto") == "Hola\nRustiQ"
+
+
+def test_variable_local_sombrea_constante_global():
+    resultado = compilar_programa("""const VALOR: i32 = 10;
+
+fn main() -> i32 {
+    let VALOR = 20;
+    return VALOR;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 20
+
+
+def test_constante_global_no_soportada_genera_error_controlado():
+    resultado = compilar_programa("""const DATOS: [i32; 2] = [1, 2];
+
+fn main() -> i32 { return 0; }""")
+
+    assert not resultado["valido"]
+    assert resultado["errores"][0]["fase"] == "generacion"
+    assert resultado["wasm"] is None
+
+
 @pytest.mark.parametrize(
     ("operador", "esperado"),
     [("/", 3), ("%", 1)],

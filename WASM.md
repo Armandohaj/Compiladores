@@ -165,5 +165,11 @@ etiquetas únicas. `break` salta a la salida del ciclo más cercano y `continue`
 vuelve al encabezado de ese ciclo; en `while` esto vuelve a evaluar la
 condición.
 
-Se rechazan controladamente constantes globales, las formas de arreglos no
-admitidas y todos los demás tipos o sentencias.
+Las constantes globales `i32`, `f64`, `bool`, `char` y `String` se incorporan
+como literales Wasm a partir del valor ya calculado por el análisis semántico;
+por ello admiten dependencias y referencias adelantadas sin reevaluarse en el
+generador. Las constantes `String` reutilizan los descriptores UTF-8 y la
+memoria exportada existentes. Una variable local con el mismo nombre conserva
+prioridad mediante los identificadores de la resolución de referencias.
+Las constantes de arreglos y matrices se rechazan controladamente, al igual que
+las demás formas de arreglos no admitidas y tipos o sentencias pendientes.

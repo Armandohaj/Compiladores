@@ -50,6 +50,7 @@ class MemoriaStrings:
 class EstadoModulo:
     nombres_funcion: dict
     memoria: MemoriaStrings
+    constantes: dict
 
 
 @dataclass
@@ -148,6 +149,23 @@ def _valor_char(literal, contexto):
     if len(contenido) != 1:
         _error("Literal char inválido.", contexto)
     return ord(contenido)
+
+
+def _compilar_constante(simbolo, estado, contexto):
+    """Convierte el valor ya calculado por Kevin en su literal WebAssembly."""
+    tipo = simbolo["tipo"]
+    valor = simbolo["valor"]
+    if tipo == "i32":
+        return [f"i32.const {valor}"]
+    if tipo == "f64":
+        return [f"f64.const {valor}"]
+    if tipo == "bool":
+        return [f"i32.const {int(valor)}"]
+    if tipo == "char":
+        return [f"i32.const {ord(valor)}"]
+    if tipo == "String":
+        return [f"i32.const {estado.memoria.agregar(valor, contexto)}"]
+    _error(f"Las constantes globales de tipo {tipo} todavía no están implementadas.", contexto)
 
 
 def _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion, tipos):
@@ -549,6 +567,9 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
         )
     if contexto.IDENT() is not None:
         identificador = referencias[contexto]
+        constante = nombres_funcion.constantes.get(identificador)
+        if constante is not None:
+            return _compilar_constante(constante, nombres_funcion, contexto)
         if identificador not in locales:
             _error("La referencia no corresponde a una variable local i32.", contexto)
         return [f"local.get $local_{identificador}"]
@@ -1026,6 +1047,18 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     )
 
 
+def _validar_constantes_globales(arbol, declaraciones, constantes):
+    """Rechaza controladamente tipos globales sin representación Wasm actual."""
+    tipos_admitidos = {"i32", "f64", "bool", "char", "String"}
+    for declaracion in arbol.constDecl():
+        constante = constantes[declaraciones[declaracion]]
+        if constante["tipo"] not in tipos_admitidos:
+            _error(
+                f"Las constantes globales de tipo {constante['tipo']} todavía no están implementadas.",
+                declaracion,
+            )
+
+
 def compilar_programa(codigo):
     """Compila RustiQ a WebAssembly y devuelve ``valido`, `errores`, `wat`, `wasm`."""
     analisis = analizar_programa(codigo)
@@ -1033,17 +1066,22 @@ def compilar_programa(codigo):
         return {"valido": False, "errores": analisis["errores"], "wat": None, "wasm": None}
     try:
         arbol = analisis["arbol"]
-        if arbol.constDecl():
-            _error("Las constantes globales todavía no están implementadas.", arbol.constDecl(0))
         funciones = arbol.functionDecl()
         if not funciones:
             _error("El programa debe declarar al menos una función.", arbol)
+        constantes = {
+            identificador: simbolo
+            for identificador, simbolo in analisis["simbolos"].items()
+            if simbolo["es_constante"]
+        }
+        _validar_constantes_globales(arbol, analisis["declaraciones"], constantes)
         estado = EstadoModulo(
             {
                 funcion.IDENT().getText(): indice
                 for indice, funcion in enumerate(funciones)
             },
             MemoriaStrings(),
+            constantes,
         )
         wat_funciones = [
             _compilar_funcion(funcion, analisis, indice, estado)
