@@ -3,6 +3,7 @@ const lineas = document.querySelector("#lineas");
 const botonAnalizar = document.querySelector("#analizar");
 const botonEjecutar = document.querySelector("#ejecutar");
 const botonDescargarWasm = document.querySelector("#descargar-wasm");
+const campoEntradas = document.querySelector("#entradas");
 const archivo = document.querySelector("#archivo");
 const estado = document.querySelector("#estado");
 const listaErrores = document.querySelector("#errores");
@@ -57,7 +58,22 @@ function decodificarWasm(wasmBase64) {
 }
 
 // Termina el Worker al recibir un resultado o al superar el límite de ejecución.
-function ejecutarEnWorker(wasm) {
+function obtenerEntradas() {
+  const texto = campoEntradas.value.trim();
+  if (!texto) return [];
+  return texto.split(/[\s,]+/).map((entrada) => {
+    if (!/^[+-]?\d+$/.test(entrada)) {
+      throw new Error(`La entrada '${entrada}' no es un entero i32 válido.`);
+    }
+    const valor = Number(entrada);
+    if (!Number.isInteger(valor) || valor < -2147483648 || valor > 2147483647) {
+      throw new Error(`La entrada '${entrada}' no es un entero i32 válido.`);
+    }
+    return valor;
+  });
+}
+
+function ejecutarEnWorker(wasm, entradas) {
   return new Promise((resolver, rechazar) => {
     const worker = new Worker("/static/js/ejecutor-wasm.js");
     const limite = window.setTimeout(() => {
@@ -76,7 +92,7 @@ function ejecutarEnWorker(wasm) {
         rechazar(new Error(data.error));
         return;
       }
-      resolver(data.valor);
+      resolver(data);
     };
     worker.onerror = () => {
       finalizar();
@@ -84,7 +100,7 @@ function ejecutarEnWorker(wasm) {
     };
     // Se transfiere una copia para conservar los mismos bytes descargables.
     const copiaTransferible = wasm.slice().buffer;
-    worker.postMessage({ wasm: copiaTransferible }, [copiaTransferible]);
+    worker.postMessage({ wasm: copiaTransferible, entradas }, [copiaTransferible]);
   });
 }
 
@@ -124,6 +140,13 @@ async function analizar() {
 
 async function ejecutar() {
   const codigoEnviado = codigo.value;
+  let entradas;
+  try {
+    entradas = obtenerEntradas();
+  } catch (error) {
+    mostrarMensaje(error.message, "error");
+    return;
+  }
   botonEjecutar.disabled = true;
   invalidarWasm();
   mostrarMensaje("Compilando para ejecutar…");
@@ -152,13 +175,14 @@ async function ejecutar() {
       return;
     }
     mostrarMensaje("Ejecutando main()…");
-    const valor = await ejecutarEnWorker(wasmCompilado);
+    const ejecucion = await ejecutarEnWorker(wasmCompilado, entradas);
     if (codigo.value !== codigoEnviado) {
       invalidarWasm();
       mostrarMensaje("El código cambió durante la ejecución. Ejecuta nuevamente.", "error");
       return;
     }
-    mostrarMensaje(`Resultado de main(): ${valor}`, "correcto");
+    const salidas = ejecucion.salidas.map((salida) => `Salida: ${salida}`);
+    mostrarMensaje([...salidas, `Resultado de main(): ${ejecucion.valor}`].join("\n"), "correcto");
   } catch (error) {
     mostrarMensaje(error.message, "error");
   } finally {

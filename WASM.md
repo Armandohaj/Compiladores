@@ -70,6 +70,19 @@ Este ejecutor valida el módulo con Wasmtime y requiere que exporte `main()` sin
 parámetros con retorno `i32`. No modifica el archivo recibido y aplica el mismo
 límite de tres segundos a la ejecución.
 
+Los módulos pueden importar `env.read_i32` y `env.print_i32`. Para entregar
+valores a `read_i32` desde PowerShell, repite `--entrada`; las llamadas se
+atienden en ese mismo orden y las salidas se muestran antes del resultado:
+
+```powershell
+python .\ejecutar_wasm.py .\programa.wasm --entrada 10 --entrada 20
+```
+
+Si el módulo solicita más valores de los indicados, la ejecución termina con un
+error; no se inventan entradas. Esta primera versión recibe todos los números
+antes de comenzar. Debe revisarse si se exige ingreso interactivo durante la
+ejecución.
+
 También hay una ventana de escritorio básica para demostrar el mismo binario
 descargado desde el editor web. En Windows se abre con:
 
@@ -80,7 +93,9 @@ python .\visor_wasm.py
 Selecciona el archivo `.wasm` con **Abrir archivo** y después pulsa
 **Ejecutar**. La ventana valida `main() -> i32`, conserva el binario solo en
 memoria, ejecuta en segundo plano y muestra el resultado o el error sin
-modificar el archivo seleccionado.
+modificar el archivo seleccionado. Las entradas i32 se escriben antes de
+ejecutar, separadas por espacios o comas; las salidas `print_i32` se muestran
+en el área de resultados en el orden producido.
 
 ## Alcance actual
 

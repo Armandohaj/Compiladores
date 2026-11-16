@@ -6,7 +6,13 @@ from pathlib import Path
 from tkinter import filedialog
 from tkinter.scrolledtext import ScrolledText
 
-from ejecutar_wasm import cargar_modulo, ejecutar_main_con_limite, verificar_firma_main
+from ejecutar_wasm import (
+    cargar_modulo,
+    entradas_desde_texto,
+    ejecutar_main_con_entradas,
+    verificar_firma_main,
+    verificar_importaciones,
+)
 
 
 def cargar_archivo_wasm(ruta_archivo):
@@ -25,6 +31,9 @@ def cargar_archivo_wasm(ruta_archivo):
     ejecutable, mensaje = verificar_firma_main(modulo)
     if not ejecutable:
         raise ValueError(mensaje)
+    compatible, mensaje = verificar_importaciones(modulo)
+    if not compatible:
+        raise ValueError(mensaje)
     return wasm
 
 
@@ -35,6 +44,7 @@ class VisorWasm:
         self.ventana = ventana
         self.wasm = None
         self.ruta = tk.StringVar(value="No se ha seleccionado un archivo .wasm")
+        self.entradas = tk.StringVar()
 
         ventana.title("RustiQ - Ejecutor de escritorio")
         ventana.minsize(560, 300)
@@ -47,6 +57,9 @@ class VisorWasm:
         tk.Label(marco, textvariable=self.ruta, anchor="w", justify="left", wraplength=520).pack(
             fill="x", pady=(8, 12)
         )
+        tk.Label(marco, text="Entradas i32 (separadas por espacios o comas)").pack(anchor="w")
+        self.campo_entradas = tk.Entry(marco, textvariable=self.entradas)
+        self.campo_entradas.pack(fill="x", pady=(4, 12))
         self.boton_ejecutar = tk.Button(
             marco,
             text="Ejecutar",
@@ -91,20 +104,30 @@ class VisorWasm:
         """Usa un hilo para que la espera del proceso Wasm no bloquee la ventana."""
         if self.wasm is None:
             return
+        try:
+            entradas = entradas_desde_texto(self.entradas.get())
+        except ValueError as error:
+            self.mostrar_mensaje(str(error))
+            return
         wasm = self.wasm
         self.boton_abrir.configure(state="disabled")
         self.boton_ejecutar.configure(state="disabled")
+        self.campo_entradas.configure(state="disabled")
         self.mostrar_mensaje("Ejecutando main()…")
         threading.Thread(
             target=self._ejecutar_en_segundo_plano,
-            args=(wasm,),
+            args=(wasm, entradas),
             daemon=True,
         ).start()
 
-    def _ejecutar_en_segundo_plano(self, wasm):
+    def _ejecutar_en_segundo_plano(self, wasm, entradas):
         try:
-            valor = ejecutar_main_con_limite(wasm)
-            mensaje = f"Resultado de main(): {valor}"
+            valor, salidas = ejecutar_main_con_entradas(wasm, entradas)
+            lineas = [
+                *(f"Salida: {salida}" for salida in salidas),
+                f"Resultado de main(): {valor}",
+            ]
+            mensaje = "\n".join(lineas)
         except (RuntimeError, TimeoutError) as error:
             mensaje = f"Error de ejecución: {error}"
         # Tkinter solo se actualiza desde su hilo principal.
@@ -113,6 +136,7 @@ class VisorWasm:
     def _terminar_ejecucion(self, mensaje):
         self.mostrar_mensaje(mensaje)
         self.boton_abrir.configure(state="normal")
+        self.campo_entradas.configure(state="normal")
         if self.wasm is not None:
             self.boton_ejecutar.configure(state="normal")
 

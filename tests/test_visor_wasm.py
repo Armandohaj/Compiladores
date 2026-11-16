@@ -52,6 +52,14 @@ def test_visor_carga_un_binario_generado_por_rustiq(tmp_path):
             ),
             "sin parámetros y retornar i32",
         ),
+        (
+            "importacion.wasm",
+            wasmtime.wat2wasm(
+                '(module (import "otro" "read_i32" (func (result i32))) '
+                '(func (export "main") (result i32) i32.const 0))'
+            ),
+            "Importación no admitida",
+        ),
     ],
 )
 def test_visor_rechaza_archivos_no_ejecutables(tmp_path, nombre, contenido, mensaje):

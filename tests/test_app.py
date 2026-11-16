@@ -16,6 +16,7 @@ def test_editor_y_analizar_conservan_su_comportamiento():
     assert inicio.status_code == 200
     assert "RustiQ" in inicio.get_data(as_text=True)
     assert 'id="descargar-wasm"' in inicio.get_data(as_text=True)
+    assert 'id="entradas"' in inicio.get_data(as_text=True)
     assert analisis.status_code == 200
     assert analisis.get_json() == {"valido": True, "errores": []}
 
