@@ -337,6 +337,104 @@ def test_bloques_sin_valor_sombreado_y_return_anticipado():
     assert ejecutar_modulo_wasm(resultado["wasm"]) == 7
 
 
+def test_match_obligatorio_patrones_basicos_negativos_y_comodin():
+    enteros = compilar_programa("""fn main() -> i32 {
+    let numero = 2;
+    return match numero {
+        1 => 10,
+        2 => 20,
+        _ => 0,
+    };
+}""")
+    booleanos = compilar_programa("""fn main() -> i32 {
+    return match true {
+        true => 10,
+        false => 20,
+    };
+}""")
+    negativos = compilar_programa("""fn main() -> i32 {
+    return match -1 {
+        -1 => 7,
+        _ => 0,
+    };
+}""")
+    caracteres = compilar_programa("""fn main() -> i32 {
+    return match 'ñ' {
+        'a' => 0,
+        'ñ' => 1,
+        _ => 2,
+    };
+}""")
+
+    assert enteros["valido"]
+    assert ejecutar_modulo_wasm(enteros["wasm"]) == 20
+    assert booleanos["valido"]
+    assert ejecutar_modulo_wasm(booleanos["wasm"]) == 10
+    assert negativos["valido"]
+    assert ejecutar_modulo_wasm(negativos["wasm"]) == 7
+    assert caracteres["valido"]
+    assert ejecutar_modulo_wasm(caracteres["wasm"]) == 1
+
+
+def test_match_receptores_sombreado_bloques_y_anidamiento():
+    receptores = compilar_programa("""fn main() -> i32 {
+    let numero = 5;
+    let resultado = match numero {
+        numero => {
+            let base = numero;
+            match true { true => base + 1, false => 0 }
+        },
+    };
+    return numero + resultado;
+}""")
+    primer_brazo = compilar_programa("""fn main() -> i32 {
+    return match 2 {
+        2 => 20,
+        2 => 30,
+        _ => 0,
+    };
+}""")
+
+    assert receptores["valido"]
+    assert ejecutar_modulo_wasm(receptores["wasm"]) == 11
+    assert primer_brazo["valido"]
+    assert ejecutar_modulo_wasm(primer_brazo["wasm"]) == 20
+
+
+def test_match_evalua_una_vez_y_ejecuta_solo_el_brazo_elegido():
+    resultado = compilar_programa("""fn main() -> i32 {
+    return match read() {
+        1 => { print(10); 10 },
+        _ => { print(20); 20 },
+    };
+}""")
+
+    assert resultado["valido"]
+    assert resultado["wat"].count("call $read_i32") == 1
+    assert ejecutar_main_con_entradas(resultado["wasm"], [1]) == (10, [10])
+    assert ejecutar_main_con_entradas(resultado["wasm"], [2]) == (20, [20])
+
+
+def test_match_con_return_anticipado_y_patrones_pendientes_controlados():
+    retorno = compilar_programa("""fn main() -> i32 {
+    let valor = match 1 {
+        1 => { return 9; },
+        _ => 0,
+    };
+    return valor;
+}""")
+    tupla = compilar_programa("""fn main() -> i32 {
+    return match (1, true) {
+        (numero, _) => numero,
+    };
+}""")
+
+    assert retorno["valido"]
+    assert ejecutar_modulo_wasm(retorno["wasm"]) == 9
+    assert not tupla["valido"]
+    assert tupla["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

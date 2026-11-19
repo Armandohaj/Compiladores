@@ -60,6 +60,8 @@ class EstadoModulo:
     incorporadas_usadas: set
     ciclos: dict | None = None
     tipo_retorno_actual: str | None = None
+    temporales_match: list | None = None
+    siguiente_match: int = 0
 
 
 @dataclass
@@ -302,6 +304,17 @@ def _wat_condicional(rama_cierta, rama_falsa):
     falsa = "\n        ".join(rama_falsa)
     return (
         "(if (result i32)\n"
+        f"      (then\n        {cierta}\n      )\n"
+        f"      (else\n        {falsa}\n      )\n"
+        "    )"
+    )
+
+
+def _wat_condicional_resultado(rama_cierta, rama_falsa, tipo):
+    cierta = "\n        ".join(rama_cierta)
+    falsa = "\n        ".join(rama_falsa)
+    return (
+        f"(if (result {tipo})\n"
         f"      (then\n        {cierta}\n      )\n"
         f"      (else\n        {falsa}\n      )\n"
         "    )"
@@ -623,6 +636,79 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     return instrucciones
 
 
+def _literal_patron(contexto, tipo):
+    literal = contexto.patternLiteral()
+    if literal is None:
+        return None
+    if tipo == "i32" and literal.INT() is not None:
+        return f"i32.const {int(literal.getText())}"
+    if tipo == "bool":
+        if literal.TRUE() is not None:
+            return "i32.const 1"
+        if literal.FALSE() is not None:
+            return "i32.const 0"
+    if tipo == "char" and literal.CHAR_LITERAL() is not None:
+        return f"i32.const {_valor_char(literal.CHAR_LITERAL().getText(), literal)}"
+    _error("El patrón de match todavía no está implementado.", contexto)
+
+
+def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
+                           referencias, locales, funciones, nombres_funcion, tipos):
+    if indice >= len(brazos):
+        return ["unreachable"]
+    brazo = brazos[indice]
+    patron = brazo.pattern()
+    expresion = _compilar_expresion(
+        brazo.expression(), referencias, locales, funciones, nombres_funcion, tipos
+    )
+    if patron.UNDERSCORE() is not None:
+        return expresion
+    if patron.DOUBLE_COLON() is not None or patron.LPAREN() is not None:
+        _error("Este patrón de match todavía no está implementado.", patron)
+    if patron.IDENT():
+        identificador = nombres_funcion.declaraciones.get(patron)
+        if identificador is None or identificador not in locales:
+            _error("El receptor del patrón no está disponible para generar WASM.", patron)
+        return [f"local.get ${temporal}", f"local.set $local_{identificador}", *expresion]
+    literal = _literal_patron(patron, tipo_valor)
+    siguiente = _compilar_brazos_match(
+        brazos, indice + 1, temporal, tipo_valor, tipo_resultado,
+        referencias, locales, funciones, nombres_funcion, tipos,
+    )
+    return [
+        f"local.get ${temporal}",
+        literal,
+        "i32.eq",
+        _wat_condicional_resultado(expresion, siguiente, _tipo_wasm(tipo_resultado)),
+    ]
+
+
+def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    tipo_valor = tipos.get(contexto.expression())
+    tipo_resultado = tipos.get(contexto)
+    if tipo_valor not in {"i32", "bool", "char"}:
+        _error("Solo se admiten match de i32, bool y char.", contexto)
+    if tipo_resultado not in {"i32", "f64", "bool", "char", "String"}:
+        _error("El resultado de match todavía no está implementado.", contexto)
+    valor = _compilar_expresion(
+        contexto.expression(), referencias, locales, funciones, nombres_funcion, tipos
+    )
+    if "normal" not in salidas_control(contexto.expression()):
+        return valor
+    temporal = f"valor_match_{nombres_funcion.siguiente_match}"
+    nombres_funcion.siguiente_match += 1
+    nombres_funcion.temporales_match.append(temporal)
+    brazos = contexto.matchArm()
+    return [
+        *valor,
+        f"local.set ${temporal}",
+        *_compilar_brazos_match(
+            brazos, 0, temporal, tipo_valor, tipo_resultado,
+            referencias, locales, funciones, nombres_funcion, tipos,
+        ),
+    ]
+
+
 def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     literal = contexto.INT()
     if literal is not None:
@@ -658,6 +744,10 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
             nombres_funcion,
             nombres_funcion.ciclos,
             True,
+        )
+    if contexto.matchExpr() is not None:
+        return _compilar_match(
+            contexto.matchExpr(), referencias, locales, funciones, nombres_funcion, tipos
         )
     expresion = contexto.expression()
     if expresion is not None:
@@ -1408,6 +1498,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     ciclos = {"siguiente": 0, "activos": []}
     nombres_funcion.ciclos = ciclos
     nombres_funcion.tipo_retorno_actual = tipo_retorno
+    nombres_funcion.temporales_match = []
+    nombres_funcion.siguiente_match = 0
     continua = True
     for sentencia in funcion.block().statement():
         instrucciones.extend(
@@ -1453,8 +1545,11 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     if tipo_retorno != "unit" and not retorno_final_emitido:
         instrucciones.append("unreachable")
     cuerpo = "\n    ".join(instrucciones)
+    temporales_match = "\n".join(
+        f"    (local ${temporal} i32)" for temporal in nombres_funcion.temporales_match
+    )
     locales_wat = "\n" + "\n".join(
-        parte for parte in (declaraciones_locales, temporales_asignacion) if parte
+        parte for parte in (declaraciones_locales, temporales_asignacion, temporales_match) if parte
     )
     return (
         f"  (func $funcion_{indice} {parametros_wat}{resultado_wat}{locales_wat}\n"

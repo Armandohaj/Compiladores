@@ -198,8 +198,17 @@ del cuerpo de una función compatible con su firma se retorna implícitamente;
 los `return` explícitos conservan prioridad. Los bloques sin expresión final
 son `unit` y no dejan valores en la pila Wasm. Si una sentencia o expresión
 termina mediante `return`, no se genera el resto de ese bloque ni la operación
-que habría consumido su valor. `match` y los valores de enums siguen fuera del
-backend Wasm y se rechazan controladamente.
+que habría consumido su valor. Los valores de enums siguen fuera del backend
+Wasm y se rechazan controladamente.
+
+Se admiten expresiones `match` sobre `i32`, `bool` y `char` con patrones
+literales, comodín `_` y receptor. El valor se evalúa una sola vez en un local
+Wasm y los brazos se prueban en el orden escrito, por lo que sólo se ejecuta el
+primer brazo compatible. Los receptores reutilizan su identificador resuelto
+por el frontend y los brazos pueden usar bloques con valor, `return`, `read()`
+y `print()`. Aún no se admiten patrones o valores de `f64` y `String`, ni
+patrones de tuplas, enums o variantes con datos; se rechazan con un error de
+generación controlado.
 
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
