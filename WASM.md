@@ -165,6 +165,12 @@ para `String`. Sus elementos admiten las mismas asignaciones indexadas que los
 arreglos. No se admiten más de dos dimensiones, ni parámetros, retornos,
 copias, comparaciones o asignaciones completas de matrices.
 
+Con el análisis de ownership actual, `String` y los arreglos o matrices que lo
+contienen son valores `Move`. Por ello, comparar un elemento `String` es válido,
+pero retornarlo, asignarlo o pasarlo por valor intentaría hacer un movimiento
+parcial y el frontend lo rechaza antes de generar WASM. Esta restricción se
+mantiene hasta que exista soporte de borrowing; el generador no la elude.
+
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
