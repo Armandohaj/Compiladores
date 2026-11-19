@@ -63,6 +63,8 @@ class EstadoModulo:
     tipo_retorno_actual: str | None = None
     temporales_match: list | None = None
     siguiente_match: int = 0
+    temporales_enum: list | None = None
+    siguiente_enum: int = 0
 
 
 @dataclass
@@ -149,10 +151,38 @@ def _info_estructura(tipo, estructuras):
 
 
 def _info_enum(tipo, enumeraciones):
-    enumeracion = (enumeraciones or {}).get(tipo)
-    if enumeracion is None or enumeracion.get("datos_variantes"):
+    return (enumeraciones or {}).get(tipo)
+
+
+def _enum_tiene_datos(tipo, enumeraciones):
+    enumeracion = _info_enum(tipo, enumeraciones)
+    return enumeracion is not None and bool(enumeracion.get("datos_variantes"))
+
+
+def _distribucion_enum(tipo, enumeraciones):
+    enumeracion = _info_enum(tipo, enumeraciones)
+    if enumeracion is None:
         return None
-    return enumeracion
+    datos = enumeracion.get("datos_variantes")
+    if not datos:
+        return None
+    distribucion = {}
+    tamano_maximo = 4
+    alineacion_maxima = 4
+    for variante, etiqueta in enumeracion["variantes"].items():
+        desplazamiento = 4
+        campos = []
+        for campo in datos.get(variante, []):
+            if campo not in {"i32", "bool", "char", "f64"}:
+                return None
+            alineacion = 8 if campo == "f64" else 4
+            desplazamiento = (desplazamiento + alineacion - 1) & ~(alineacion - 1)
+            campos.append((campo, desplazamiento))
+            desplazamiento += _tamano_elemento_arreglo(campo)
+            alineacion_maxima = max(alineacion_maxima, alineacion)
+        distribucion[variante] = (etiqueta, campos)
+        tamano_maximo = max(tamano_maximo, desplazamiento)
+    return distribucion, tamano_maximo, alineacion_maxima
 
 
 def _distribucion_estructura(tipo, estructuras):
@@ -282,6 +312,8 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
     if "normal" not in salidas_control(operandos[1]):
         return instrucciones
     tipo = tipos[operandos[0]]
+    if _enum_tiene_datos(tipo, nombres_funcion.enumeraciones):
+        _error("La comparación de enumeraciones con datos todavía no está implementada.", contexto)
     if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None:
         _error("Las comparaciones entre arreglos todavía no están implementadas.", contexto)
     if tipo == "String":
@@ -669,6 +701,70 @@ def _literal_patron(contexto, tipo, enumeraciones):
     _error("El patrón de match todavía no está implementado.", contexto)
 
 
+def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, locales,
+                            nombres_funcion):
+    if patron.UNDERSCORE() is not None:
+        return [], []
+    literal = patron.patternLiteral()
+    if literal is not None:
+        if tipo == "i32" and literal.INT() is not None:
+            valor = f"i32.const {int(literal.getText())}"
+        elif tipo == "bool" and literal.TRUE() is not None:
+            valor = "i32.const 1"
+        elif tipo == "bool" and literal.FALSE() is not None:
+            valor = "i32.const 0"
+        elif tipo == "char" and literal.CHAR_LITERAL() is not None:
+            valor = f"i32.const {_valor_char(literal.CHAR_LITERAL().getText(), literal)}"
+        elif tipo == "f64" and literal.FLOAT() is not None:
+            valor = f"f64.const {literal.FLOAT().getText()}"
+        else:
+            _error("El patrón de dato de enumeración todavía no está implementado.", patron)
+        return [
+            f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+            valor, f"{tipo}.eq" if tipo == "f64" else "i32.eq",
+        ], []
+    if patron.IDENT():
+        identificador = nombres_funcion.declaraciones.get(patron)
+        if identificador is None or identificador not in locales:
+            _error("El receptor del patrón no está disponible para generar WASM.", patron)
+        return [], [
+            f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+            f"local.set $local_{identificador}",
+        ]
+    _error("El patrón de dato de enumeración todavía no está implementado.", patron)
+
+
+def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, nombres_funcion):
+    distribucion = _distribucion_enum(tipo_valor, nombres_funcion.enumeraciones)
+    if distribucion is None or patron.DOUBLE_COLON() is None:
+        _error("El patrón de enumeración todavía no está implementado.", patron)
+    variantes, _, _ = distribucion
+    nombres = patron.IDENT()
+    if len(nombres) != 2:
+        _error("El patrón de enumeración no está disponible para generar WASM.", patron)
+    variante = nombres[1].getText()
+    if variante not in variantes:
+        _error("La variante no está disponible para generar WASM.", patron)
+    etiqueta, campos = variantes[variante]
+    lista = patron.patternList()
+    patrones = [] if lista is None else lista.pattern()
+    if len(patrones) != len(campos):
+        _error("El patrón no coincide con los datos de la variante.", patron)
+    condiciones = [
+        f"local.get ${temporal}", "i32.load", f"i32.const {etiqueta}", "i32.eq"
+    ]
+    enlaces = []
+    for hijo, (tipo, desplazamiento) in zip(patrones, campos):
+        condicion, enlace = _condicion_patron_enum(
+            hijo, temporal, tipo, desplazamiento, referencias, locales, nombres_funcion
+        )
+        if condicion:
+            condiciones.extend(condicion)
+            condiciones.append("i32.and")
+        enlaces.extend(enlace)
+    return condiciones, enlaces
+
+
 def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
                            referencias, locales, funciones, nombres_funcion, tipos):
     if indice >= len(brazos):
@@ -680,6 +776,21 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
     )
     if patron.UNDERSCORE() is not None:
         return expresion
+    if patron.DOUBLE_COLON() is not None and _enum_tiene_datos(tipo_valor, nombres_funcion.enumeraciones):
+        condicion, enlaces = _compilar_patron_enum(
+            patron, temporal, tipo_valor, referencias, locales, nombres_funcion
+        )
+        siguiente = _compilar_brazos_match(
+            brazos, indice + 1, temporal, tipo_valor, tipo_resultado,
+            referencias, locales, funciones, nombres_funcion, tipos,
+        )
+        return [
+            *condicion,
+            _wat_condicional_resultado(
+                [*enlaces, *expresion], siguiente,
+                _tipo_wasm(tipo_resultado, enumeraciones=nombres_funcion.enumeraciones),
+            ),
+        ]
     if patron.LPAREN() is not None:
         _error("Este patrón de match todavía no está implementado.", patron)
     if patron.DOUBLE_COLON() is not None:
@@ -707,7 +818,7 @@ def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, 
     tipo_valor = tipos.get(contexto.expression())
     tipo_resultado = tipos.get(contexto)
     if tipo_valor not in {"i32", "bool", "char"} and _info_enum(tipo_valor, nombres_funcion.enumeraciones) is None:
-        _error("Solo se admiten match de i32, bool, char y enumeraciones sin datos.", contexto)
+        _error("Solo se admiten match de i32, bool, char y enumeraciones.", contexto)
     if tipo_resultado not in {"i32", "f64", "bool", "char", "String"}:
         _error("El resultado de match todavía no está implementado.", contexto)
     valor = _compilar_expresion(
@@ -729,16 +840,41 @@ def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, 
     ]
 
 
-def _compilar_enum_valor(contexto, nombres_funcion, tipos):
+def _compilar_enum_valor(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     nombres = contexto.IDENT()
     tipo = tipos.get(contexto)
     enumeracion = _info_enum(tipo, nombres_funcion.enumeraciones)
-    if len(nombres) != 2 or contexto.argumentList() is not None or enumeracion is None:
+    if len(nombres) != 2 or enumeracion is None:
         _error("Esta variante de enumeración todavía no está implementada.", contexto)
     variante = nombres[1].getText()
     if variante not in enumeracion["variantes"]:
         _error("La variante de enumeración no está disponible para generar WASM.", contexto)
-    return [f"i32.const {enumeracion['variantes'][variante]}"]
+    distribucion = _distribucion_enum(tipo, nombres_funcion.enumeraciones)
+    if distribucion is None:
+        if contexto.argumentList() is not None:
+            _error("Esta variante de enumeración todavía no está implementada.", contexto)
+        return [f"i32.const {enumeracion['variantes'][variante]}"]
+    variantes, tamano, alineacion = distribucion
+    etiqueta, campos = variantes[variante]
+    argumentos = [] if contexto.argumentList() is None else contexto.argumentList().expression()
+    if len(argumentos) != len(campos):
+        _error("La variante no coincide con los datos esperados.", contexto)
+    temporal = f"enum_{nombres_funcion.siguiente_enum}"
+    nombres_funcion.siguiente_enum += 1
+    nombres_funcion.temporales_enum.append(temporal)
+    instrucciones = [
+        f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+        f"local.set ${temporal}", f"local.get ${temporal}", f"i32.const {etiqueta}",
+        "i32.store",
+    ]
+    for argumento, (tipo_campo, desplazamiento) in zip(argumentos, campos):
+        instrucciones.append(f"local.get ${temporal}")
+        instrucciones.extend(_compilar_expresion(
+            argumento, referencias, locales, funciones, nombres_funcion, tipos
+        ))
+        instrucciones.append(_instruccion_almacenamiento_arreglo(tipo_campo, desplazamiento))
+    instrucciones.append(f"local.get ${temporal}")
+    return instrucciones
 
 
 def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
@@ -782,7 +918,9 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
             contexto.matchExpr(), referencias, locales, funciones, nombres_funcion, tipos
         )
     if contexto.enumValue() is not None:
-        return _compilar_enum_valor(contexto.enumValue(), nombres_funcion, tipos)
+        return _compilar_enum_valor(
+            contexto.enumValue(), referencias, locales, funciones, nombres_funcion, tipos
+        )
     expresion = contexto.expression()
     if expresion is not None:
         return _compilar_expresion(
@@ -1075,10 +1213,34 @@ def _compilar_declaracion(
     if expresion is None:
         return []
     return [
+        *_compilar_valor_para_local(
+            expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
+            nombres_funcion, tipos,
+        ),
+        f"local.set $local_{identificador}",
+    ]
+
+
+def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, funciones,
+                               nombres_funcion, tipos):
+    """Copia los enums con datos al inicializar o reasignar un local."""
+    distribucion = _distribucion_enum(tipo_destino, nombres_funcion.enumeraciones)
+    if distribucion is None:
+        return _compilar_expresion(
+            expresion, referencias, locales, funciones, nombres_funcion, tipos
+        )
+    _, tamano, alineacion = distribucion
+    temporal = f"enum_{nombres_funcion.siguiente_enum}"
+    nombres_funcion.siguiente_enum += 1
+    nombres_funcion.temporales_enum.append(temporal)
+    return [
         *_compilar_expresion(
             expresion, referencias, locales, funciones, nombres_funcion, tipos
         ),
-        f"local.set $local_{identificador}",
+        f"local.set ${temporal}",
+        f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+        "local.tee $direccion_asignacion", f"local.get ${temporal}", f"i32.const {tamano}",
+        "memory.copy", "local.get $direccion_asignacion",
     ]
 
 
@@ -1089,12 +1251,22 @@ def _compilar_asignacion(
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
     operador = asignacion.assignmentOp().getText()
+    tipo_variable = simbolos[identificador]["tipo"]
+    if _enum_tiene_datos(tipo_variable, nombres_funcion.enumeraciones):
+        if operador != "=":
+            _error("Las asignaciones compuestas de enumeraciones no están implementadas.", asignacion)
+        return [
+            *_compilar_valor_para_local(
+                asignacion.expression(), tipo_variable, referencias, locales, funciones,
+                nombres_funcion, tipos,
+            ),
+            f"local.set $local_{identificador}",
+        ]
     expresion = _compilar_expresion(
         asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
     )
     if "normal" not in salidas_control(asignacion.expression()):
         return expresion
-    tipo_variable = simbolos[identificador]["tipo"]
     if asignacion.fieldAccess():
         direccion, tipo = _compilar_direccion_estructura(
             asignacion, identificador, simbolos, nombres_funcion.estructuras
@@ -1534,6 +1706,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     nombres_funcion.tipo_retorno_actual = tipo_retorno
     nombres_funcion.temporales_match = []
     nombres_funcion.siguiente_match = 0
+    nombres_funcion.temporales_enum = []
+    nombres_funcion.siguiente_enum = 0
     continua = True
     for sentencia in funcion.block().statement():
         instrucciones.extend(
@@ -1582,8 +1756,13 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     temporales_match = "\n".join(
         f"    (local ${temporal} i32)" for temporal in nombres_funcion.temporales_match
     )
+    temporales_enum = "\n".join(
+        f"    (local ${temporal} i32)" for temporal in nombres_funcion.temporales_enum
+    )
     locales_wat = "\n" + "\n".join(
-        parte for parte in (declaraciones_locales, temporales_asignacion, temporales_match) if parte
+        parte for parte in (
+            declaraciones_locales, temporales_asignacion, temporales_match, temporales_enum
+        ) if parte
     )
     return (
         f"  (func $funcion_{indice} {parametros_wat}{resultado_wat}{locales_wat}\n"
@@ -1607,9 +1786,10 @@ def _validar_constantes_globales(arbol, declaraciones, constantes):
 
 def _validar_enumeraciones(arbol, enumeraciones):
     for declaracion in arbol.enumDecl():
-        enumeracion = enumeraciones[declaracion.IDENT().getText()]
-        if enumeracion.get("datos_variantes"):
-            _error("Las enumeraciones con datos todavía no están implementadas.", declaracion)
+        tipo = declaracion.IDENT().getText()
+        enumeracion = enumeraciones[tipo]
+        if enumeracion.get("datos_variantes") and _distribucion_enum(tipo, enumeraciones) is None:
+            _error("Los datos asociados de esta enumeración todavía no están implementados.", declaracion)
 
 
 def _imports_incorporados(incorporadas_usadas):

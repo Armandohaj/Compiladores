@@ -198,8 +198,8 @@ del cuerpo de una función compatible con su firma se retorna implícitamente;
 los `return` explícitos conservan prioridad. Los bloques sin expresión final
 son `unit` y no dejan valores en la pila Wasm. Si una sentencia o expresión
 termina mediante `return`, no se genera el resto de ese bloque ni la operación
-que habría consumido su valor. Los valores de enums siguen fuera del backend
-Wasm y se rechazan controladamente.
+que habría consumido su valor. Los valores de enums se generan con la
+representación descrita más adelante.
 
 Se admiten expresiones `match` sobre `i32`, `bool` y `char` con patrones
 literales, comodín `_` y receptor. El valor se evalúa una sola vez en un local
@@ -207,17 +207,21 @@ Wasm y los brazos se prueban en el orden escrito, por lo que sólo se ejecuta el
 primer brazo compatible. Los receptores reutilizan su identificador resuelto
 por el frontend y los brazos pueden usar bloques con valor, `return`, `read()`
 y `print()`. Aún no se admiten patrones o valores de `f64` y `String`, ni
-patrones de tuplas, enums o variantes con datos; se rechazan con un error de
-generación controlado.
+patrones de tuplas; se rechazan con un error de generación controlado.
 
 Las enumeraciones sin datos se representan como `i32` usando exactamente las
-etiquetas entregadas por el frontend. Se admiten variables locales inferidas o
-anotadas, lectura, reasignación de variables `mut`, comparaciones permitidas y
-patrones `Enum::Variante` dentro de `match`; el orden de los brazos conserva la
-primera coincidencia. No se admiten parámetros, retornos ni constantes globales
-de enum, arreglos o compuestos que los contengan. Si una enumeración del módulo
-tiene alguna variante con datos asociados, todo el módulo se rechaza antes de
-generar WASM.
+etiquetas entregadas por el frontend. Si una enumeración contiene alguna
+variante con datos, todos sus valores se almacenan independientemente en la
+memoria lineal: la etiqueta ocupa los primeros 4 bytes y los datos `i32`,
+`bool`, `char` y `f64` siguen con sus alineaciones naturales. Se admiten
+variables locales inferidas o anotadas, reasignación de variables `mut` y
+copias locales independientes de esos valores. `match` compara primero la
+etiqueta y después los patrones literales compatibles; los receptores usan los
+identificadores resueltos por el frontend y sólo se cargan en el brazo elegido.
+Las comparaciones `==` y `!=` de enums con datos se rechazan por ahora, porque
+no hay igualdad estructural implementada. Tampoco se admiten `String`,
+arreglos, tuplas, estructuras u otros enums como datos asociados, ni parámetros,
+retornos o constantes globales de enum.
 
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como

@@ -495,12 +495,68 @@ fn main() -> i32 {
     assert ejecutar_main_con_entradas(resultado["wasm"], []) == (1, [1])
 
 
+def test_enumeraciones_con_datos_obligatoria_y_receptores():
+    resultado = compilar_programa("""enum Resultado {
+    Vacio,
+    Correcto(i32),
+    Error(i32)
+}
+fn main() -> i32 {
+    let resultado = Resultado::Correcto(25);
+    return match resultado {
+        Resultado::Vacio => 0,
+        Resultado::Correcto(numero) => numero + 5,
+        Resultado::Error(codigo) => codigo,
+    };
+}""")
+    varios_datos = compilar_programa("""enum Dato { Vacio, Punto(f64, i32), Marca(bool, char) }
+fn main() -> i32 {
+    let dato: Dato = Dato::Punto(2.5, 4);
+    return match dato {
+        Dato::Vacio => 0,
+        Dato::Punto(2.5, numero) => numero,
+        Dato::Punto(_, _) => 1,
+        Dato::Marca(true, 'ñ') => 2,
+        Dato::Marca(_, _) => 3,
+    };
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 30
+    assert varios_datos["valido"]
+    assert ejecutar_modulo_wasm(varios_datos["wasm"]) == 4
+
+
+def test_enumeraciones_con_datos_copia_efectos_y_match_anidado():
+    copia = compilar_programa("""enum Dato { Numero(i32), Vacio }
+fn main() -> i32 {
+    let primero = Dato::Numero(3);
+    let mut segundo = { primero };
+    segundo = Dato::Numero(9);
+    return match primero { Dato::Numero(valor) => valor, Dato::Vacio => 0 };
+}""")
+    efectos = compilar_programa("""enum Dato { Numero(i32), Vacio }
+fn main() -> i32 {
+    let dato = Dato::Numero(read());
+    return match dato {
+        Dato::Numero(valor) => { print(valor); match true { true => valor + 1, false => 0 } },
+        Dato::Vacio => { print(99); 0 },
+    };
+}""")
+
+    assert copia["valido"]
+    assert ejecutar_modulo_wasm(copia["wasm"]) == 3
+    assert efectos["valido"]
+    assert ejecutar_main_con_entradas(efectos["wasm"], [20]) == (21, [20])
+
+
 @pytest.mark.parametrize(
     "codigo",
     [
-        "enum E { A, B(i32) } fn main() -> i32 { return 0; }",
+        "enum E { A, B(String) } fn main() -> i32 { return 0; }",
         "enum E { A } fn identidad(valor: E) -> i32 { return 1; } fn main() -> i32 { return identidad(E::A); }",
         "enum E { A } fn main() -> i32 { let valor = E::B; return 0; }",
+        "enum E { A(i32) } fn main() -> i32 { let uno = E::A(1); let dos = E::A(1); if uno == dos { return 1; } return 0; }",
     ],
 )
 def test_enumeraciones_no_admitidas_o_invalidas_no_generan_wasm(codigo):
