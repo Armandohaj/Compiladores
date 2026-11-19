@@ -435,6 +435,81 @@ def test_match_con_return_anticipado_y_patrones_pendientes_controlados():
     assert tupla["wasm"] is None
 
 
+def test_enumeraciones_sin_datos_obligatorias_variables_y_comparaciones():
+    obligatorio = compilar_programa("""enum Estado {
+    Pendiente,
+    Completado
+}
+
+fn main() -> i32 {
+    let estado = Estado::Completado;
+    return match estado {
+        Estado::Pendiente => 0,
+        Estado::Completado => 1,
+    };
+}""")
+    variables = compilar_programa("""enum Estado { Completado, Pendiente }
+fn main() -> i32 {
+    let mut primero: Estado = Estado::Pendiente;
+    let segundo = Estado::Completado;
+    primero = segundo;
+    if primero == Estado::Completado && primero != Estado::Pendiente {
+        return 1;
+    }
+    return 0;
+}""")
+
+    assert obligatorio["valido"]
+    assert ejecutar_modulo_wasm(obligatorio["wasm"]) == 1
+    assert variables["valido"]
+    assert ejecutar_modulo_wasm(variables["wasm"]) == 1
+
+
+def test_match_enumeraciones_anidadas_y_nombres_de_variantes_independientes():
+    resultado = compilar_programa("""enum A { Activo, Inactivo }
+enum B { Activo, Inactivo }
+fn main() -> i32 {
+    let primero = A::Activo;
+    let segundo = B::Inactivo;
+    return match primero {
+        A::Activo => match segundo { B::Activo => 10, B::Inactivo => 11 },
+        A::Inactivo => 0,
+    };
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 11
+
+
+def test_match_enum_ejecuta_un_solo_brazo_y_respeta_el_comodin():
+    resultado = compilar_programa("""enum Estado { Pendiente, Completado, Cancelado }
+fn main() -> i32 {
+    return match Estado::Completado {
+        Estado::Pendiente => { print(0); 0 },
+        Estado::Completado => { print(1); 1 },
+        _ => { print(2); 2 },
+    };
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_main_con_entradas(resultado["wasm"], []) == (1, [1])
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        "enum E { A, B(i32) } fn main() -> i32 { return 0; }",
+        "enum E { A } fn identidad(valor: E) -> i32 { return 1; } fn main() -> i32 { return identidad(E::A); }",
+        "enum E { A } fn main() -> i32 { let valor = E::B; return 0; }",
+    ],
+)
+def test_enumeraciones_no_admitidas_o_invalidas_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

@@ -210,6 +210,15 @@ y `print()`. Aún no se admiten patrones o valores de `f64` y `String`, ni
 patrones de tuplas, enums o variantes con datos; se rechazan con un error de
 generación controlado.
 
+Las enumeraciones sin datos se representan como `i32` usando exactamente las
+etiquetas entregadas por el frontend. Se admiten variables locales inferidas o
+anotadas, lectura, reasignación de variables `mut`, comparaciones permitidas y
+patrones `Enum::Variante` dentro de `match`; el orden de los brazos conserva la
+primera coincidencia. No se admiten parámetros, retornos ni constantes globales
+de enum, arreglos o compuestos que los contengan. Si una enumeración del módulo
+tiene alguna variante con datos asociados, todo el módulo se rechaza antes de
+generar WASM.
+
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
