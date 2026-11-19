@@ -171,6 +171,16 @@ pero retornarlo, asignarlo o pasarlo por valor intentaría hacer un movimiento
 parcial y el frontend lo rechaza antes de generar WASM. Esta restricción se
 mantiene hasta que exista soporte de borrowing; el generador no la elude.
 
+También se admiten tuplas locales de dos o más campos `i32`, `f64`, `bool` y
+`char`, declaradas con tipo explícito o inferido. Cada tupla reserva un bloque
+propio en la memoria lineal: los campos `i32`, `bool` y `char` ocupan cuatro
+bytes; los campos `f64` se alinean y cargan/almacenan a ocho bytes. Se pueden
+leer campos `.0`, `.1`, etc., y asignar campos de una tupla `mut`, incluidas
+las operaciones `+=`, `-=`, `*=` y `/=` para `i32` y `f64`. Todavía no se
+admiten tuplas con `String`, tuplas anidadas, copias o asignaciones completas,
+parámetros ni retornos de tuplas; esos casos producen un error de generación
+controlado para no compartir accidentalmente su almacenamiento.
+
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import wasmtime
 
 from main import analizar_programa
+from tipos_compuestos import accesos_escritura, accesos_lectura, separar_tipo_tupla
 
 
 TAMANO_PAGINA_WASM = 65536
@@ -79,7 +80,7 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo):
-    return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None else tipo
+    return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None else tipo
 
 
 def _info_arreglo(tipo):
@@ -110,12 +111,36 @@ def _info_matriz(tipo):
     return tipo_elemento, int(filas), columnas
 
 
+def _info_tupla(tipo):
+    campos = separar_tipo_tupla(tipo)
+    if campos is None or len(campos) < 2 or any(campo not in {"i32", "f64", "bool", "char"} for campo in campos):
+        return None
+    return campos
+
+
+def _distribucion_tupla(tipo):
+    campos = _info_tupla(tipo)
+    if campos is None:
+        return None
+    desplazamiento = 0
+    distribucion = []
+    for campo in campos:
+        alineacion = 8 if campo == "f64" else 4
+        desplazamiento = (desplazamiento + alineacion - 1) & ~(alineacion - 1)
+        distribucion.append((campo, desplazamiento))
+        desplazamiento += _tamano_elemento_arreglo(campo)
+    return distribucion, desplazamiento, max(8 if campo == "f64" else 4 for campo in campos)
+
+
 def _tamano_elemento_arreglo(tipo):
     return 8 if tipo == "f64" else 4
 
 
-def _instruccion_carga_arreglo(tipo):
-    return "f64.load align=8" if tipo == "f64" else "i32.load"
+def _instruccion_carga_arreglo(tipo, desplazamiento=0):
+    if desplazamiento == 0:
+        return "f64.load align=8" if tipo == "f64" else "i32.load"
+    alineacion = " align=8" if tipo == "f64" else ""
+    return f"{tipo if tipo == 'f64' else 'i32'}.load offset={desplazamiento}{alineacion}"
 
 
 def _instruccion_almacenamiento_arreglo(tipo, desplazamiento):
@@ -488,6 +513,17 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     if contexto.getChildCount() == 1:
         return instrucciones
     tipo_base = tipos[contexto.primary()]
+    tupla = _distribucion_tupla(tipo_base)
+    if tupla is not None:
+        accesos = list(accesos_lectura(contexto))
+        if len(accesos) != 1 or accesos[0][0] != "campo":
+            _error("Solo se admite el acceso directo a campos de tuplas locales.", contexto)
+        indice = int(accesos[0][1].getText()[1:])
+        campos, _, _ = tupla
+        if indice >= len(campos):
+            _error("El campo de la tupla no está disponible para generar WASM.", contexto)
+        tipo, desplazamiento = tupla[0][indice]
+        return [*instrucciones, _instruccion_carga_arreglo(tipo, desplazamiento)]
     matriz = _info_matriz(tipo_base)
     if matriz is not None:
         tipo_elemento, filas, columnas = matriz
@@ -582,6 +618,8 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
         if retorno == "unit":
             _error("Una función unit no puede usarse como expresión.", contexto)
         return instrucciones
+    if contexto.tupleLiteral() is not None:
+        _error("Los literales de tupla solo se admiten al inicializar una variable local.", contexto)
     _error(
         "Solo se admiten literales i32 y expresiones aritméticas entre paréntesis.",
         contexto,
@@ -613,6 +651,31 @@ def _obtener_literal_arreglo(expresion):
     return postfija.primary().arrayLiteral()
 
 
+def _obtener_literal_tupla(expresion):
+    or_logico = expresion.logicalOr()
+    if len(or_logico.logicalAnd()) != 1:
+        return None
+    and_logico = or_logico.logicalAnd(0)
+    if len(and_logico.comparison()) != 1:
+        return None
+    comparacion = and_logico.comparison(0)
+    if len(comparacion.additive()) != 1:
+        return None
+    aditiva = comparacion.additive(0)
+    if len(aditiva.multiplicative()) != 1:
+        return None
+    multiplicativa = aditiva.multiplicative(0)
+    if len(multiplicativa.unary()) != 1:
+        return None
+    unaria = multiplicativa.unary(0)
+    if unaria.getChildCount() != 1:
+        return None
+    postfija = unaria.postfix()
+    if postfija.getChildCount() != 1:
+        return None
+    return postfija.primary().tupleLiteral()
+
+
 def _compilar_declaracion(
     declaracion, declaraciones, simbolos, referencias, locales, funciones, nombres_funcion, tipos
 ):
@@ -620,6 +683,32 @@ def _compilar_declaracion(
     if identificador not in locales:
         _error("La declaración no corresponde a una variable local i32.", declaracion)
     expresion = declaracion.expression()
+    tupla = _distribucion_tupla(simbolos[identificador]["tipo"])
+    if tupla is not None:
+        if expresion is None:
+            _error("Una tupla local requiere un literal para inicializarse.", declaracion)
+        literal = _obtener_literal_tupla(expresion)
+        if literal is None:
+            _error("Solo se admiten literales para inicializar tuplas locales.", expresion)
+        campos, tamano, alineacion = tupla
+        expresiones = literal.expression()
+        if len(expresiones) != len(campos):
+            _error("El literal no coincide con los campos de la tupla.", literal)
+        instrucciones = [
+            f"i32.const {tamano}",
+            f"i32.const {alineacion}",
+            "call $array_alloc",
+            f"local.set $local_{identificador}",
+        ]
+        for (tipo, desplazamiento), valor in zip(campos, expresiones):
+            instrucciones.append(f"local.get $local_{identificador}")
+            instrucciones.extend(
+                _compilar_expresion(
+                    valor, referencias, locales, funciones, nombres_funcion, tipos
+                )
+            )
+            instrucciones.append(_instruccion_almacenamiento_arreglo(tipo, desplazamiento))
+        return instrucciones
     matriz = _info_matriz(simbolos[identificador]["tipo"])
     if matriz is not None:
         tipo_elemento, filas, columnas = matriz
@@ -709,6 +798,33 @@ def _compilar_asignacion(
         asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
     )
     tipo_variable = simbolos[identificador]["tipo"]
+    if asignacion.tupleAccess():
+        direccion, tipo = _compilar_direccion_tupla(asignacion, identificador, simbolos)
+        if operador == "=":
+            return [
+                *direccion,
+                *expresion,
+                _instruccion_almacenamiento_arreglo(tipo, 0),
+            ]
+        if tipo not in {"i32", "f64"}:
+            _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
+        instruccion = {
+            "+=": f"{tipo}.add",
+            "-=": f"{tipo}.sub",
+            "*=": f"{tipo}.mul",
+            "/=": "i32.div_s" if tipo == "i32" else "f64.div",
+        }[operador]
+        return [
+            *direccion,
+            "local.tee $direccion_asignacion",
+            _instruccion_carga_arreglo(tipo),
+            *expresion,
+            instruccion,
+            f"local.set $valor_asignacion_{tipo}",
+            "local.get $direccion_asignacion",
+            f"local.get $valor_asignacion_{tipo}",
+            _instruccion_almacenamiento_arreglo(tipo, 0),
+        ]
     if asignacion.indexAccess():
         direccion, tipo = _compilar_direccion_asignacion(
             asignacion, identificador, referencias, simbolos, locales, funciones,
@@ -740,8 +856,8 @@ def _compilar_asignacion(
             f"local.get $valor_asignacion_{tipo}",
             _instruccion_almacenamiento_arreglo(tipo, 0),
         ]
-    if _info_arreglo(tipo_variable) is not None or _info_matriz(tipo_variable) is not None:
-        _error("La asignación completa de arreglos todavía no está implementada.", asignacion)
+    if _info_arreglo(tipo_variable) is not None or _info_matriz(tipo_variable) is not None or _info_tupla(tipo_variable) is not None:
+        _error("La asignación completa de valores compuestos todavía no está implementada.", asignacion)
     if operador == "=":
         return [*expresion, f"local.set $local_{identificador}"]
     instrucciones = [f"local.get $local_{identificador}", *expresion]
@@ -756,6 +872,25 @@ def _compilar_asignacion(
     }[operador])
     instrucciones.append(f"local.set $local_{identificador}")
     return instrucciones
+
+
+def _compilar_direccion_tupla(asignacion, identificador, simbolos):
+    """Obtiene la dirección del campo local sin compartir almacenamiento entre tuplas."""
+    accesos = list(accesos_escritura(asignacion))
+    if len(accesos) != 1 or accesos[0][0] != "campo":
+        _error("Solo se admite la asignación directa a campos de tuplas locales.", asignacion)
+    tupla = _distribucion_tupla(simbolos[identificador]["tipo"])
+    if tupla is None:
+        _error("La asignación no corresponde a una tupla local admitida.", asignacion)
+    indice = int(accesos[0][1].getText()[1:])
+    campos, _, _ = tupla
+    if indice >= len(campos):
+        _error("El campo de la tupla no está disponible para generar WASM.", asignacion)
+    tipo, desplazamiento = campos[indice]
+    instrucciones = [f"local.get $local_{identificador}"]
+    if desplazamiento:
+        instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+    return instrucciones, tipo
 
 
 def _compilar_direccion_asignacion(
@@ -1009,11 +1144,11 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     variables.update(parametros)
     for identificador in parametros:
         tipo = analisis["simbolos"][identificador]["tipo"]
-        if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None:
-            _error("Los parámetros de arreglos todavía no están implementados.", funcion)
+        if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None:
+            _error("Los parámetros de valores compuestos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
-        if tipo not in {"i32", "bool", "f64", "char", "String"} and _info_arreglo(tipo) is None and _info_matriz(tipo) is None:
+        if tipo not in {"i32", "bool", "f64", "char", "String"} and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _info_tupla(tipo) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "

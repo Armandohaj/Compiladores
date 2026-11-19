@@ -75,6 +75,87 @@ fn main() -> i32 {
     assert ejecutar_main_con_entradas(resultado["wasm"], [1, 2]) == (6, [4, 5])
 
 
+def test_tupla_local_obligatoria_lectura_y_asignacion_compuesta():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut datos = (10, true);
+    datos.0 += 5;
+    return datos.0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 15
+
+
+def test_tuplas_locales_explicitas_e_inferidas_con_f64():
+    explicita = compilar_programa("""fn main() -> f64 {
+    let mut datos: (i32, f64, char) = (10 + 2, 2.5 * 2.0, 'x');
+    datos.1 /= 2.0;
+    return datos.1;
+}""")
+    inferida = compilar_programa("""fn main() -> i32 {
+    let datos = (4, false, 'ñ');
+    if !datos.1 && datos.2 == 'ñ' {
+        return datos.0;
+    }
+    return 0;
+}""")
+
+    assert explicita["valido"]
+    assert "f64.load offset=8 align=8" in explicita["wat"]
+    assert ejecutar_modulo_wasm(explicita["wasm"]) == pytest.approx(2.5)
+    assert inferida["valido"]
+    assert ejecutar_modulo_wasm(inferida["wasm"]) == 4
+
+
+def test_asignaciones_simples_y_compuestas_a_campos_de_tupla():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut datos = (20, 2, true, 'a');
+    datos.1 = 5;
+    datos.2 = false;
+    datos.3 = 'z';
+    datos.0 -= 4;
+    datos.0 *= 2;
+    datos.0 /= 4;
+    if !datos.2 && datos.3 == 'z' {
+        return datos.0 + datos.1;
+    }
+    return 0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 13
+
+
+def test_dos_tuplas_locales_tienen_almacenamiento_independiente():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut izquierda = (1, 2);
+    let mut derecha = (10, 20);
+    izquierda.0 = 50;
+    derecha.1 += 5;
+    return izquierda.0 + izquierda.1 + derecha.0 + derecha.1;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 87
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        "fn main() -> i32 { let datos = (1, true); datos.0 = 2; return datos.0; }",
+        "fn main() -> i32 { let datos = (1, true); datos.1 += true; return datos.0; }",
+        "fn main() -> i32 { let datos = (1, \"texto\"); return datos.0; }",
+        "fn main() -> i32 { let datos = (1, (2, true)); return datos.0; }",
+        "fn main() -> i32 { let primero = (1, true); let segundo = primero; return segundo.0; }",
+    ],
+)
+def test_tuplas_no_admitidas_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [
