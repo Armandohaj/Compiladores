@@ -5,6 +5,7 @@ constantes permite referencias adelantadas; el conjunto en_proceso evita
 recursión infinita al detectar dependencias circulares.
 """
 from generated.RustiQParser import RustiQParser
+from match_constante import dependencias_globales
 from evaluador_constantes import EvaluadorConstantes, ErrorConstante
 
 
@@ -85,6 +86,14 @@ class GestorConstantes:
             # Revisar todos los nodos, aunque un operador
             # lógico pueda omitirlos al calcular el valor.
             for nodo in self.recorrer(ctx.expression()):
+                if isinstance(nodo, RustiQParser.BlockContext):
+                    # El evaluador constante admite bloques puros, no ciclos,
+                    # asignaciones ni saltos que deban ejecutarse en runtime.
+                    for sentencia in nodo.statement():
+                        if sentencia.letDecl() is None and sentencia.block() is None:
+                            self.semantico.reportar(sentencia.start, "Una constante solo admite let inmutable y bloques puros.")
+                if isinstance(nodo, RustiQParser.LetDeclContext) and nodo.MUT() is not None:
+                    self.semantico.reportar(nodo.start, "Una constante no admite variables locales mutables.")
                 if isinstance(nodo, RustiQParser.FunctionCallContext):
                     self.semantico.reportar(
                         nodo.IDENT().getSymbol(),
@@ -142,12 +151,8 @@ class GestorConstantes:
 
             # Resolver primero todas las dependencias.
             # También detecta ciclos en ramas con cortocircuito.
-            for nodo in self.recorrer(ctx.expression()):
-                if (
-                    isinstance(nodo, RustiQParser.PrimaryContext)
-                    and nodo.IDENT() is not None
-                ):
-                    self.calcular(nodo.IDENT().getSymbol())
+            for dependencia in dependencias_globales(ctx.expression()):
+                self.calcular(dependencia)
 
             evaluador = EvaluadorConstantes(
                 self.semantico.tipos_expresiones,

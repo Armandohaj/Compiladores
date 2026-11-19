@@ -7,7 +7,7 @@ destinos y declaraciones sin introducir otro árbol de representación.
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
 from tipos_compuestos import normalizar_tipo
-
+from flujo_control import salidas_control
 
 class ResolucionVariables(RustiQVisitor):
     """
@@ -154,18 +154,30 @@ class ResolucionVariables(RustiQVisitor):
             # comparten el mismo ámbito local.
             for sentencia in ctx.block().statement():
                 self.visit(sentencia)
+                # La expresión final puede leer los parámetros
+                # y las variables declaradas en el cuerpo.
+            if ctx.block().expression() is not None:
+                self.visit(ctx.block().expression())
         finally:
             self.ambitos = ambitos_anteriores
             self.funcion_actual = funcion_anterior
 
     def visitBlock(self, ctx):
-        """Limita la visibilidad de declaraciones locales al bloque actual."""
+        """Vincula los usos de variables dentro de todo el bloque."""
         self.ambitos.append({})
 
         try:
+            # Registrar declaraciones y resolver las instrucciones.
             for sentencia in ctx.statement():
                 self.visit(sentencia)
+
+            # Resolver también las variables de la expresión final.
+            # Todavía estamos dentro del ámbito del bloque.
+            if ctx.expression() is not None:
+                self.visit(ctx.expression())
+
         finally:
+            # Las variables del bloque dejan de estar disponibles.
             self.ambitos.pop()
 
     # =================================================
@@ -173,14 +185,18 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitLetDecl(self, ctx):
-        """Resuelve primero el inicializador y después crea el nuevo símbolo, respetando el sombreado de nombres."""
+        """Resuelve el inicializador antes de registrar la variable."""
         expresion = ctx.expression()
         tipo = self.obtener_tipo_declarado(ctx)
 
-        # Resolver el inicializador antes de registrar
-        # la nueva variable.
         if expresion is not None:
+            # Vincular primero las lecturas del inicializador.
             self.visit(expresion)
+
+            # Coincide con el semántico: si hay un salto
+            # incondicional, no se crea esta declaración.
+            if "normal" not in salidas_control(expresion):
+                return
 
             if tipo is None:
                 tipo = self.tipos_expresiones[expresion]
@@ -214,3 +230,37 @@ class ResolucionVariables(RustiQVisitor):
             self.referencias[ctx] = self.buscar(nombre)
         else:
             return self.visitChildren(ctx)
+
+    def visitMatchExpr(self, ctx):
+        """Resuelve primero el valor y limita cada variable al brazo que la declara."""
+        self.visit(ctx.expression())
+        for brazo in ctx.matchArm():
+            self.ambitos.append({})
+            try:
+                self.registrar_patron(brazo.pattern())
+                self.visit(brazo.expression())
+            finally:
+                self.ambitos.pop()
+
+    def registrar_patron(self, ctx):
+        """Asigna identidades a receptores; los nombres de variantes no son variables."""
+        if ctx.DOUBLE_COLON() is not None:
+            lista = ctx.patternList()
+            if lista is not None:
+                for hijo in lista.pattern():
+                    self.registrar_patron(hijo)
+        elif ctx.LPAREN() is not None:
+            for hijo in ctx.pattern():
+                self.registrar_patron(hijo)
+        elif ctx.IDENT():
+            token = ctx.IDENT(0).getSymbol()
+            identificador = self.siguiente_id
+            self.siguiente_id += 1
+            self.simbolos[identificador] = {
+                "nombre": token.text, "tipo": self.tipos_expresiones[ctx],
+                "mutable": False, "funcion": self.funcion_actual,
+                "es_parametro": False, "es_constante": False,
+                "linea": token.line, "columna": token.column + 1,
+            }
+            self.ambitos[-1][token.text] = identificador
+            self.declaraciones[ctx] = identificador

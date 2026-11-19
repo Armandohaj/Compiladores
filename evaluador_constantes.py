@@ -10,6 +10,7 @@ import math
 
 from generated.RustiQVisitor import RustiQVisitor
 from tipos_compuestos import accesos_lectura
+from match_constante import coincidir
 
 
 class ErrorConstante(Exception):
@@ -45,6 +46,8 @@ class EvaluadorConstantes(RustiQVisitor):
 
         # Función que obtiene el valor de otra constante.
         self.resolver_nombre = resolver_nombre
+        # Receptores de patrones y lets del bloque constante actual.
+        self.ambitos_locales = []
 
         # Registro de enums y etiquetas de sus variantes.
         self.enumeraciones = (
@@ -400,6 +403,36 @@ class EvaluadorConstantes(RustiQVisitor):
         # Las variantes sin datos conservan su formato anterior.
         return resultado
 
+    def visitMatchExpr(self, ctx):
+        """Evalúa una vez el valor y únicamente el primer brazo compatible."""
+        valor = self.visit(ctx.expression())
+        for brazo in ctx.matchArm():
+            capturas = coincidir(self, brazo.pattern(), valor)
+            if capturas is not None:
+                self.ambitos_locales.append(capturas)
+                try:
+                    return self.visit(brazo.expression())
+                finally:
+                    self.ambitos_locales.pop()
+        # Defensa si se utiliza el evaluador sin validar exhaustividad.
+        raise ErrorConstante(ctx.start, "Ningún patrón coincide en el match constante.")
+
+    def visitBlock(self, ctx):
+        """Calcula un bloque puro, con variables locales limitadas a su ámbito."""
+        self.ambitos_locales.append({})
+        try:
+            for sentencia in ctx.statement():
+                self.visit(sentencia)
+            return self.visit(ctx.expression()) if ctx.expression() is not None else None
+        finally:
+            self.ambitos_locales.pop()
+
+    def visitLetDecl(self, ctx):
+        """Calcula el inicializador antes de introducir el nombre, como el semántico."""
+        expresion = ctx.expression()
+        valor = self.visit(expresion) if expresion is not None else None
+        self.ambitos_locales[-1][ctx.IDENT().getText()] = valor
+
     def visitPrimary(self, ctx):
         """Calcula valores cuyo tipo ya fue validado."""
 
@@ -444,7 +477,17 @@ class EvaluadorConstantes(RustiQVisitor):
                 "con una llamada a función."
             )
 
+        if ctx.matchExpr() is not None:
+            return self.visit(ctx.matchExpr())
+
+        if ctx.block() is not None:
+            return self.visit(ctx.block())
+
         if ctx.IDENT() is not None:
+            nombre = ctx.IDENT().getText()
+            for ambito in reversed(self.ambitos_locales):
+                if nombre in ambito:
+                    return ambito[nombre]
             return self.resolver_nombre(
                 ctx.IDENT().getSymbol()
             )
