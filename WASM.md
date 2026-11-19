@@ -177,9 +177,10 @@ propio en la memoria lineal: los campos `i32`, `bool` y `char` ocupan cuatro
 bytes; los campos `f64` se alinean y cargan/almacenan a ocho bytes. Se pueden
 leer campos `.0`, `.1`, etc., y asignar campos de una tupla `mut`, incluidas
 las operaciones `+=`, `-=`, `*=` y `/=` para `i32` y `f64`. Todavía no se
-admiten tuplas con `String`, tuplas anidadas, copias o asignaciones completas,
-parámetros ni retornos de tuplas; esos casos producen un error de generación
-controlado para no compartir accidentalmente su almacenamiento.
+admiten tuplas con `String`, tuplas anidadas, parámetros ni retornos de
+tuplas. Las copias y asignaciones completas de tuplas Copy admitidas reservan
+un bloque independiente y usan `memory.copy`, incluso si el valor proviene de
+un bloque con valor; origen y destino no comparten almacenamiento.
 
 Las estructuras locales con campos `i32`, `f64`, `bool` y `char` usan la misma
 memoria lineal y alineación que las tuplas. El layout sigue el orden de
@@ -188,8 +189,9 @@ campos en otro orden; las expresiones de ese constructor sí se evalúan y se
 almacenan en el orden en que fueron escritas. Se admiten lecturas por nombre,
 asignaciones simples y operaciones compuestas numéricas sobre campos de una
 estructura `mut`. No se admiten todavía campos `String`, arreglos, tuplas o
-estructuras, copias ni asignaciones completas, parámetros o retornos de
-estructuras; esas formas se rechazan controladamente.
+estructuras, parámetros o retornos de estructuras. Las copias y asignaciones
+completas de estructuras Copy admitidas usan un bloque independiente en la
+memoria lineal, por lo que sus campos pueden modificarse sin alterar el origen.
 
 Los bloques con valor se generan ejecutando primero sus sentencias y luego su
 expresión final. Se admiten como inicializadores, argumentos, retornos y otras

@@ -201,6 +201,22 @@ def _distribucion_estructura(tipo, estructuras):
     return distribucion, desplazamiento, alineacion_maxima
 
 
+def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
+    tupla = _distribucion_tupla(tipo)
+    if tupla is not None:
+        _, tamano, alineacion = tupla
+        return tamano, alineacion
+    estructura = _distribucion_estructura(tipo, estructuras)
+    if estructura is not None:
+        _, tamano, alineacion = estructura
+        return tamano, alineacion
+    enumeracion = _distribucion_enum(tipo, enumeraciones)
+    if enumeracion is not None:
+        _, tamano, alineacion = enumeracion
+        return tamano, alineacion
+    return None
+
+
 def _tamano_elemento_arreglo(tipo):
     return 8 if tipo == "f64" else 4
 
@@ -1095,7 +1111,13 @@ def _compilar_declaracion(
             _error("Una estructura local requiere un constructor para inicializarse.", declaracion)
         literal = _obtener_literal_estructura(expresion)
         if literal is None:
-            _error("Solo se admiten constructores para inicializar estructuras locales.", expresion)
+            return [
+                *_compilar_valor_para_local(
+                    expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
+                    nombres_funcion, tipos,
+                ),
+                f"local.set $local_{identificador}",
+            ]
         campos, tamano, alineacion = estructura
         instrucciones = [
             f"i32.const {tamano}",
@@ -1122,7 +1144,13 @@ def _compilar_declaracion(
             _error("Una tupla local requiere un literal para inicializarse.", declaracion)
         literal = _obtener_literal_tupla(expresion)
         if literal is None:
-            _error("Solo se admiten literales para inicializar tuplas locales.", expresion)
+            return [
+                *_compilar_valor_para_local(
+                    expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
+                    nombres_funcion, tipos,
+                ),
+                f"local.set $local_{identificador}",
+            ]
         campos, tamano, alineacion = tupla
         expresiones = literal.expression()
         if len(expresiones) != len(campos):
@@ -1223,13 +1251,14 @@ def _compilar_declaracion(
 
 def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, funciones,
                                nombres_funcion, tipos):
-    """Copia los enums con datos al inicializar o reasignar un local."""
-    distribucion = _distribucion_enum(tipo_destino, nombres_funcion.enumeraciones)
-    if distribucion is None:
+    layout = _layout_copia_compuesta(
+        tipo_destino, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+    )
+    if layout is None:
         return _compilar_expresion(
             expresion, referencias, locales, funciones, nombres_funcion, tipos
         )
-    _, tamano, alineacion = distribucion
+    tamano, alineacion = layout
     temporal = f"enum_{nombres_funcion.siguiente_enum}"
     nombres_funcion.siguiente_enum += 1
     nombres_funcion.temporales_enum.append(temporal)
@@ -1252,9 +1281,14 @@ def _compilar_asignacion(
         _error("La asignación no corresponde a una variable local i32.", asignacion)
     operador = asignacion.assignmentOp().getText()
     tipo_variable = simbolos[identificador]["tipo"]
-    if _enum_tiene_datos(tipo_variable, nombres_funcion.enumeraciones):
+    layout = _layout_copia_compuesta(
+        tipo_variable, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+    )
+    if layout is not None and not (
+        asignacion.fieldAccess() or asignacion.tupleAccess() or asignacion.indexAccess()
+    ):
         if operador != "=":
-            _error("Las asignaciones compuestas de enumeraciones no están implementadas.", asignacion)
+            _error("Las asignaciones compuestas de valores compuestos no están implementadas.", asignacion)
         return [
             *_compilar_valor_para_local(
                 asignacion.expression(), tipo_variable, referencias, locales, funciones,

@@ -146,7 +146,6 @@ def test_dos_tuplas_locales_tienen_almacenamiento_independiente():
         "fn main() -> i32 { let datos = (1, true); datos.1 += true; return datos.0; }",
         "fn main() -> i32 { let datos = (1, \"texto\"); return datos.0; }",
         "fn main() -> i32 { let datos = (1, (2, true)); return datos.0; }",
-        "fn main() -> i32 { let primero = (1, true); let segundo = primero; return segundo.0; }",
     ],
 )
 def test_tuplas_no_admitidas_no_generan_wasm(codigo):
@@ -249,7 +248,6 @@ fn main() -> i32 {
     "codigo",
     [
         "struct P { x: i32 } fn main() -> i32 { let p = P { x: 1 }; p.x = 2; return p.x; }",
-        "struct P { x: i32 } fn main() -> i32 { let p = P { x: 1 }; let q = p; return q.x; }",
         "struct P { x: String } fn main() -> i32 { let p = P { x: \"a\" }; return 0; }",
         "struct P { x: i32 } struct Q { p: P } fn main() -> i32 { let q = Q { p: P { x: 1 } }; return 0; }",
     ],
@@ -548,6 +546,54 @@ fn main() -> i32 {
     assert ejecutar_modulo_wasm(copia["wasm"]) == 3
     assert efectos["valido"]
     assert ejecutar_main_con_entradas(efectos["wasm"], [20]) == (21, [20])
+
+
+def test_copias_completas_de_tuplas_y_asignaciones_independientes():
+    obligatorio = compilar_programa("""fn main() -> i32 {
+    let original = (10, true);
+    let mut copia = original;
+    copia.0 += 5;
+    return original.0 * 10 + copia.0;
+}""")
+    reasignacion = compilar_programa("""fn main() -> i32 {
+    let original = (10, 2.5, true, 'a');
+    let mut destino = (1, 1.0, false, 'b');
+    destino = original;
+    destino.0 = 20;
+    destino.1 = 4.5;
+    if original.0 == 10 && original.1 == 2.5 && destino.0 == 20 && destino.1 == 4.5 {
+        return 1;
+    }
+    return 0;
+}""")
+
+    assert obligatorio["valido"]
+    assert ejecutar_modulo_wasm(obligatorio["wasm"]) == 115
+    assert reasignacion["valido"]
+    assert ejecutar_modulo_wasm(reasignacion["wasm"]) == 1
+
+
+def test_copias_completas_de_estructuras_y_bloques_con_valor():
+    obligatorio = compilar_programa("""struct Punto { x: i32, y: f64 }
+fn main() -> i32 {
+    let original = Punto { x: 10, y: 2.5 };
+    let mut copia = original;
+    copia.x = 30;
+    return original.x + copia.x;
+}""")
+    bloque = compilar_programa("""struct Punto { x: i32, y: f64 }
+fn main() -> i32 {
+    let original = Punto { x: 10, y: 2.5 };
+    let mut copia = { original };
+    copia.x += 20;
+    if original.y == 2.5 && copia.y == 2.5 { return original.x + copia.x; }
+    return 0;
+}""")
+
+    assert obligatorio["valido"]
+    assert ejecutar_modulo_wasm(obligatorio["wasm"]) == 40
+    assert bloque["valido"]
+    assert ejecutar_modulo_wasm(bloque["wasm"]) == 40
 
 
 @pytest.mark.parametrize(
