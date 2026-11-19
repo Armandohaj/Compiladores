@@ -596,6 +596,77 @@ fn main() -> i32 {
     assert ejecutar_modulo_wasm(bloque["wasm"]) == 40
 
 
+def test_copias_completas_de_arreglos_y_asignaciones_independientes():
+    obligatorio = compilar_programa("""fn main() -> i32 {
+    let original = [10, 20];
+    let mut copia = original;
+    copia[0] = 50;
+    return original[0] + copia[0];
+}""")
+    reasignacion = compilar_programa("""fn main() -> i32 {
+    let original = [10, 20];
+    let mut copia = [1, 2];
+    copia = original;
+    copia[1] = 50;
+    return original[1] + copia[1];
+}""")
+    tipos = compilar_programa("""fn main() -> i32 {
+    let decimales = [1.5, 2.5];
+    let mut copia_decimal = { decimales };
+    copia_decimal[0] = 3.5;
+    let banderas = [true, false];
+    let copia_bandera = banderas;
+    let letras = ['a', 'ñ'];
+    let copia_letra = letras;
+    if decimales[0] == 1.5 && copia_decimal[0] == 3.5 && copia_bandera[0] && copia_letra[1] == 'ñ' {
+        return 1;
+    }
+    return 0;
+}""")
+
+    assert obligatorio["valido"]
+    assert ejecutar_modulo_wasm(obligatorio["wasm"]) == 60
+    assert reasignacion["valido"]
+    assert ejecutar_modulo_wasm(reasignacion["wasm"]) == 70
+    assert tipos["valido"]
+    assert ejecutar_modulo_wasm(tipos["wasm"]) == 1
+
+
+def test_copias_completas_de_matrices_y_rechazos_de_move():
+    obligatorio = compilar_programa("""fn main() -> i32 {
+    let original = [[1, 2], [3, 4]];
+    let mut copia = original;
+    copia[1][0] = 30;
+    return original[1][0] + copia[1][0];
+}""")
+    reasignacion = compilar_programa("""fn main() -> i32 {
+    let original = [[1.5, 2.5], [3.5, 4.5]];
+    let mut copia = [[0.0, 0.0], [0.0, 0.0]];
+    copia = { original };
+    copia[0][1] = 8.5;
+    let banderas = [[true, false], [false, true]];
+    let mut copia_bandera = banderas;
+    copia_bandera[0][0] = false;
+    let letras = [['a', 'b'], ['ñ', '中']];
+    let copia_letra = letras;
+    if original[0][1] == 2.5 && copia[0][1] == 8.5 && banderas[0][0]
+        && !copia_bandera[0][0] && copia_letra[1][1] == '中' { return 1; }
+    return 0;
+}""")
+    move = compilar_programa("""fn main() -> i32 {
+    let original = ["texto"];
+    let copia = original;
+    return 0;
+}""")
+
+    assert obligatorio["valido"]
+    assert ejecutar_modulo_wasm(obligatorio["wasm"]) == 33
+    assert reasignacion["valido"]
+    assert ejecutar_modulo_wasm(reasignacion["wasm"]) == 1
+    assert not move["valido"]
+    assert move["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

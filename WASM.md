@@ -153,7 +153,11 @@ bloque. En esta etapa se admiten literales, lectura e índices `i32` para
 arreglos locales. También se admite la asignación de elementos con `=` y, para
 elementos `i32` y `f64`, con `+=`, `-=`, `*=` y `/=`; las direcciones conservan
 las mismas comprobaciones de límites antes de cargar o almacenar. No hay
-parámetros, retornos, copia, comparación ni asignación completa de arreglos.
+parámetros, retornos ni comparación de arreglos. Los arreglos Copy con
+elementos `i32`, `f64`, `bool` o `char` admiten copia y asignación completas:
+se reserva un bloque independiente y `memory.copy` conserva los bytes y la
+alineación del layout original. Los arreglos con `String` continúan sin copia
+ni asignación completa.
 
 También se admiten matrices locales de dos dimensiones `[[T; columnas];
 filas]` para `i32`, `bool`, `char`, `f64` y `String`. Sus elementos se guardan
@@ -162,8 +166,11 @@ contiguamente por filas en el mismo bloque; `matriz[fila][columna]` usa
 elemento. Las matrices conservan los tamaños y alineaciones de los arreglos,
 incluida la alineación de ocho bytes para `f64` y los punteros a descriptores
 para `String`. Sus elementos admiten las mismas asignaciones indexadas que los
-arreglos. No se admiten más de dos dimensiones, ni parámetros, retornos,
-copias, comparaciones o asignaciones completas de matrices.
+arreglos. Las matrices Copy de esos cuatro tipos básicos también admiten copia
+y asignación completas en un bloque independiente mediante `memory.copy`,
+incluido `f64` alineado a ocho bytes. No se admiten más de dos dimensiones,
+ni parámetros, retornos o comparaciones de matrices; las matrices con
+`String` no admiten copia ni asignación completa.
 
 Con el análisis de ownership actual, `String` y los arreglos o matrices que lo
 contienen son valores `Move`. Por ello, comparar un elemento `String` es válido,

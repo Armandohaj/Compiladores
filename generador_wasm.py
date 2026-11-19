@@ -202,6 +202,22 @@ def _distribucion_estructura(tipo, estructuras):
 
 
 def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
+    arreglo = _info_arreglo(tipo)
+    if arreglo is not None:
+        elemento, cantidad = arreglo
+        if elemento in {"i32", "f64", "bool", "char"}:
+            paso = _tamano_elemento_arreglo(elemento)
+            if cantidad <= MAX_DIRECCION_I32 // paso:
+                return cantidad * paso, paso
+        return None
+    matriz = _info_matriz(tipo)
+    if matriz is not None:
+        elemento, filas, columnas = matriz
+        if elemento in {"i32", "f64", "bool", "char"}:
+            paso = _tamano_elemento_arreglo(elemento)
+            if columnas and filas <= MAX_DIRECCION_I32 // columnas and filas * columnas <= MAX_DIRECCION_I32 // paso:
+                return filas * columnas * paso, paso
+        return None
     tupla = _distribucion_tupla(tipo)
     if tupla is not None:
         _, tamano, alineacion = tupla
@@ -1177,7 +1193,18 @@ def _compilar_declaracion(
             _error("Una matriz local requiere un literal para inicializarse.", declaracion)
         literal = _obtener_literal_arreglo(expresion)
         if literal is None:
-            _error("Solo se admiten literales para inicializar matrices locales.", expresion)
+            if _layout_copia_compuesta(
+                simbolos[identificador]["tipo"], nombres_funcion.estructuras,
+                nombres_funcion.enumeraciones,
+            ) is None:
+                _error("La copia de esta matriz todavía no está implementada.", expresion)
+            return [
+                *_compilar_valor_para_local(
+                    expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
+                    nombres_funcion, tipos,
+                ),
+                f"local.set $local_{identificador}",
+            ]
         literales_fila = [_obtener_literal_arreglo(fila) for fila in literal.expression()]
         if len(literales_fila) != filas or any(fila is None for fila in literales_fila):
             _error("El literal no coincide con las filas de la matriz.", literal)
@@ -1214,7 +1241,18 @@ def _compilar_declaracion(
             _error("Un arreglo local requiere un literal para inicializarse.", declaracion)
         literal = _obtener_literal_arreglo(expresion)
         if literal is None:
-            _error("Solo se admiten literales para inicializar arreglos locales.", expresion)
+            if _layout_copia_compuesta(
+                simbolos[identificador]["tipo"], nombres_funcion.estructuras,
+                nombres_funcion.enumeraciones,
+            ) is None:
+                _error("La copia de este arreglo todavía no está implementada.", expresion)
+            return [
+                *_compilar_valor_para_local(
+                    expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
+                    nombres_funcion, tipos,
+                ),
+                f"local.set $local_{identificador}",
+            ]
         elementos = literal.expression()
         if len(elementos) != tamano_arreglo:
             _error("El tamaño del literal no coincide con la declaración del arreglo.", literal)
