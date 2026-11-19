@@ -261,6 +261,82 @@ def test_estructuras_no_admitidas_no_generan_wasm(codigo):
     assert resultado["wasm"] is None
 
 
+def test_retornos_implicitos_obligatorios_y_bloques_con_valor():
+    directo = compilar_programa("""fn main() -> i32 {
+    let numero = 10;
+    numero + 20
+}""")
+    inicializador = compilar_programa("""fn main() -> i32 {
+    let resultado = {
+        let base = 10;
+        base + 5
+    };
+    return resultado;
+}""")
+    funciones = compilar_programa("""fn sumar(numero: i32) -> i32 {
+    numero + 1
+}
+
+fn main() -> i32 {
+    sumar(20)
+}""")
+
+    assert directo["valido"]
+    assert ejecutar_modulo_wasm(directo["wasm"]) == 30
+    assert inicializador["valido"]
+    assert ejecutar_modulo_wasm(inicializador["wasm"]) == 15
+    assert funciones["valido"]
+    assert ejecutar_modulo_wasm(funciones["wasm"]) == 21
+
+
+def test_bloques_con_valor_en_argumentos_y_tipos_primitivos():
+    argumentos = compilar_programa("""fn sumar(valor: i32) -> i32 {
+    valor + 1
+}
+
+fn main() -> i32 {
+    sumar({ let base = 20; base })
+}""")
+    primitivos = compilar_programa("""fn main() -> i32 {
+    let decimal = { let valor = 2.5; valor * 2.0 };
+    let bandera = { let valor = true; valor };
+    let letra = { let valor = 'ñ'; valor };
+    if bandera && letra == 'ñ' && decimal == 5.0 {
+        return 1;
+    }
+    return 0;
+}""")
+    texto = compilar_programa("""fn main() -> String {
+    let mensaje = { let base = "Hola"; base };
+    mensaje
+}""")
+
+    assert argumentos["valido"]
+    assert ejecutar_modulo_wasm(argumentos["wasm"]) == 21
+    assert primitivos["valido"]
+    assert ejecutar_modulo_wasm(primitivos["wasm"]) == 1
+    assert texto["valido"]
+    assert ejecutar_string_wasm(texto["wasm"]) == "Hola"
+
+
+def test_bloques_sin_valor_sombreado_y_return_anticipado():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let valor = 1;
+    {
+        let valor = 10;
+    }
+    let ignorado = {
+        return valor + 6;
+    } + 1;
+    print(99);
+    0
+}""")
+
+    assert resultado["valido"]
+    assert "call $print_i32" not in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 7
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

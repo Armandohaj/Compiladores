@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import wasmtime
 
 from main import analizar_programa
+from flujo_control import salidas_control
 from tipos_compuestos import accesos_escritura, accesos_lectura, separar_tipo_tupla
 
 
@@ -53,8 +54,12 @@ class EstadoModulo:
     memoria: MemoriaStrings
     constantes: dict
     estructuras: dict
+    declaraciones: dict
+    simbolos: dict
     llamadas_incorporadas: dict
     incorporadas_usadas: set
+    ciclos: dict | None = None
+    tipo_retorno_actual: str | None = None
 
 
 @dataclass
@@ -258,10 +263,14 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
     )
     if len(operandos) == 1:
         return instrucciones
+    if "normal" not in salidas_control(operandos[0]):
+        return instrucciones
     operador = contexto.relOp().getText()
     instrucciones.extend(
         _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion, tipos)
     )
+    if "normal" not in salidas_control(operandos[1]):
+        return instrucciones
     tipo = tipos[operandos[0]]
     if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None:
         _error("Las comparaciones entre arreglos todavía no están implementadas.", contexto)
@@ -451,6 +460,8 @@ def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion
     instrucciones = _compilar_multiplicativa(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
+    if "normal" not in salidas_control(operandos[0]):
+        return instrucciones
     for indice, operando in enumerate(operandos[1:], start=1):
         operador = contexto.getChild(indice * 2 - 1).getText()
         instrucciones.extend(
@@ -458,6 +469,8 @@ def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion
                 operando, referencias, locales, funciones, nombres_funcion, tipos
             )
         )
+        if "normal" not in salidas_control(operando):
+            return instrucciones
         tipo = tipos[contexto]
         if tipo not in {"i32", "f64"}:
             _error("Esta operación aritmética no está disponible para el tipo.", contexto)
@@ -470,11 +483,15 @@ def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_
     instrucciones = _compilar_unaria(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
+    if "normal" not in salidas_control(operandos[0]):
+        return instrucciones
     for indice, operando in enumerate(operandos[1:], start=1):
         operador = contexto.getChild(indice * 2 - 1).getText()
         instrucciones.extend(
             _compilar_unaria(operando, referencias, locales, funciones, nombres_funcion, tipos)
         )
+        if "normal" not in salidas_control(operando):
+            return instrucciones
         tipo = tipos[contexto]
         if tipo not in {"i32", "f64"}:
             _error("Esta operación aritmética no está disponible para el tipo.", contexto)
@@ -495,21 +512,17 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
         )
     operador = contexto.getChild(0).getText()
     if operador == "!":
-        return [
-            *_compilar_postfija(
-                contexto.postfix(), referencias, locales, funciones, nombres_funcion, tipos
-            ),
-            "i32.eqz",
-        ]
+        instrucciones = _compilar_postfija(
+            contexto.postfix(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+        return instrucciones if "normal" not in salidas_control(contexto.postfix()) else [*instrucciones, "i32.eqz"]
 
     postfija = contexto.postfix()
     if tipos[contexto] == "f64":
-        return [
-            *_compilar_postfija(
-                postfija, referencias, locales, funciones, nombres_funcion, tipos
-            ),
-            "f64.neg",
-        ]
+        instrucciones = _compilar_postfija(
+            postfija, referencias, locales, funciones, nombres_funcion, tipos
+        )
+        return instrucciones if "normal" not in salidas_control(postfija) else [*instrucciones, "f64.neg"]
     if tipos[contexto] != "i32":
         _error("La negación aritmética solo está disponible para i32 y f64.", contexto)
     primaria = postfija.primary() if postfija.getChildCount() == 1 else None
@@ -521,13 +534,10 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
         if valor > 2**31 - 1:
             _error("El literal excede el rango de i32.", literal)
 
-    return [
-        "i32.const 0",
-        *_compilar_postfija(
-            postfija, referencias, locales, funciones, nombres_funcion, tipos
-        ),
-        "i32.sub",
-    ]
+    instrucciones = _compilar_postfija(
+        postfija, referencias, locales, funciones, nombres_funcion, tipos
+    )
+    return instrucciones if "normal" not in salidas_control(postfija) else ["i32.const 0", *instrucciones, "i32.sub"]
 
 
 def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcion, tipos):
@@ -535,6 +545,8 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
         contexto.primary(), referencias, locales, funciones, nombres_funcion, tipos
     )
     if contexto.getChildCount() == 1:
+        return instrucciones
+    if "normal" not in salidas_control(contexto.primary()):
         return instrucciones
     tipo_base = tipos[contexto.primary()]
     estructura = _distribucion_estructura(tipo_base, nombres_funcion.estructuras)
@@ -633,6 +645,20 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
         return ["i32.const 1"]
     if contexto.FALSE() is not None:
         return ["i32.const 0"]
+    if contexto.block() is not None:
+        return _compilar_bloque(
+            contexto.block(),
+            nombres_funcion.declaraciones,
+            referencias,
+            nombres_funcion.simbolos,
+            locales,
+            tipos,
+            nombres_funcion.tipo_retorno_actual,
+            funciones,
+            nombres_funcion,
+            nombres_funcion.ciclos,
+            True,
+        )
     expresion = contexto.expression()
     if expresion is not None:
         return _compilar_expresion(
@@ -738,9 +764,65 @@ def _obtener_literal_estructura(expresion):
     return postfija.primary().structLiteral()
 
 
+def _obtener_primaria_directa(expresion):
+    or_logico = expresion.logicalOr()
+    if len(or_logico.logicalAnd()) != 1:
+        return None
+    and_logico = or_logico.logicalAnd(0)
+    if len(and_logico.comparison()) != 1:
+        return None
+    comparacion = and_logico.comparison(0)
+    if len(comparacion.additive()) != 1:
+        return None
+    aditiva = comparacion.additive(0)
+    if len(aditiva.multiplicative()) != 1:
+        return None
+    multiplicativa = aditiva.multiplicative(0)
+    if len(multiplicativa.unary()) != 1:
+        return None
+    unaria = multiplicativa.unary(0)
+    if unaria.getChildCount() != 1:
+        return None
+    postfija = unaria.postfix()
+    if postfija.getChildCount() != 1:
+        return None
+    return postfija.primary()
+
+
+def _compilar_expresion_unit(expresion, referencias, locales, funciones, nombres_funcion, tipos):
+    primaria = _obtener_primaria_directa(expresion)
+    if primaria is not None and primaria.functionCall() is not None:
+        instrucciones, retorno = _compilar_llamada(
+            primaria.functionCall(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+        if retorno == "unit":
+            return instrucciones
+    if primaria is not None and primaria.block() is not None:
+        return _compilar_bloque(
+            primaria.block(),
+            nombres_funcion.declaraciones,
+            referencias,
+            nombres_funcion.simbolos,
+            locales,
+            tipos,
+            nombres_funcion.tipo_retorno_actual,
+            funciones,
+            nombres_funcion,
+            nombres_funcion.ciclos,
+        )
+    return _compilar_expresion(
+        expresion, referencias, locales, funciones, nombres_funcion, tipos
+    )
+
+
 def _compilar_declaracion(
     declaracion, declaraciones, simbolos, referencias, locales, funciones, nombres_funcion, tipos
 ):
+    if declaracion not in declaraciones:
+        expresion = declaracion.expression()
+        return [] if expresion is None else _compilar_expresion(
+            expresion, referencias, locales, funciones, nombres_funcion, tipos
+        )
     identificador = declaraciones[declaracion]
     if identificador not in locales:
         _error("La declaración no corresponde a una variable local i32.", declaracion)
@@ -886,6 +968,8 @@ def _compilar_asignacion(
     expresion = _compilar_expresion(
         asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
     )
+    if "normal" not in salidas_control(asignacion.expression()):
+        return expresion
     tipo_variable = simbolos[identificador]["tipo"]
     if asignacion.fieldAccess():
         direccion, tipo = _compilar_direccion_estructura(
@@ -1088,12 +1172,12 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
         if incorporada == "read":
             return ["call $read_i32"], "i32"
         argumentos = llamada.argumentList().expression()
-        return [
-            *_compilar_expresion(
-                argumentos[0], referencias, locales, funciones, nombres_funcion, tipos
-            ),
-            "call $print_i32",
-        ], "unit"
+        instrucciones = _compilar_expresion(
+            argumentos[0], referencias, locales, funciones, nombres_funcion, tipos
+        )
+        if "normal" not in salidas_control(argumentos[0]):
+            return instrucciones, "unit"
+        return [*instrucciones, "call $print_i32"], "unit"
 
     nombre = llamada.IDENT().getText()
     firma = funciones.get(nombre)
@@ -1115,6 +1199,8 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
                 argumento, referencias, locales, funciones, nombres_funcion, tipos
             )
         )
+        if "normal" not in salidas_control(argumento):
+            return instrucciones, firma["retorno"]
     instrucciones.append(f"call $funcion_{nombres_funcion.nombres_funcion[nombre]}")
     return instrucciones, firma["retorno"]
 
@@ -1122,6 +1208,7 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
 def _compilar_bloque(
     bloque, declaraciones, referencias, simbolos, locales,
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
+    producir_valor=False,
 ):
     instrucciones = []
     for sentencia in bloque.statement():
@@ -1131,6 +1218,23 @@ def _compilar_bloque(
                 tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
             )
         )
+        if "normal" not in salidas_control(sentencia):
+            return instrucciones
+    expresion = bloque.expression()
+    if expresion is None:
+        return instrucciones
+    compilar_expresion = (
+        _compilar_expresion_unit
+        if tipos_expresiones.get(expresion) == "unit"
+        else _compilar_expresion
+    )
+    instrucciones.extend(
+        compilar_expresion(
+            expresion, referencias, locales, funciones, nombres_funcion, tipos_expresiones
+        )
+    )
+    if not producir_valor and tipos_expresiones.get(expresion) != "unit" and "normal" in salidas_control(expresion):
+        instrucciones.append("drop")
     return instrucciones
 
 
@@ -1247,12 +1351,10 @@ def _compilar_sentencia(
             _error("La función debe retornar una expresión.", sentencia)
         if tipos_expresiones.get(expresion) != tipo_retorno:
             _error("El tipo de retorno no coincide con la función.", expresion)
-        return [
-            *_compilar_expresion(
-                expresion, referencias, locales, funciones, nombres_funcion, tipos_expresiones
-            ),
-            "return",
-        ]
+        instrucciones = _compilar_expresion(
+            expresion, referencias, locales, funciones, nombres_funcion, tipos_expresiones
+        )
+        return [*instrucciones, *(["return"] if "normal" in salidas_control(expresion) else [])]
     if sentencia.block() is not None:
         return _compilar_bloque(
             sentencia.block(), declaraciones, referencias, simbolos, locales,
@@ -1304,6 +1406,9 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     ])
     instrucciones = []
     ciclos = {"siguiente": 0, "activos": []}
+    nombres_funcion.ciclos = ciclos
+    nombres_funcion.tipo_retorno_actual = tipo_retorno
+    continua = True
     for sentencia in funcion.block().statement():
         instrucciones.extend(
             _compilar_sentencia(
@@ -1319,7 +1424,33 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
                 ciclos,
             )
         )
-    if tipo_retorno != "unit":
+        if "normal" not in salidas_control(sentencia):
+            continua = False
+            break
+    expresion_final = funcion.block().expression()
+    retorno_final_emitido = False
+    if expresion_final is not None and continua:
+        compilar_expresion = (
+            _compilar_expresion_unit
+            if analisis["tipos_expresiones"].get(expresion_final) == "unit"
+            else _compilar_expresion
+        )
+        instrucciones.extend(
+            compilar_expresion(
+                expresion_final,
+                analisis["referencias"],
+                variables,
+                analisis["funciones"],
+                nombres_funcion,
+                analisis["tipos_expresiones"],
+            )
+        )
+        if tipo_retorno != "unit" and "normal" in salidas_control(expresion_final):
+            instrucciones.append("return")
+            retorno_final_emitido = True
+        elif tipo_retorno == "unit" and analisis["tipos_expresiones"].get(expresion_final) != "unit" and "normal" in salidas_control(expresion_final):
+            instrucciones.append("drop")
+    if tipo_retorno != "unit" and not retorno_final_emitido:
         instrucciones.append("unreachable")
     cuerpo = "\n    ".join(instrucciones)
     locales_wat = "\n" + "\n".join(
@@ -1379,6 +1510,8 @@ def compilar_programa(codigo):
             MemoriaStrings(),
             constantes,
             analisis["estructuras"],
+            analisis["declaraciones"],
+            analisis["simbolos"],
             analisis["llamadas_incorporadas"],
             set(),
         )

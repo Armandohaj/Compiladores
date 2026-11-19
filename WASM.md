@@ -191,6 +191,16 @@ estructura `mut`. No se admiten todavía campos `String`, arreglos, tuplas o
 estructuras, copias ni asignaciones completas, parámetros o retornos de
 estructuras; esas formas se rechazan controladamente.
 
+Los bloques con valor se generan ejecutando primero sus sentencias y luego su
+expresión final. Se admiten como inicializadores, argumentos, retornos y otras
+expresiones para `i32`, `f64`, `bool`, `char` y `String`. La expresión final
+del cuerpo de una función compatible con su firma se retorna implícitamente;
+los `return` explícitos conservan prioridad. Los bloques sin expresión final
+son `unit` y no dejan valores en la pila Wasm. Si una sentencia o expresión
+termina mediante `return`, no se genera el resto de ese bloque ni la operación
+que habría consumido su valor. `match` y los valores de enums siguen fuera del
+backend Wasm y se rechazan controladamente.
+
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
