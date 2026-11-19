@@ -181,6 +181,16 @@ admiten tuplas con `String`, tuplas anidadas, copias o asignaciones completas,
 parámetros ni retornos de tuplas; esos casos producen un error de generación
 controlado para no compartir accidentalmente su almacenamiento.
 
+Las estructuras locales con campos `i32`, `f64`, `bool` y `char` usan la misma
+memoria lineal y alineación que las tuplas. El layout sigue el orden de
+declaración registrado por el frontend, incluso si el constructor escribe sus
+campos en otro orden; las expresiones de ese constructor sí se evalúan y se
+almacenan en el orden en que fueron escritas. Se admiten lecturas por nombre,
+asignaciones simples y operaciones compuestas numéricas sobre campos de una
+estructura `mut`. No se admiten todavía campos `String`, arreglos, tuplas o
+estructuras, copias ni asignaciones completas, parámetros o retornos de
+estructuras; esas formas se rechazan controladamente.
+
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin

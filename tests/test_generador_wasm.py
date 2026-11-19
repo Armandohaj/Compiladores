@@ -156,6 +156,111 @@ def test_tuplas_no_admitidas_no_generan_wasm(codigo):
     assert resultado["wasm"] is None
 
 
+def test_estructura_local_obligatoria_lectura_y_asignacion_compuesta():
+    resultado = compilar_programa("""struct Persona {
+    edad: i32,
+    activo: bool
+}
+
+fn main() -> i32 {
+    let mut persona = Persona { edad: 20, activo: true };
+    persona.edad += 1;
+    return persona.edad;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 21
+
+
+def test_estructuras_explicitas_inferidas_y_orden_de_constructor():
+    resultado = compilar_programa("""struct Medida {
+    activo: bool,
+    valor: f64,
+    letra: char,
+    entero: i32
+}
+
+fn main() -> f64 {
+    let mut medida: Medida = Medida { letra: 'ñ', entero: 2, valor: 3.5, activo: true };
+    medida.valor *= 2.0;
+    if medida.activo && medida.letra == 'ñ' {
+        return medida.valor + 2.0;
+    }
+    return 0.0;
+}""")
+    orden = compilar_programa("""struct Par { primero: i32, segundo: i32 }
+fn main() -> i32 {
+    let par = Par { segundo: read(), primero: read() };
+    return par.primero * 10 + par.segundo;
+}""")
+
+    assert resultado["valido"]
+    assert "f64.load offset=8 align=8" in resultado["wat"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(9.0)
+    assert orden["valido"]
+    assert ejecutar_main_con_entradas(orden["wasm"], [2, 3]) == (32, [])
+
+
+def test_asignaciones_simples_y_compuestas_a_campos_de_estructura():
+    resultado = compilar_programa("""struct Datos {
+    entero: i32,
+    decimal: f64,
+    activo: bool,
+    letra: char
+}
+
+fn main() -> i32 {
+    let mut datos = Datos { letra: 'a', activo: true, decimal: 2.0, entero: 20 };
+    datos.activo = false;
+    datos.letra = 'z';
+    datos.entero -= 4;
+    datos.entero *= 2;
+    datos.entero /= 4;
+    datos.decimal += 1.5;
+    if !datos.activo && datos.letra == 'z' && datos.decimal == 3.5 {
+        return datos.entero;
+    }
+    return 0;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 8
+
+
+def test_estructuras_independientes_en_condicionales_y_ciclos():
+    resultado = compilar_programa("""struct Contador { valor: i32, activo: bool }
+fn main() -> i32 {
+    let mut primero = Contador { valor: 0, activo: true };
+    let mut segundo = Contador { valor: 10, activo: false };
+    while primero.valor < 3 {
+        primero.valor += 1;
+    }
+    if primero.activo {
+        segundo.valor = segundo.valor + primero.valor;
+    }
+    return primero.valor + segundo.valor;
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 16
+
+
+@pytest.mark.parametrize(
+    "codigo",
+    [
+        "struct P { x: i32 } fn main() -> i32 { let p = P { x: 1 }; p.x = 2; return p.x; }",
+        "struct P { x: i32 } fn main() -> i32 { let p = P { x: 1 }; let q = p; return q.x; }",
+        "struct P { x: String } fn main() -> i32 { let p = P { x: \"a\" }; return 0; }",
+        "struct P { x: i32 } struct Q { p: P } fn main() -> i32 { let q = Q { p: P { x: 1 } }; return 0; }",
+    ],
+)
+def test_estructuras_no_admitidas_no_generan_wasm(codigo):
+    resultado = compilar_programa(codigo)
+
+    assert not resultado["valido"]
+    assert resultado["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [
