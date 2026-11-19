@@ -10,6 +10,7 @@ from antlr4.error.ErrorListener import ErrorListener
 from generated.RustiQLexer import RustiQLexer
 from generated.RustiQParser import RustiQParser
 from analizador_semantico import AnalizadorSemantico
+from analizador_ownership import AnalizadorOwnership
 from resolucion_variables import ResolucionVariables
 
 
@@ -137,6 +138,25 @@ def analizar_programa(codigo):
         simbolos = resolucion.simbolos
         declaraciones = resolucion.declaraciones
         referencias = resolucion.referencias
+
+        # La propiedad usa los mismos nodos e identidades ya resueltos.
+        # No se ejecuta sobre programas con errores de tipos o nombres.
+        propiedad = AnalizadorOwnership(
+            resolucion, tipos_expresiones, estructuras, semantico.enumeraciones
+        )
+        propiedad.analizar(arbol)
+        errores.extend(propiedad.errores)
+        errores.sort(key=lambda error: (error["linea"], error["columna"]))
+        valido = not errores
+        if not valido:
+            # Conservar el contrato: ningún error permite generar código
+            # utilizando mapas parciales como si el programa fuera válido.
+            funciones = {}
+            tipos_expresiones = {}
+            simbolos = {}
+            declaraciones = {}
+            referencias = {}
+            estructuras = {}
 
     # Estos mapas contienen nodos de ANTLR: se consumen dentro de Python.
     # El servidor puede enviar errores como JSON, pero no serializar el
