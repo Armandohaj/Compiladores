@@ -73,7 +73,8 @@ parameter
 // Tipos básicos y arreglos de tamaño fijo.
 // Ejemplos: i32, String, [i32; 3], [[bool; 2]; 3].
 type
-    : I32
+    : AMP MUT? type
+    | I32
     | F64
     | BOOL
     | CHAR
@@ -121,6 +122,12 @@ letDecl
 // Asignación simple o compuesta a una variable.
 assignment
     : IDENT (indexAccess | tupleAccess | fieldAccess)* assignmentOp expression
+    | dereferenceTarget assignmentOp expression
+    ;
+
+// Escritura a través de una referencia simple: *referencia = valor.
+dereferenceTarget
+    : STAR IDENT
     ;
 
 // Cada acceso mantiene su propia expresión de índice.
@@ -230,7 +237,17 @@ multiplicative
 // Los operadores unarios se aplican después de los accesos.
 // Ejemplo: -numeros[0].
 unary
-    : (MINUS | NOT)? postfix
+    : (MINUS | NOT)? (borrowExpr | dereferenceExpr | postfix)
+    ;
+
+// El semántico limita inicialmente el destino a una variable completa.
+borrowExpr
+    : AMP MUT? unary
+    ;
+
+// El operando debe tener tipo &T o &mut T.
+dereferenceExpr
+    : STAR unary
     ;
 
 // Acceso a elementos de arreglos.
@@ -385,6 +402,7 @@ GE     : '>=';
 LT     : '<';
 GT     : '>';
 
+AMP    : '&';
 AND    : '&&';
 OR     : '||';
 NOT    : '!';

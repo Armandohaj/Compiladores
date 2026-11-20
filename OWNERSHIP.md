@@ -143,3 +143,12 @@ Ejecutar python pruebas_movimientos.py y python ejecutar_pruebas.py.
 Resultado local: 40/40 comprobaciones nuevas y 823/823 en 33 suites.
 Son pruebas del frontend, no de ejecución WASM. Borrowing, referencias y el
 mapa acordado de préstamos permanecen pendientes de implementación.
+
+## Primera implementación de borrowing
+
+Se agrega la fase de préstamos de variables completas y el campo prestamos
+confirmado con Armando. Ver BORROWING.md para los nuevos nodos, los usos de
+referencias, las escrituras, el formato del mapa y los límites explícitos.
+Las referencias compartidas se clasifican Copy y las exclusivas Move.
+Resultado local de esta etapa: 891/891 comprobaciones en 34 suites.
+El acuerdo de representación WASM no sustituye las pruebas del backend.

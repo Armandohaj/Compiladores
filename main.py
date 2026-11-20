@@ -11,6 +11,7 @@ from generated.RustiQLexer import RustiQLexer
 from generated.RustiQParser import RustiQParser
 from analizador_semantico import AnalizadorSemantico
 from analizador_ownership import AnalizadorOwnership
+from analizador_prestamos import AnalizadorPrestamos
 from resolucion_variables import ResolucionVariables
 
 
@@ -121,6 +122,7 @@ def analizar_programa(codigo):
     declaraciones = {}
     referencias = {}
     estructuras = {}
+    prestamos = {}
 
     if valido:
         estructuras = semantico.estructuras
@@ -146,6 +148,13 @@ def analizar_programa(codigo):
         )
         propiedad.analizar(arbol)
         errores.extend(propiedad.errores)
+        if not errores:
+            borrowing = AnalizadorPrestamos(
+                resolucion, tipos_expresiones, estructuras, semantico.enumeraciones
+            )
+            borrowing.analizar(arbol)
+            errores.extend(borrowing.errores)
+            prestamos = borrowing.prestamos
         errores.sort(key=lambda error: (error["linea"], error["columna"]))
         valido = not errores
         if not valido:
@@ -163,6 +172,8 @@ def analizar_programa(codigo):
     # árbol ni los mapas con nodos como claves directamente al navegador.
     return {
         "valido": valido,
+        # BorrowExprContext -> {simbolo_id, tipo, mutable}; vacío con errores.
+        "prestamos": prestamos if valido else {},
         "arbol": arbol if valido else None,
         "errores": errores,
         "funciones": funciones,

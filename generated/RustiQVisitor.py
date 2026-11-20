@@ -89,6 +89,11 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#dereferenceTarget.
+    def visitDereferenceTarget(self, ctx:RustiQParser.DereferenceTargetContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by RustiQParser#indexAccess.
     def visitIndexAccess(self, ctx:RustiQParser.IndexAccessContext):
         return self.visitChildren(ctx)
@@ -186,6 +191,16 @@ class RustiQVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by RustiQParser#unary.
     def visitUnary(self, ctx:RustiQParser.UnaryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#borrowExpr.
+    def visitBorrowExpr(self, ctx:RustiQParser.BorrowExprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by RustiQParser#dereferenceExpr.
+    def visitDereferenceExpr(self, ctx:RustiQParser.DereferenceExprContext):
         return self.visitChildren(ctx)
 
 

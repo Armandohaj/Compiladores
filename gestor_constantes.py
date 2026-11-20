@@ -94,6 +94,8 @@ class GestorConstantes:
                             self.semantico.reportar(sentencia.start, "Una constante solo admite let inmutable y bloques puros.")
                 if isinstance(nodo, RustiQParser.LetDeclContext) and nodo.MUT() is not None:
                     self.semantico.reportar(nodo.start, "Una constante no admite variables locales mutables.")
+                if isinstance(nodo, (RustiQParser.BorrowExprContext, RustiQParser.DereferenceExprContext)):
+                    self.semantico.reportar(nodo.start, "Los préstamos y referencias no se evalúan en constantes globales.")
                 if isinstance(nodo, RustiQParser.FunctionCallContext):
                     self.semantico.reportar(
                         nodo.IDENT().getSymbol(),
