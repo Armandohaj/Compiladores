@@ -242,14 +242,19 @@ representan como direcciones `i32`. Cuando una variable escalar aparece como
 origen en el mapa `prestamos` del frontend, el generador la reserva en memoria
 lineal y sus lecturas y escrituras directas usan esa misma celda. Se admiten
 lecturas `*r`, escrituras `*r = valor`, asignaciones compuestas numéricas y
-parámetros referencia escalares. También se admiten préstamos de estructuras
-locales con campos básicos: la referencia reutiliza el puntero del layout de la
-estructura, y `p.campo` lee o escribe la dirección original con su desplazamiento
-y alineación, incluido `f64`. La exclusividad, las vidas y la mutabilidad siguen
-siendo responsabilidad del frontend. Aún se rechazan préstamos de `String`,
-tuplas, arreglos, matrices o enums, estructuras con campos no admitidos,
-referencias a receptores de `match`, préstamos de parámetros escalares normales,
-retornos o reasignaciones de referencias.
+parámetros referencia escalares. También se admiten préstamos de estructuras,
+tuplas, arreglos unidimensionales y matrices locales con campos o elementos
+`i32`, `f64`, `bool` y `char`. Estos compuestos ya viven en memoria, de modo que
+la referencia reutiliza su puntero original: `p.campo`, `r.0`, `r[i]` y
+`r[i][j]` calculan sus desplazamientos con los layouts existentes y las
+comprobaciones de límites de `$array_addr`; las escrituras por `&mut` actualizan
+el bloque de origen. Los parámetros referencia de esos mismos tipos también se
+admiten. La exclusividad, las vidas y la mutabilidad siguen siendo responsabilidad
+del frontend. Aún se rechazan préstamos de `String`, enums y compuestos anidados,
+estructuras con campos no admitidos, referencias a receptores de `match`,
+préstamos de parámetros normales, retornos o reasignaciones de referencias. La
+desreferenciación completa de un compuesto (`*r`) sigue rechazada para no crear
+copias que compartan accidentalmente el mismo bloque de memoria.
 
 Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,
 `then` y `else`. Sus ramas conservan las variables locales identificadas por

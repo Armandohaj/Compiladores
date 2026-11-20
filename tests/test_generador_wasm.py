@@ -894,6 +894,109 @@ fn main() -> i32 {
     assert exclusivo["wasm"] is None
 
 
+def test_borrowing_tuplas_arreglos_y_matrices_obligatorios():
+    tupla = compilar_programa("""fn main() -> i32 {
+    let mut datos = (10, true);
+    { let r = &mut datos; r.0 += 5; }
+    datos.0
+}""")
+    arreglo = compilar_programa("""fn main() -> i32 {
+    let mut numeros = [1, 2, 3];
+    { let r = &mut numeros; r[1] += 5; }
+    numeros[1]
+}""")
+    matriz = compilar_programa("""fn main() -> i32 {
+    let mut datos = [[1, 2], [3, 4]];
+    { let r = &mut datos; r[1][0] += 10; }
+    datos[1][0]
+}""")
+    compartidos = compilar_programa("""fn main() -> i32 {
+    let datos = (10, true);
+    let numeros = [1, 2];
+    let matriz = [[3, 4], [5, 6]];
+    let tupla = &datos;
+    let arreglo = &numeros;
+    let tabla = &matriz;
+    if tupla.1 && arreglo[0] == 1 { return tabla[1][1] + tupla.0; }
+    return 0;
+}""")
+
+    assert tupla["valido"]
+    assert ejecutar_modulo_wasm(tupla["wasm"]) == 15
+    assert arreglo["valido"]
+    assert ejecutar_modulo_wasm(arreglo["wasm"]) == 7
+    assert matriz["valido"]
+    assert ejecutar_modulo_wasm(matriz["wasm"]) == 13
+    assert compartidos["valido"]
+    assert ejecutar_modulo_wasm(compartidos["wasm"]) == 16
+
+
+def test_borrowing_compuestos_parametros_f64_e_indices():
+    parametros = compilar_programa("""fn cambiar_t(t: &mut (i32, bool)) { t.0 += 2; }
+fn cambiar_a(a: &mut [i32; 2]) { a[1] = 9; }
+fn cambiar_m(m: &mut [[i32; 2]; 2]) { m[1][0] += 10; }
+fn main() -> i32 {
+    let mut tupla = (1, true);
+    let mut arreglo = [3, 4];
+    let mut matriz = [[1, 2], [3, 4]];
+    cambiar_t(&mut tupla); cambiar_a(&mut arreglo); cambiar_m(&mut matriz);
+    tupla.0 + arreglo[1] + matriz[1][0]
+}""")
+    decimales = compilar_programa("""fn cambiar_a(a: &mut [f64; 2]) { a[1] *= 2.0; }
+fn cambiar_m(m: &mut [[f64; 2]; 2]) { m[1][0] += 1.5; }
+fn main() -> f64 {
+    let mut arreglo = [1.0, 2.5];
+    let mut matriz = [[1.0, 2.0], [3.0, 4.0]];
+    cambiar_a(&mut arreglo); cambiar_m(&mut matriz);
+    arreglo[1] + matriz[1][0]
+}""")
+    indices = compilar_programa("""fn main() -> i32 {
+    let mut original = [10, 20];
+    let mut copia = [30, 40];
+    let indice = 0;
+    { let r = &mut copia; r[indice] += 5; }
+    original[indice] + copia[indice]
+}""")
+    fuera_de_rango = compilar_programa("""fn main() -> i32 {
+    let datos = [[1, 2], [3, 4]];
+    let referencia = &datos;
+    let fila = 2;
+    referencia[fila][0]
+}""")
+
+    assert parametros["valido"]
+    assert ejecutar_modulo_wasm(parametros["wasm"]) == 25
+    assert decimales["valido"]
+    assert ejecutar_modulo_wasm(decimales["wasm"]) == pytest.approx(9.5)
+    assert indices["valido"]
+    assert ejecutar_modulo_wasm(indices["wasm"]) == 45
+    assert fuera_de_rango["valido"]
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(fuera_de_rango["wasm"])
+
+
+def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
+    compartida = compilar_programa("""fn main() -> i32 {
+    let datos = [1, 2]; let r = &datos; r[0] = 3; 0
+}""")
+    conflicto = compilar_programa("""fn main() -> i32 {
+    let mut datos = [[1, 2], [3, 4]];
+    let r = &mut datos;
+    datos[0][0] = 5;
+    r[0][0]
+}""")
+    desreferenciacion = compilar_programa("""fn main() -> i32 {
+    let datos = (1, true); let r = &datos; let copia = *r; copia.0
+}""")
+
+    assert not compartida["valido"]
+    assert compartida["wasm"] is None
+    assert not conflicto["valido"]
+    assert conflicto["wasm"] is None
+    assert not desreferenciacion["valido"]
+    assert desreferenciacion["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

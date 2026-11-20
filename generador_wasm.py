@@ -120,13 +120,26 @@ def _tamano_y_alineacion_escalar(tipo):
 
 
 def _referencia_admitida(tipo, estructuras):
-    """Limita las referencias WASM a escalares y estructuras ya representables."""
+    """Comprueba si una referencia usa un layout que el generador ya conoce."""
     referencia = separar_referencia(tipo)
     if referencia is None:
         return False
-    return _escalar_prestable(referencia[1]) or _distribucion_estructura(
+    return _escalar_prestable(referencia[1]) or _compuesto_prestable(
         referencia[1], estructuras
-    ) is not None
+    )
+
+
+def _compuesto_prestable(tipo, estructuras):
+    """Limita préstamos compuestos a layouts locales con elementos Copy básicos."""
+    if _distribucion_estructura(tipo, estructuras) is not None:
+        return True
+    if _distribucion_tupla(tipo) is not None:
+        return True
+    arreglo = _info_arreglo(tipo)
+    if arreglo is not None:
+        return _escalar_prestable(arreglo[0])
+    matriz = _info_matriz(tipo)
+    return matriz is not None and _escalar_prestable(matriz[0])
 
 
 def _carga_escalar_memoria(tipo):
@@ -742,9 +755,9 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     tipo_base = tipos[contexto.primary()]
     referencia = separar_referencia(tipo_base)
     if referencia is not None:
-        # En p.campo, p ya contiene la dirección prestada; no se debe copiar la estructura.
-        if _distribucion_estructura(referencia[1], nombres_funcion.estructuras) is None:
-            _error("Solo se admiten accesos mediante referencias a estructuras locales.", contexto)
+        # La referencia ya es el puntero del bloque original; los layouts calculan el offset.
+        if not _compuesto_prestable(referencia[1], nombres_funcion.estructuras):
+            _error("Solo se admiten accesos mediante referencias a compuestos locales compatibles.", contexto)
         tipo_base = referencia[1]
     estructura = _distribucion_estructura(tipo_base, nombres_funcion.estructuras)
     if estructura is not None:
@@ -1125,7 +1138,7 @@ def _obtener_literal_arreglo(expresion):
     if unaria.getChildCount() != 1:
         return None
     postfija = unaria.postfix()
-    if postfija.getChildCount() != 1:
+    if postfija is None or postfija.getChildCount() != 1:
         return None
     return postfija.primary().arrayLiteral()
 
@@ -1150,7 +1163,7 @@ def _obtener_literal_tupla(expresion):
     if unaria.getChildCount() != 1:
         return None
     postfija = unaria.postfix()
-    if postfija.getChildCount() != 1:
+    if postfija is None or postfija.getChildCount() != 1:
         return None
     return postfija.primary().tupleLiteral()
 
@@ -1175,7 +1188,7 @@ def _obtener_literal_estructura(expresion):
     if unaria.getChildCount() != 1:
         return None
     postfija = unaria.postfix()
-    if postfija.getChildCount() != 1:
+    if postfija is None or postfija.getChildCount() != 1:
         return None
     return postfija.primary().structLiteral()
 
@@ -1200,7 +1213,7 @@ def _obtener_primaria_directa(expresion):
     if unaria.getChildCount() != 1:
         return None
     postfija = unaria.postfix()
-    if postfija.getChildCount() != 1:
+    if postfija is None or postfija.getChildCount() != 1:
         return None
     return postfija.primary()
 
@@ -1647,7 +1660,11 @@ def _compilar_direccion_tupla(asignacion, identificador, simbolos):
     accesos = list(accesos_escritura(asignacion))
     if len(accesos) != 1 or accesos[0][0] != "campo":
         _error("Solo se admite la asignación directa a campos de tuplas locales.", asignacion)
-    tupla = _distribucion_tupla(simbolos[identificador]["tipo"])
+    tipo_base = simbolos[identificador]["tipo"]
+    referencia = separar_referencia(tipo_base)
+    if referencia is not None:
+        tipo_base = referencia[1]
+    tupla = _distribucion_tupla(tipo_base)
     if tupla is None:
         _error("La asignación no corresponde a una tupla local admitida.", asignacion)
     indice = int(accesos[0][1].getText()[1:])
@@ -1689,6 +1706,9 @@ def _compilar_direccion_asignacion(
 ):
     """Calcula una dirección de elemento con las guardas existentes de $array_addr."""
     tipo_base = simbolos[identificador]["tipo"]
+    referencia = separar_referencia(tipo_base)
+    if referencia is not None:
+        tipo_base = referencia[1]
     accesos = asignacion.indexAccess()
     instrucciones = [f"local.get $local_{identificador}"]
     matriz = _info_matriz(tipo_base)
@@ -1985,7 +2005,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         referencia = separar_referencia(tipo)
         if referencia is not None:
             if not _referencia_admitida(tipo, nombres_funcion.estructuras):
-                _error("Solo se admiten parámetros referencia escalares o de estructuras locales.", funcion)
+                _error("Solo se admiten parámetros referencia con layouts locales compatibles.", funcion)
             continue
         if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, nombres_funcion.estructuras) is not None or _info_enum(tipo, nombres_funcion.enumeraciones) is not None:
             _error("Los parámetros de valores compuestos todavía no están implementados.", funcion)
@@ -1993,7 +2013,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         tipo = analisis["simbolos"][identificador]["tipo"]
         referencia = separar_referencia(tipo)
         if referencia is not None and not _referencia_admitida(tipo, nombres_funcion.estructuras):
-            _error("Solo se admiten referencias escalares o de estructuras locales.", funcion)
+            _error("Solo se admiten referencias con layouts locales compatibles.", funcion)
         if tipo not in {"i32", "bool", "f64", "char", "String"} and referencia is None and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _info_tupla(tipo) is None and _info_estructura(tipo, nombres_funcion.estructuras) is None and _info_enum(tipo, nombres_funcion.enumeraciones) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
     origenes_prestados = {
@@ -2001,7 +2021,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         for prestamo in analisis["prestamos"].values()
         if analisis["simbolos"][prestamo["simbolo_id"]]["funcion"] == nombre
     }
-    # Los escalares prestados necesitan una celda; las estructuras ya son punteros propios.
+    # Los escalares prestados necesitan una celda; los compuestos ya son punteros propios.
     declaraciones_por_id = {
         identificador: declaracion
         for declaracion, identificador in analisis["declaraciones"].items()
@@ -2010,11 +2030,11 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     for identificador in origenes_prestados:
         tipo = analisis["simbolos"][identificador]["tipo"]
         if identificador in parametros:
-            _error("Solo se admiten préstamos de variables escalares o estructuras locales.", funcion)
+            _error("Solo se admiten préstamos de variables locales con layouts compatibles.", funcion)
         if _escalar_prestable(tipo):
             escalares_en_memoria.add(identificador)
-        elif _distribucion_estructura(tipo, nombres_funcion.estructuras) is None:
-            _error("Solo se admiten préstamos de variables escalares o estructuras locales.", funcion)
+        elif not _compuesto_prestable(tipo, nombres_funcion.estructuras):
+            _error("Solo se admiten préstamos de variables locales con layouts compatibles.", funcion)
         if type(declaraciones_por_id.get(identificador)).__name__ == "PatternContext":
             _error("Los préstamos de receptores de match todavía no están implementados.", funcion)
     parametros_wat = " ".join(
