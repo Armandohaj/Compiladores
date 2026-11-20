@@ -1255,6 +1255,12 @@ class AnalizadorSemantico(RustiQVisitor):
     def comprobar_accesos(self, tipo, accesos):
         """Aplica accesos de arreglo y de tupla en el orden escrito."""
         for clase, nodo in accesos:
+            # Un acceso sobre &T o &mut T consulta el valor apuntado.
+            # Conservamos el tipo de la base: el backend necesita saber que
+            # primero debe cargar una dirección y después acceder al campo.
+            referencia = separar_referencia(tipo)
+            if referencia is not None:
+                tipo = referencia[1]
             if clase == "indice":
                 es_destino = isinstance(nodo, RustiQParser.IndexAccessContext)
                 expresion = nodo.expression() if es_destino else nodo
@@ -1332,9 +1338,15 @@ class AnalizadorSemantico(RustiQVisitor):
         if "normal" not in salidas_control(ctx):
             return
 
-        if not variable["mutable"]:
+        # Para p.campo mediante &mut T importa la capacidad del préstamo,
+        # no si el binding p fue declarado como let mut. &T nunca permite escribir.
+        referencia = separar_referencia(variable["tipo"])
+        permite_escribir = referencia[0] if referencia is not None else variable["mutable"]
+        if not permite_escribir:
             self.reportar(
                 token,
+                "No se puede escribir mediante una referencia inmutable."
+                if referencia is not None else
                 f"No se puede modificar '{token.text}' porque no fue declarada con 'mut'."
             )
             return

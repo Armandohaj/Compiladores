@@ -196,3 +196,45 @@ el mismo nombre que una variable exterior. No cambia la gramática ni el backend
 
 Pruebas: python pruebas_prestamos_match.py (13/13); regresión completa
 904/904 comprobaciones en 35 suites. Estas pruebas no ejecutan WASM.
+
+## Accesos mediante referencias a valores compuestos
+
+Se admite leer p.campo cuando p tiene tipo &T o &mut T. Se admite escribir
+p.campo = valor y asignaciones compuestas únicamente mediante &mut T.
+El binding de p no requiere mut: la capacidad de escritura proviene del préstamo.
+También se admiten accesos de tupla e índices de arreglo por la misma regla.
+Los préstamos siguen cubriendo la variable completa; no se crean préstamos
+parciales y no se permite extraer un campo Move para transferir su propiedad.
+
+### Adaptación necesaria en el backend
+
+No cambia la gramática ni se agregan claves a analizar_programa.
+PostfixContext conserva su PrimaryContext y los accesos existentes. Si el tipo
+de la base es &T o &mut T y hay accesos, el generador debe aplicar esos accesos
+al valor apuntado. El tipo de la base se conserva como referencia; el tipo del
+PostfixContext y de cada acceso es el tipo del resultado.
+
+En AssignmentContext con accesos, referencias[nodo] sigue identificando a p,
+cuyo tipo en simbolos es &mut T. tipos_expresiones[nodo] es el tipo del campo
+o elemento destino. Se debe escribir en la dirección apuntada más los
+desplazamientos de acceso; no sustituir la dirección guardada en p.
+Una asignación sin accesos p = ... continúa siendo reasignación del binding
+y permanece limitada como se explicó antes. prestamos conserva su formato.
+
+Ejemplo tomado del estilo oficial:
+
+```rust
+struct Punto { x: f64, y: f64 }
+fn mover_x(p: &mut Punto, dx: f64) {
+    p.x = p.x + dx;
+}
+fn main() -> f64 {
+    let mut punto = Punto { x: 1.0, y: 2.0 };
+    mover_x(&mut punto, 3.0);
+    punto.x
+}
+```
+
+Resultado esperado tras integrar WASM: 4.0. El frontend solo valida el programa.
+Pruebas nuevas: python pruebas_campos_referencias.py, 17/17.
+Regresión: 921/921 en 36 suites. La ejecución WASM queda a cargo de integración.

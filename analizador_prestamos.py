@@ -196,12 +196,20 @@ class AnalizadorPrestamos:
                 return set()
             # Reasignar referencias implicaría combinar y acortar vidas útiles;
             # se rechaza inicialmente en vez de inventar un origen o permitir escape.
-            if separar_referencia(self.simbolos[identificador]['tipo']) is not None:
+            referencia = separar_referencia(self.simbolos[identificador]['tipo'])
+            acceso_referenciado = referencia is not None and bool(
+                nodo.indexAccess() or nodo.tupleAccess() or nodo.fieldAccess()
+            )
+            if referencia is not None and not acceso_referenciado:
                 self.reportar(nodo.start, 'Esta versión no admite asignar o reasignar variables de referencia; usá let con inicializador.')
             for acceso in nodo.indexAccess():
                 self.evaluar(acceso.expression())
             self.evaluar(nodo.expression(), True)
-            if 'normal' in salidas_control(nodo) and self.conflictos(identificador):
+            if acceso_referenciado and 'normal' in salidas_control(nodo):
+                # p.campo escribe el origen mediante la capacidad de p; no
+                # reemplaza la referencia ni modifica el binding que la guarda.
+                self.comprobar_referencia(self.vinculos.get(identificador, set()), nodo.start, True)
+            if not acceso_referenciado and 'normal' in salidas_control(nodo) and self.conflictos(identificador):
                 self.reportar(nodo.start, 'No se puede modificar un valor mientras tiene préstamos activos.')
             return set()
         if isinstance(nodo, P.PrimaryContext) and nodo.IDENT() is not None:
@@ -216,6 +224,8 @@ class AnalizadorPrestamos:
             for clase, acceso in accesos:
                 if clase == 'indice':
                     self.evaluar(acceso)
+            if accesos and separar_referencia(self.tipos.get(nodo.primary())) is not None:
+                self.comprobar_referencia(resultado, nodo.start)
             return resultado if not accesos else set()
         if isinstance(nodo, P.FunctionCallContext):
             lista = nodo.argumentList()
