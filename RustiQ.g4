@@ -114,6 +114,9 @@ statement
     | breakStmt
     | continueStmt
     | block
+    // El resultado se descarta; la expresión final del bloque no lleva ;.
+    // Se conserva functionCall arriba para mantener su nodo en llamadas previas.
+    | expression SEMICOLON
     ;
 
 letDecl
