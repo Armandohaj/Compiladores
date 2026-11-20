@@ -9,6 +9,8 @@ const estado = document.querySelector("#estado");
 const listaErrores = document.querySelector("#errores");
 const LIMITE_EJECUCION_MS = 3000;
 let wasmCompilado = null;
+let revisionCodigo = 0;
+let ultimaSolicitudAnalisis = 0;
 
 function actualizarLineas() {
   const total = codigo.value.split("\n").length;
@@ -45,6 +47,15 @@ function mostrarMensaje(mensaje, clase = "") {
 function invalidarWasm() {
   wasmCompilado = null;
   botonDescargarWasm.disabled = true;
+}
+
+function invalidarResultados() {
+  // Una respuesta pendiente no debe presentar el análisis de una versión anterior.
+  revisionCodigo += 1;
+  listaErrores.replaceChildren();
+  listaErrores.hidden = true;
+  estado.textContent = "El código cambió. Analiza nuevamente.";
+  estado.className = "";
 }
 
 // Convierte la respuesta Base64 del servidor en bytes reutilizables.
@@ -117,6 +128,9 @@ function descargarWasm() {
 }
 
 async function analizar() {
+  const codigoEnviado = codigo.value;
+  const revisionEnviada = revisionCodigo;
+  const solicitud = ++ultimaSolicitudAnalisis;
   botonAnalizar.disabled = true;
   estado.textContent = "Analizando…";
   estado.className = "";
@@ -124,17 +138,29 @@ async function analizar() {
     const respuesta = await fetch("/api/analizar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ codigo: codigo.value }),
+      body: JSON.stringify({ codigo: codigoEnviado }),
     });
     const resultado = await respuesta.json();
+    if (solicitud !== ultimaSolicitudAnalisis
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
+      return;
+    }
     if (!respuesta.ok) throw new Error(resultado.error || "No se pudo analizar el código.");
     mostrarResultado(resultado);
   } catch (error) {
+    if (solicitud !== ultimaSolicitudAnalisis
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
+      return;
+    }
     estado.textContent = error.message;
     estado.className = "error";
     listaErrores.hidden = true;
   } finally {
-    botonAnalizar.disabled = false;
+    if (solicitud === ultimaSolicitudAnalisis) {
+      botonAnalizar.disabled = false;
+    }
   }
 }
 
@@ -193,6 +219,7 @@ async function ejecutar() {
 codigo.addEventListener("input", () => {
   actualizarLineas();
   invalidarWasm();
+  invalidarResultados();
 });
 codigo.addEventListener("scroll", () => { lineas.scrollTop = codigo.scrollTop; });
 botonAnalizar.addEventListener("click", analizar);
@@ -206,6 +233,7 @@ archivo.addEventListener("change", () => {
     codigo.value = lector.result;
     actualizarLineas();
     invalidarWasm();
+    invalidarResultados();
   };
   lector.readAsText(seleccionado);
 });

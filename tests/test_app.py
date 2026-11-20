@@ -1,6 +1,10 @@
 import base64
 import hashlib
+from pathlib import Path
+import shutil
+import subprocess
 
+import pytest
 import wasmtime
 
 from app import app
@@ -136,3 +140,81 @@ def test_compilar_requiere_codigo_de_texto():
 
     assert respuesta.status_code == 400
     assert respuesta.get_json() == {"error": "Se requiere un campo 'codigo' de texto."}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+def test_editor_descarta_analisis_obsoletos_e_invalida_al_cambiar_o_cargar():
+    script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const elementos = {};
+function crearElemento(valor = "") {
+  return {
+    value: valor, textContent: "", className: "", hidden: false, disabled: false,
+    children: [], listeners: {}, files: [], scrollTop: 0,
+    addEventListener(nombre, funcion) { this.listeners[nombre] = funcion; },
+    replaceChildren() { this.children = []; },
+    append(item) { this.children.push(item); },
+  };
+}
+for (const id of ["codigo", "lineas", "analizar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
+  elementos[id] = crearElemento(id === "codigo" ? "viejo" : "");
+}
+const resolutores = [];
+const contexto = {
+  document: {
+    querySelector(selector) { return elementos[selector.slice(1)]; },
+    createElement() { return crearElemento(); },
+  },
+  fetch() { return new Promise((resolver) => resolutores.push(resolver)); },
+  window: { setTimeout() { return 0; }, clearTimeout() {} },
+  FileReader: class {
+    readAsText() { this.result = "cargado"; this.onload(); }
+  },
+  atob() {}, Blob: class {}, URL: {}, Worker: class {}, console,
+};
+vm.createContext(contexto);
+const fuente = fs.readFileSync("static/js/editor.js", "utf8");
+vm.runInContext(`${fuente}\nglobalThis.probar = { analizar };`, contexto);
+const respuesta = (valido) => ({ ok: true, json: async () => ({ valido, errores: [] }) });
+
+(async () => {
+  const primera = contexto.probar.analizar();
+  elementos.codigo.value = "nuevo";
+  elementos.codigo.listeners.input();
+  resolutores.shift()(respuesta(true));
+  await primera;
+  if (elementos.estado.className === "correcto") throw new Error("Mostró un análisis antiguo.");
+
+  elementos.estado.className = "correcto";
+  elementos.archivo.files = [{}];
+  elementos.archivo.listeners.change();
+  if (elementos.estado.className === "correcto" || elementos.codigo.value !== "cargado") {
+    throw new Error("La carga no invalidó el resultado anterior.");
+  }
+
+  elementos.codigo.value = "uno";
+  elementos.codigo.listeners.input();
+  const antigua = contexto.probar.analizar();
+  elementos.codigo.value = "dos";
+  elementos.codigo.listeners.input();
+  const reciente = contexto.probar.analizar();
+  const resolverAntiguo = resolutores.shift();
+  const resolverReciente = resolutores.shift();
+  resolverReciente(respuesta(true));
+  await reciente;
+  resolverAntiguo(respuesta(false));
+  await antigua;
+  if (elementos.estado.className !== "correcto") throw new Error("Una respuesta fuera de orden reemplazó la reciente.");
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr

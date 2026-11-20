@@ -1,10 +1,10 @@
 """Compila y ejecuta un archivo RustiQ desde la terminal."""
 
 import argparse
-import multiprocessing
 from pathlib import Path
 
-from generador_wasm import compilar_programa, ejecutar_modulo_wasm
+from ejecutar_wasm import ejecutar_main_con_entradas
+from generador_wasm import compilar_programa
 from main import analizar_programa
 
 
@@ -31,46 +31,13 @@ def firma_main_ejecutable(codigo):
     return True, None
 
 
-def _ejecutar_modulo_en_proceso(wasm, conexion):
-    """Ejecuta Wasm en el hijo y comunica el resultado al proceso principal."""
-    try:
-        conexion.send(("resultado", ejecutar_modulo_wasm(wasm)))
-    except Exception as error:
-        conexion.send(("error", str(error)))
-    finally:
-        conexion.close()
+def ejecutar_main_con_limite(wasm, limite_segundos=LIMITE_EJECUCION_SEGUNDOS, entradas=None):
+    """Conserva la llamada anterior y delega imports, aislamiento y límite al ejecutor Wasm."""
+    valor, _ = ejecutar_main_con_entradas(wasm, entradas, limite_segundos)
+    return valor
 
 
-def ejecutar_main_con_limite(wasm, limite_segundos=LIMITE_EJECUCION_SEGUNDOS):
-    """Aísla main() para que el padre pueda detener ciclos que no terminan."""
-    contexto = multiprocessing.get_context("spawn")
-    conexion_padre, conexion_hijo = contexto.Pipe(duplex=False)
-    proceso = contexto.Process(
-        target=_ejecutar_modulo_en_proceso,
-        args=(wasm, conexion_hijo),
-    )
-    proceso.start()
-    conexion_hijo.close()
-    proceso.join(limite_segundos)
-
-    try:
-        if proceso.is_alive():
-            proceso.terminate()
-            proceso.join()
-            raise TimeoutError(
-                f"La ejecución superó el límite de {limite_segundos} segundos."
-            )
-        if not conexion_padre.poll():
-            raise RuntimeError("El proceso de ejecución terminó sin devolver un resultado.")
-        estado, valor = conexion_padre.recv()
-        if estado == "error":
-            raise RuntimeError(valor)
-        return valor
-    finally:
-        conexion_padre.close()
-
-
-def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS):
+def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS, entradas=None):
     """Compila un archivo, guarda su Wasm y ejecuta la función main compatible."""
     ruta = Path(ruta_archivo)
     try:
@@ -97,12 +64,16 @@ def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS):
         return 2
 
     try:
-        valor = ejecutar_main_con_limite(resultado["wasm"], limite_segundos)
-    except (RuntimeError, TimeoutError) as error:
+        valor, salidas = ejecutar_main_con_entradas(
+            resultado["wasm"], entradas, limite_segundos
+        )
+    except (RuntimeError, TimeoutError, ValueError) as error:
         print(f"Error de ejecución: {error}")
         return 1
 
     print(f"Wasm generado: {ruta_wasm}")
+    for salida in salidas:
+        print(f"Salida: {salida}")
     print(f"Resultado de main(): {valor}")
     return 0
 
@@ -110,8 +81,14 @@ def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS):
 def main(argumentos=None):
     parser = argparse.ArgumentParser(description="Compila y ejecuta un archivo RustiQ.")
     parser.add_argument("archivo", help="Ruta del archivo RustiQ a ejecutar.")
+    parser.add_argument(
+        "--entrada",
+        action="append",
+        default=[],
+        help="Entero i32 disponible para read(); se puede repetir.",
+    )
     opciones = parser.parse_args(argumentos)
-    return ejecutar_archivo(opciones.archivo)
+    return ejecutar_archivo(opciones.archivo, entradas=opciones.entrada)
 
 
 if __name__ == "__main__":
