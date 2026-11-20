@@ -757,6 +757,63 @@ fn main() -> f64 {
     assert receptor["wasm"] is None
 
 
+def test_constantes_locales_materializadas_por_id_y_sombreado():
+    resultado = compilar_programa("""const BASE: i32 = 10;
+fn main() -> i32 {
+    const LIMITE: i32 = BASE + 2;
+    {
+        const BASE: i32 = 20;
+        const DOBLE: i32 = BASE * 2;
+        DOBLE;
+    }
+    LIMITE
+}""")
+    decimal = compilar_programa("""fn main() -> i32 {
+    const BASE: f64 = 2.5;
+    const LIMITE: f64 = BASE * 2.0;
+    if LIMITE == 5.0 { return 1; }
+    return 0;
+}""")
+    invalida = compilar_programa("""fn main() -> i32 {
+    let numero = 1;
+    const LIMITE: i32 = numero;
+    LIMITE
+}""")
+
+    assert resultado["valido"]
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 12
+    assert decimal["valido"]
+    assert ejecutar_modulo_wasm(decimal["wasm"]) == 1
+    assert not invalida["valido"]
+    assert invalida["wasm"] is None
+
+
+def test_expresiones_como_sentencias_descartan_valores_y_prestamos_temporales():
+    basica = compilar_programa("""fn main() -> i32 {
+    10 + 20;
+    5
+}""")
+    efectos = compilar_programa("""fn main() -> i32 {
+    let mut numero = 10;
+    &mut numero;
+    numero = 20;
+    match numero { 20 => { 30 }, _ => 0 };
+    ({ let valor = 1; valor + 2 });
+    numero
+}""")
+    retorno = compilar_programa("""fn main() -> i32 {
+    ({ return 9; });
+    0
+}""")
+
+    assert basica["valido"]
+    assert ejecutar_modulo_wasm(basica["wasm"]) == 5
+    assert efectos["valido"]
+    assert ejecutar_modulo_wasm(efectos["wasm"]) == 20
+    assert retorno["valido"]
+    assert ejecutar_modulo_wasm(retorno["wasm"]) == 9
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

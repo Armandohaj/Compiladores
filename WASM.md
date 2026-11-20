@@ -270,5 +270,13 @@ por ello admiten dependencias y referencias adelantadas sin reevaluarse en el
 generador. Las constantes `String` reutilizan los descriptores UTF-8 y la
 memoria exportada existentes. Una variable local con el mismo nombre conserva
 prioridad mediante los identificadores de la resolución de referencias.
-Las constantes de arreglos y matrices se rechazan controladamente, al igual que
-las demás formas de arreglos no admitidas y tipos o sentencias pendientes.
+Las constantes locales usan el mismo valor precomputado de su símbolo y no
+emiten código para su inicializador; los ámbitos y el sombreado se resuelven
+por ID. Las constantes de arreglos y matrices se rechazan controladamente, al
+igual que las demás formas de arreglos no admitidas y tipos pendientes.
+
+Una expresión seguida de punto y coma se ejecuta como sentencia y descarta su
+resultado con `drop` cuando produce un valor. Las expresiones `unit` no dejan
+valores en la pila y no generan `drop`; si la expresión termina con `return`,
+`break` o `continue`, tampoco se emite un descarte posterior. La expresión sin
+punto y coma al final de un bloque mantiene su valor para el retorno implícito.

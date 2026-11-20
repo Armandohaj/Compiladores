@@ -1809,6 +1809,12 @@ def _compilar_sentencia(
     sentencia, declaraciones, referencias, simbolos, locales,
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
+    if sentencia.constLocalDecl() is not None:
+        identificador = declaraciones.get(sentencia.constLocalDecl())
+        constante = nombres_funcion.constantes.get(identificador)
+        if constante is None or not constante["es_constante"]:
+            _error("La constante local no está disponible para generar WASM.", sentencia)
+        return []
     if sentencia.letDecl() is not None:
         return _compilar_declaracion(
             sentencia.letDecl(), declaraciones, simbolos, referencias, locales,
@@ -1825,6 +1831,16 @@ def _compilar_sentencia(
             tipos_expresiones,
         )
         return [*instrucciones, *( ["drop"] if retorno != "unit" else [] )]
+    if sentencia.expression() is not None:
+        expresion = sentencia.expression()
+        tipo = tipos_expresiones.get(expresion)
+        compilar = _compilar_expresion_unit if tipo == "unit" else _compilar_expresion
+        instrucciones = compilar(
+            expresion, referencias, locales, funciones, nombres_funcion, tipos_expresiones
+        )
+        if "normal" not in salidas_control(expresion) or tipo == "unit":
+            return instrucciones
+        return [*instrucciones, "drop"]
     if sentencia.ifStmt() is not None:
         return _compilar_if(
             sentencia.ifStmt(), declaraciones, referencias, simbolos, locales,
