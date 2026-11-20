@@ -17,11 +17,12 @@ class ResolucionVariables(RustiQVisitor):
     correcto y utiliza el mismo árbol de ANTLR.
     """
 
-    def __init__(self, tipos_expresiones, valores_constantes=None):
+    def __init__(self, tipos_expresiones, valores_constantes=None, constantes_locales=None):
         """Prepara mapas vacíos para un recorrido de resolución independiente."""
         super().__init__()
 
         self.tipos_expresiones = tipos_expresiones
+        self.constantes_locales = constantes_locales or {}
 
         # Nombre de constante -> valor calculado.
         self.valores_constantes = (
@@ -95,7 +96,8 @@ class ResolucionVariables(RustiQVisitor):
 
         if es_constante:
             # Una constante incluye su valor ya calculado.
-            simbolo["valor"] = self.valores_constantes[token.text]
+            simbolo["valor"] = (self.constantes_locales[ctx] if ctx in self.constantes_locales
+                                else self.valores_constantes[token.text])
 
         self.simbolos[identificador] = simbolo
         self.ambitos[-1][token.text] = identificador
@@ -183,6 +185,11 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
     # 4. DECLARACIONES LOCALES
     # =================================================
+
+    def visitConstLocalDecl(self, ctx):
+        """Vincula el inicializador antes de introducir la constante de este ámbito."""
+        self.visit(ctx.expression())
+        self.registrar(ctx, self.obtener_tipo_declarado(ctx), es_constante=True)
 
     def visitLetDecl(self, ctx):
         """Resuelve el inicializador antes de registrar la variable."""

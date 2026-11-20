@@ -134,6 +134,7 @@ def analizar_programa(codigo):
         resolucion = ResolucionVariables(
             tipos_expresiones,
             semantico.valores_constantes,
+            semantico.valores_constantes_locales,
         )
         resolucion.visit(arbol)
 
