@@ -753,8 +753,58 @@ fn main() -> f64 {
     assert conflicto["wasm"] is None
     assert not compuesto["valido"]
     assert compuesto["wasm"] is None
-    assert not receptor["valido"]
-    assert receptor["wasm"] is None
+    assert receptor["valido"]
+    assert ejecutar_modulo_wasm(receptor["wasm"]) == 1
+
+
+def test_prestamos_de_receptores_match_tipos_sombreado_y_enum():
+    booleano = compilar_programa("""fn main() -> bool {
+    match true { x => { let r = &x; *r } }
+}""")
+    caracter = compilar_programa("""fn main() -> char {
+    match 'ñ' { x => { let r = &x; *r } }
+}""")
+    copias_y_brazos = compilar_programa("""fn main() -> i32 {
+    let x = 9;
+    let y = match 2 {
+        1 => 0,
+        x => { let a = &x; let b = a; *a + *b }
+    };
+    x + y
+}""")
+    enum = compilar_programa("""enum E { A(i32) }
+fn main() -> i32 {
+    match E::A(3) { E::A(x) => { let r = &x; *r } }
+}""")
+
+    assert booleano["valido"]
+    assert ejecutar_modulo_wasm(booleano["wasm"]) == 1
+    assert caracter["valido"]
+    assert ejecutar_modulo_wasm(caracter["wasm"]) == ord("ñ")
+    assert copias_y_brazos["valido"]
+    assert ejecutar_modulo_wasm(copias_y_brazos["wasm"]) == 13
+    assert enum["valido"]
+    assert ejecutar_modulo_wasm(enum["wasm"]) == 3
+
+
+def test_prestamos_de_receptores_match_rechazan_escape_mutable_y_f64():
+    mutable = compilar_programa("""fn main() -> i32 {
+    match 1 { x => { let r = &mut x; *r = 2; *r } }
+}""")
+    escape = compilar_programa("""fn main() -> i32 {
+    let r = match 1 { x => &x };
+    *r
+}""")
+    decimal = compilar_programa("""fn main() -> f64 {
+    match 1.0 { x => { let r = &x; *r } }
+}""")
+
+    assert not mutable["valido"]
+    assert mutable["wasm"] is None
+    assert not escape["valido"]
+    assert escape["wasm"] is None
+    assert not decimal["valido"]
+    assert decimal["wasm"] is None
 
 
 def test_constantes_locales_materializadas_por_id_y_sombreado():

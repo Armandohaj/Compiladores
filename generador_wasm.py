@@ -858,6 +858,22 @@ def _literal_patron(contexto, tipo, enumeraciones):
     _error("El patrón de match todavía no está implementado.", contexto)
 
 
+def _enlazar_receptor_patron(identificador, valor, tipo, nombres_funcion, contexto):
+    """Guarda un receptor prestable en memoria antes de ejecutar su brazo match."""
+    if identificador not in nombres_funcion.escalares_en_memoria:
+        return [*valor, f"local.set $local_{identificador}"]
+    tamano_alineacion = _tamano_y_alineacion_escalar(tipo)
+    if tamano_alineacion is None:
+        _error("El receptor del patrón no tiene un tipo prestable en WASM.", contexto)
+    tamano, alineacion = tamano_alineacion
+    # El receptor sólo existe en este brazo: se reserva al entrar al brazo elegido.
+    return [
+        f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+        f"local.set $local_{identificador}", f"local.get $local_{identificador}",
+        *valor, _almacenamiento_escalar_memoria(tipo),
+    ]
+
+
 def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, locales,
                             nombres_funcion):
     if patron.UNDERSCORE() is not None:
@@ -884,10 +900,11 @@ def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, 
         identificador = nombres_funcion.declaraciones.get(patron)
         if identificador is None or identificador not in locales:
             _error("El receptor del patrón no está disponible para generar WASM.", patron)
-        return [], [
-            f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
-            f"local.set $local_{identificador}",
-        ]
+        return [], _enlazar_receptor_patron(
+            identificador,
+            [f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento)],
+            tipo, nombres_funcion, patron,
+        )
     _error("El patrón de dato de enumeración todavía no está implementado.", patron)
 
 
@@ -958,7 +975,13 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
         identificador = nombres_funcion.declaraciones.get(patron)
         if identificador is None or identificador not in locales:
             _error("El receptor del patrón no está disponible para generar WASM.", patron)
-        return [f"local.get ${temporal}", f"local.set $local_{identificador}", *expresion]
+        return [
+            *_enlazar_receptor_patron(
+                identificador, [f"local.get ${temporal}"], tipo_valor,
+                nombres_funcion, patron,
+            ),
+            *expresion,
+        ]
     else:
         literal = _literal_patron(patron, tipo_valor, nombres_funcion.enumeraciones)
     siguiente = _compilar_brazos_match(
@@ -2029,14 +2052,18 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     escalares_en_memoria = set()
     for identificador in origenes_prestados:
         tipo = analisis["simbolos"][identificador]["tipo"]
+        declaracion = declaraciones_por_id.get(identificador)
+        if type(declaracion).__name__ == "PatternContext":
+            if tipo not in {"i32", "bool", "char"}:
+                _error("Solo se admiten préstamos de receptores i32, bool y char.", funcion)
+            escalares_en_memoria.add(identificador)
+            continue
         if identificador in parametros:
             _error("Solo se admiten préstamos de variables locales con layouts compatibles.", funcion)
         if _escalar_prestable(tipo):
             escalares_en_memoria.add(identificador)
         elif not _compuesto_prestable(tipo, nombres_funcion.estructuras):
             _error("Solo se admiten préstamos de variables locales con layouts compatibles.", funcion)
-        if type(declaraciones_por_id.get(identificador)).__name__ == "PatternContext":
-            _error("Los préstamos de receptores de match todavía no están implementados.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "
         f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'], nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"

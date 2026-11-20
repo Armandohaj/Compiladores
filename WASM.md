@@ -249,12 +249,17 @@ la referencia reutiliza su puntero original: `p.campo`, `r.0`, `r[i]` y
 `r[i][j]` calculan sus desplazamientos con los layouts existentes y las
 comprobaciones de límites de `$array_addr`; las escrituras por `&mut` actualizan
 el bloque de origen. Los parámetros referencia de esos mismos tipos también se
-admiten. La exclusividad, las vidas y la mutabilidad siguen siendo responsabilidad
-del frontend. Aún se rechazan préstamos de `String`, enums y compuestos anidados,
-estructuras con campos no admitidos, referencias a receptores de `match`,
-préstamos de parámetros normales, retornos o reasignaciones de referencias. La
-desreferenciación completa de un compuesto (`*r`) sigue rechazada para no crear
-copias que compartan accidentalmente el mismo bloque de memoria.
+admiten. Los receptores `i32`, `bool` y `char` de patrones `match` también
+pueden prestarse de forma compartida. Al entrar únicamente en el brazo elegido,
+su valor se materializa en una celda propia y el receptor y `*r` usan esa misma
+dirección; esto conserva el sombreado resuelto por ID. Los receptores básicos de
+variantes de enum siguen el mismo mecanismo. La exclusividad, las vidas y la
+mutabilidad siguen siendo responsabilidad del frontend. Aún se rechazan
+préstamos de `String`, enums completos, compuestos anidados, estructuras con
+campos no admitidos, receptores `f64`, préstamos de parámetros normales,
+retornos o reasignaciones de referencias. La desreferenciación completa de un
+compuesto (`*r`) sigue rechazada para no crear copias que compartan
+accidentalmente el mismo bloque de memoria.
 
 Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,
 `then` y `else`. Sus ramas conservan las variables locales identificadas por
