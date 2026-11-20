@@ -18,11 +18,13 @@ MAX_DIRECCION_I32 = 2**32 - 1
 
 
 class MemoriaStrings:
+    """Guarda los textos estáticos que se copiarán al módulo como segmentos data."""
     def __init__(self):
         self.cursor = 0
         self.segmentos = []
 
     def agregar(self, texto, contexto):
+        # Cada String ocupa un descriptor de 8 bytes: dirección de UTF-8 y longitud.
         datos = texto.encode("utf-8")
         descriptor = self.cursor
         inicio = descriptor + 8
@@ -40,9 +42,11 @@ class MemoriaStrings:
         return descriptor
 
     def paginas_necesarias(self):
+        """WebAssembly reserva memoria por páginas de 64 KiB, no byte a byte."""
         return max(1, (self.cursor + TAMANO_PAGINA_WASM - 1) // TAMANO_PAGINA_WASM)
 
     def wat(self):
+        """Convierte los bytes guardados al escape hexadecimal que entiende WAT."""
         return "\n".join(
             f"  (data (i32.const {direccion}) \""
             f"{''.join(f'\\{byte:02x}' for byte in datos)}\")"
@@ -51,6 +55,7 @@ class MemoriaStrings:
 
 @dataclass
 class EstadoModulo:
+    """Información compartida mientras se traduce un programa completo a WAT."""
     nombres_funcion: dict
     memoria: MemoriaStrings
     constantes: dict
@@ -95,6 +100,7 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo, estructuras=None, enumeraciones=None):
+    """Relaciona los tipos RustiQ con los pocos tipos que maneja WebAssembly."""
     referencia = separar_referencia(tipo)
     if referencia is not None:
         return "i32"
@@ -106,6 +112,7 @@ def _escalar_prestable(tipo):
 
 
 def _tamano_y_alineacion_escalar(tipo):
+    """Devuelve el espacio de un escalar cuando debe vivir en memoria por un préstamo."""
     if not _escalar_prestable(tipo):
         return None
     tamano = _tamano_elemento_arreglo(tipo)
@@ -113,6 +120,7 @@ def _tamano_y_alineacion_escalar(tipo):
 
 
 def _referencia_admitida(tipo, estructuras):
+    """Limita las referencias WASM a escalares y estructuras ya representables."""
     referencia = separar_referencia(tipo)
     if referencia is None:
         return False
@@ -130,6 +138,7 @@ def _almacenamiento_escalar_memoria(tipo):
 
 
 def _info_arreglo(tipo):
+    """Reconoce la forma canónica [T; N] que entrega el frontend."""
     if not tipo.startswith("[") or not tipo.endswith("]"):
         return None
     contenido = tipo[1:-1]
@@ -142,6 +151,7 @@ def _info_arreglo(tipo):
 
 
 def _info_matriz(tipo):
+    """Reconoce una matriz como un arreglo cuyo elemento también es un arreglo."""
     if not tipo.startswith("[") or not tipo.endswith("]"):
         return None
     contenido = tipo[1:-1]
@@ -165,6 +175,7 @@ def _info_tupla(tipo):
 
 
 def _distribucion_tupla(tipo):
+    """Calcula dónde empieza cada campo de una tupla dentro de memoria lineal."""
     campos = _info_tupla(tipo)
     if campos is None:
         return None
@@ -195,6 +206,7 @@ def _enum_tiene_datos(tipo, enumeraciones):
 
 
 def _distribucion_enum(tipo, enumeraciones):
+    """Construye el layout común de las variantes con datos de una enumeración."""
     enumeracion = _info_enum(tipo, enumeraciones)
     if enumeracion is None:
         return None
@@ -221,6 +233,7 @@ def _distribucion_enum(tipo, enumeraciones):
 
 
 def _distribucion_estructura(tipo, estructuras):
+    """Respeta el orden de campos declarado por Kevin y alinea f64 a ocho bytes."""
     campos = _info_estructura(tipo, estructuras)
     if campos is None:
         return None
@@ -237,6 +250,7 @@ def _distribucion_estructura(tipo, estructuras):
 
 
 def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
+    """Indica cuánto se debe copiar para que un valor Copy no comparta su bloque."""
     arreglo = _info_arreglo(tipo)
     if arreglo is not None:
         elemento, cantidad = arreglo
@@ -273,6 +287,7 @@ def _tamano_elemento_arreglo(tipo):
 
 
 def _instruccion_carga_arreglo(tipo, desplazamiento=0):
+    """Elige i32.load o f64.load según el elemento que se lee de memoria."""
     if desplazamiento == 0:
         return "f64.load align=8" if tipo == "f64" else "i32.load"
     alineacion = " align=8" if tipo == "f64" else ""
@@ -280,6 +295,7 @@ def _instruccion_carga_arreglo(tipo, desplazamiento=0):
 
 
 def _instruccion_almacenamiento_arreglo(tipo, desplazamiento):
+    """Elige el store correcto y conserva la alineación de los decimales."""
     alineacion = " align=8" if tipo == "f64" else ""
     return f"{tipo if tipo == 'f64' else 'i32'}.store offset={desplazamiento}{alineacion}"
 
@@ -315,7 +331,11 @@ def _valor_char(literal, contexto):
 
 
 def _compilar_constante(simbolo, estado, contexto):
-    """Convierte el valor ya calculado por Kevin en su literal WebAssembly."""
+    """Convierte el valor ya calculado por Kevin en su literal WebAssembly.
+
+    Así las constantes globales y locales nunca vuelven a evaluar su inicializador
+    durante la ejecución del WASM.
+    """
     tipo = simbolo["tipo"]
     valor = simbolo["valor"]
     if tipo == "i32":
@@ -332,6 +352,7 @@ def _compilar_constante(simbolo, estado, contexto):
 
 
 def _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion, tipos):
+    """Entrada común de expresiones: conserva la precedencia definida por ANTLR."""
     return _compilar_logical_or(
         expresion.logicalOr(), referencias, locales, funciones, nombres_funcion, tipos
     )
@@ -364,6 +385,7 @@ def _compilar_logical_and(contexto, referencias, locales, funciones, nombres_fun
 
 
 def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Emite comparaciones y deja un i32 0/1, que es el bool de WebAssembly."""
     operandos = contexto.additive()
     instrucciones = _compilar_aditiva(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
@@ -418,6 +440,7 @@ def _wat_condicional(rama_cierta, rama_falsa):
 
 
 def _wat_condicional_resultado(rama_cierta, rama_falsa, tipo):
+    """Variante del if anterior para resultados i32 o f64."""
     cierta = "\n        ".join(rama_cierta)
     falsa = "\n        ".join(rama_falsa)
     return (
@@ -429,6 +452,7 @@ def _wat_condicional_resultado(rama_cierta, rama_falsa, tipo):
 
 
 def _wat_if(rama_cierta, rama_falsa=None):
+    """Crea un if de control: sus ramas no dejan un valor en la pila."""
     cierta = "\n        ".join(rama_cierta) if rama_cierta else "nop"
     wat = "(if\n" f"      (then\n        {cierta}\n      )"
     if rama_falsa is not None:
@@ -438,6 +462,7 @@ def _wat_if(rama_cierta, rama_falsa=None):
 
 
 def _wat_string_eq():
+    """Genera una función interna que compara bytes UTF-8 y no sólo punteros."""
     return """  (func $string_eq (param $izquierda i32) (param $derecha i32) (result i32)
     (local $puntero_izquierdo i32)
     (local $longitud_izquierda i32)
@@ -492,6 +517,12 @@ def _wat_string_eq():
 
 
 def _wat_arreglos(inicio_heap):
+    """Genera el pequeño asignador monotónico y la guarda de índices.
+
+    $array_alloc devuelve una dirección alineada y aumenta memoria cuando hace
+    falta. $array_addr revisa los límites antes de calcular una posición, por
+    eso arreglos, matrices, tuplas y estructuras comparten estas protecciones.
+    """
     return f"""  (global $heap (mut i32) (i32.const {inicio_heap}))
   (func $array_alloc (param $tamano i32) (param $alineacion i32) (result i32)
     (local $base i32)
@@ -576,6 +607,7 @@ def _wat_arreglos(inicio_heap):
 
 
 def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Traduce + y - después de compilar los operandos en el orden escrito."""
     operandos = contexto.multiplicative()
     instrucciones = _compilar_multiplicativa(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
@@ -599,6 +631,7 @@ def _compilar_aditiva(contexto, referencias, locales, funciones, nombres_funcion
 
 
 def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Traduce *, / y %, usando las instrucciones con signo para i32."""
     operandos = contexto.unary()
     instrucciones = _compilar_unaria(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
@@ -626,7 +659,9 @@ def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_
 
 
 def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Maneja negaciones, préstamos y desreferenciaciones antes de los accesos."""
     if contexto.borrowExpr() is not None:
+        # El frontend ya comprobó las vidas; aquí sólo convertimos el origen en dirección.
         prestamo = nombres_funcion.prestamos.get(contexto.borrowExpr())
         if prestamo is None:
             _error("El préstamo no está disponible para generar WASM.", contexto.borrowExpr())
@@ -636,6 +671,7 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
         instrucciones = [f"local.get $local_{identificador}"]
         tipo_operando = tipos.get(contexto.borrowExpr())
     elif contexto.dereferenceExpr() is not None:
+        # Una referencia se guarda como i32, pero el load recupera su tipo RustiQ real.
         referencia = contexto.dereferenceExpr()
         tipo = tipos.get(referencia)
         if not _escalar_prestable(tipo):
@@ -695,6 +731,7 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
 
 
 def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Aplica accesos de campos e índices sobre el puntero o valor base."""
     instrucciones = _compilar_primaria(
         contexto.primary(), referencias, locales, funciones, nombres_funcion, tipos
     )
@@ -705,6 +742,7 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     tipo_base = tipos[contexto.primary()]
     referencia = separar_referencia(tipo_base)
     if referencia is not None:
+        # En p.campo, p ya contiene la dirección prestada; no se debe copiar la estructura.
         if _distribucion_estructura(referencia[1], nombres_funcion.estructuras) is None:
             _error("Solo se admiten accesos mediante referencias a estructuras locales.", contexto)
         tipo_base = referencia[1]
@@ -841,6 +879,7 @@ def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, 
 
 
 def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, nombres_funcion):
+    """Comprueba etiqueta y datos de una variante antes de entrar a su brazo match."""
     distribucion = _distribucion_enum(tipo_valor, nombres_funcion.enumeraciones)
     if distribucion is None or patron.DOUBLE_COLON() is None:
         _error("El patrón de enumeración todavía no está implementado.", patron)
@@ -873,6 +912,7 @@ def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, no
 
 def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
                            referencias, locales, funciones, nombres_funcion, tipos):
+    """Genera brazos anidados para conservar la regla del primer patrón compatible."""
     if indice >= len(brazos):
         return ["unreachable"]
     brazo = brazos[indice]
@@ -921,6 +961,7 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
 
 
 def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Evalúa el valor una sola vez y lo conserva en un local temporal del match."""
     tipo_valor = tipos.get(contexto.expression())
     tipo_resultado = tipos.get(contexto)
     if tipo_valor not in {"i32", "bool", "char"} and _info_enum(tipo_valor, nombres_funcion.enumeraciones) is None:
@@ -947,6 +988,7 @@ def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, 
 
 
 def _compilar_enum_valor(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Construye una variante: etiquetas simples son i32 y las demás usan memoria."""
     nombres = contexto.IDENT()
     tipo = tipos.get(contexto)
     enumeracion = _info_enum(tipo, nombres_funcion.enumeraciones)
@@ -973,6 +1015,7 @@ def _compilar_enum_valor(contexto, referencias, locales, funciones, nombres_func
         f"local.set ${temporal}", f"local.get ${temporal}", f"i32.const {etiqueta}",
         "i32.store",
     ]
+    # Guardamos cada argumento tras reservar el bloque para mantener su orden de evaluación.
     for argumento, (tipo_campo, desplazamiento) in zip(argumentos, campos):
         instrucciones.append(f"local.get ${temporal}")
         instrucciones.extend(_compilar_expresion(
@@ -984,6 +1027,7 @@ def _compilar_enum_valor(contexto, referencias, locales, funciones, nombres_func
 
 
 def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    """Traduce literales, variables, llamadas y construcciones que dejan un valor."""
     literal = contexto.INT()
     if literal is not None:
         valor = int(literal.getText())
@@ -1040,6 +1084,7 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
         if identificador not in locales:
             _error("La referencia no corresponde a una variable local i32.", contexto)
         if identificador in nombres_funcion.escalares_en_memoria:
+            # local.get recupera la dirección; el load siguiente obtiene el valor actualizado.
             tipo = nombres_funcion.simbolos[identificador]["tipo"]
             return [f"local.get $local_{identificador}", _carga_escalar_memoria(tipo)]
         return [f"local.get $local_{identificador}"]
@@ -1161,6 +1206,7 @@ def _obtener_primaria_directa(expresion):
 
 
 def _compilar_expresion_unit(expresion, referencias, locales, funciones, nombres_funcion, tipos):
+    """Evita dejar valores en la pila cuando una expresión se usa sólo por su efecto."""
     primaria = _obtener_primaria_directa(expresion)
     if primaria is not None and primaria.functionCall() is not None:
         instrucciones, retorno = _compilar_llamada(
@@ -1189,6 +1235,7 @@ def _compilar_expresion_unit(expresion, referencias, locales, funciones, nombres
 def _compilar_declaracion(
     declaracion, declaraciones, simbolos, referencias, locales, funciones, nombres_funcion, tipos
 ):
+    """Genera let y reutiliza los layouts de todos los valores locales admitidos."""
     if declaracion not in declaraciones:
         expresion = declaracion.expression()
         return [] if expresion is None else _compilar_expresion(
@@ -1200,6 +1247,7 @@ def _compilar_declaracion(
     expresion = declaracion.expression()
     tipo_local = simbolos[identificador]["tipo"]
     if identificador in nombres_funcion.escalares_en_memoria:
+        # Un escalar prestado deja de vivir sólo en un local para evitar copias desactualizadas.
         tamano_alineacion = _tamano_y_alineacion_escalar(tipo_local)
         if tamano_alineacion is None:
             _error("Solo se admiten préstamos de variables escalares.", declaracion)
@@ -1383,6 +1431,7 @@ def _compilar_declaracion(
 
 def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, funciones,
                                nombres_funcion, tipos):
+    """Copia compuestos Copy a un bloque nuevo antes de asignarlos a otro local."""
     layout = _layout_copia_compuesta(
         tipo_destino, nombres_funcion.estructuras, nombres_funcion.enumeraciones
     )
@@ -1401,6 +1450,7 @@ def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, fu
         f"local.set ${temporal}",
         f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
         "local.tee $direccion_asignacion", f"local.get ${temporal}", f"i32.const {tamano}",
+        # memory.copy recibe destino, origen y tamaño; así origen y copia son independientes.
         "memory.copy", "local.get $direccion_asignacion",
     ]
 
@@ -1408,12 +1458,14 @@ def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, fu
 def _compilar_asignacion(
     asignacion, referencias, simbolos, locales, funciones, nombres_funcion, tipos
 ):
+    """Traduce = y operadores compuestos sin evaluar destinos con índice dos veces."""
     identificador = referencias[asignacion]
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
     operador = asignacion.assignmentOp().getText()
     tipo_variable = simbolos[identificador]["tipo"]
     if asignacion.dereferenceTarget() is not None:
+        # La referencia guarda una dirección: store modifica al origen, no al binding r.
         referencia = separar_referencia(tipo_variable)
         if referencia is None or not _escalar_prestable(referencia[1]):
             _error("Solo se admite escribir referencias escalares.", asignacion)
@@ -1610,6 +1662,7 @@ def _compilar_direccion_tupla(asignacion, identificador, simbolos):
 
 
 def _compilar_direccion_estructura(asignacion, identificador, simbolos, estructuras):
+    """Calcula la dirección de un campo, incluso cuando la base es una &Estructura."""
     accesos = list(accesos_escritura(asignacion))
     if len(accesos) != 1 or accesos[0][0] != "nombre":
         _error("Solo se admite la asignación directa a campos de estructuras locales.", asignacion)
@@ -1684,6 +1737,7 @@ def _compilar_direccion_asignacion(
 
 
 def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion, tipos):
+    """Compila imports read/print o llamadas RustiQ conservando el orden de argumentos."""
     incorporada = nombres_funcion.llamadas_incorporadas.get(llamada)
     if incorporada is not None:
         nombres_funcion.incorporadas_usadas.add(incorporada)
@@ -1716,6 +1770,7 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
         argumentos = lista.expression()
     instrucciones = []
     for argumento in argumentos:
+        # Cada argumento se deja en la pila antes de call, como exige la firma WASM.
         instrucciones.extend(
             _compilar_expresion(
                 argumento, referencias, locales, funciones, nombres_funcion, tipos
@@ -1732,6 +1787,7 @@ def _compilar_bloque(
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
     producir_valor=False,
 ):
+    """Ejecuta sentencias en orden y sólo deja la expresión final cuando se necesita."""
     instrucciones = []
     for sentencia in bloque.statement():
         instrucciones.extend(
@@ -1764,6 +1820,7 @@ def _compilar_if(
     condicional, declaraciones, referencias, simbolos, locales,
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
+    """Compila las ramas por separado para que WASM ejecute sólo la condición elegida."""
     condicion = _compilar_expresion(
         condicional.expression(), referencias, locales, funciones, nombres_funcion,
         tipos_expresiones,
@@ -1790,6 +1847,7 @@ def _compilar_ciclo(
     ciclo, es_while, declaraciones, referencias, simbolos, locales,
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
+    """Representa while y loop con block/loop y saltos br o br_if de WebAssembly."""
     indice = ciclos["siguiente"]
     ciclos["siguiente"] += 1
     salida = f"salida_{indice}"
@@ -1828,7 +1886,9 @@ def _compilar_sentencia(
     sentencia, declaraciones, referencias, simbolos, locales,
     tipos_expresiones, tipo_retorno, funciones, nombres_funcion, ciclos,
 ):
+    """Dirige cada sentencia del árbol a su generador y cuida la pila de WASM."""
     if sentencia.constLocalDecl() is not None:
+        # Kevin ya calculó la constante; declararla no debe ejecutar su inicializador otra vez.
         identificador = declaraciones.get(sentencia.constLocalDecl())
         constante = nombres_funcion.constantes.get(identificador)
         if constante is None or not constante["es_constante"]:
@@ -1851,6 +1911,7 @@ def _compilar_sentencia(
         )
         return [*instrucciones, *( ["drop"] if retorno != "unit" else [] )]
     if sentencia.expression() is not None:
+        # El punto y coma convierte el valor en efecto: drop sólo se usa si existe un valor.
         expresion = sentencia.expression()
         tipo = tipos_expresiones.get(expresion)
         compilar = _compilar_expresion_unit if tipo == "unit" else _compilar_expresion
@@ -1902,6 +1963,7 @@ def _compilar_sentencia(
 
 
 def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
+    """Prepara locales, parámetros y cuerpo de una función antes de exportarla."""
     nombre = funcion.IDENT().getText()
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
     if tipo_retorno not in {"i32", "bool", "f64", "char", "String", "unit"}:
@@ -1939,6 +2001,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         for prestamo in analisis["prestamos"].values()
         if analisis["simbolos"][prestamo["simbolo_id"]]["funcion"] == nombre
     }
+    # Los escalares prestados necesitan una celda; las estructuras ya son punteros propios.
     declaraciones_por_id = {
         identificador: declaracion
         for declaracion, identificador in analisis["declaraciones"].items()
@@ -1959,6 +2022,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'], nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"
         for identificador in sorted(parametros)
     )
+    # Los parámetros referencia también son i32 porque transportan una dirección.
     resultado_wat = "" if tipo_retorno == "unit" else f" (result {_tipo_wasm(tipo_retorno)})"
     declaraciones_locales = "\n".join(
         f"    (local $local_{identificador} "
@@ -2076,7 +2140,12 @@ def _imports_incorporados(incorporadas_usadas):
 
 
 def compilar_programa(codigo):
-    """Compila RustiQ a WebAssembly y devuelve ``valido`, `errores`, `wat`, `wasm`."""
+    """Compila RustiQ a WebAssembly y devuelve ``valido`, `errores`, `wat`, `wasm`.
+
+    Primero delega léxico, sintaxis, tipos, ownership y borrowing al frontend.
+    Sólo con ese resultado válido se genera WAT, se valida con Wasmtime y se
+    entrega el binario real al editor o al ejecutor de escritorio.
+    """
     analisis = analizar_programa(codigo)
     if not analisis["valido"]:
         return {"valido": False, "errores": analisis["errores"], "wat": None, "wasm": None}
@@ -2110,6 +2179,7 @@ def compilar_programa(codigo):
             _compilar_funcion(funcion, analisis, indice, estado)
             for indice, funcion in enumerate(funciones)
         ]
+        # El módulo reúne memoria, helpers internos, funciones del programa y datos UTF-8.
         datos = estado.memoria.wat()
         imports = _imports_incorporados(estado.incorporadas_usadas)
         wat = (
@@ -2137,7 +2207,10 @@ def compilar_programa(codigo):
 
 
 def ejecutar_modulo_wasm(wasm, funcion="main", *argumentos):
-    """Instancia un binario generado y ejecuta una exportación sin parámetros."""
+    """Instancia el binario con Wasmtime y llama una exportación para las pruebas.
+
+    Permite pasar argumentos cuando la exportación los necesita.
+    """
     motor = wasmtime.Engine()
     modulo = wasmtime.Module(motor, wasm)
     almacen = wasmtime.Store(motor)
@@ -2146,6 +2219,7 @@ def ejecutar_modulo_wasm(wasm, funcion="main", *argumentos):
 
 
 def ejecutar_string_wasm(wasm, funcion="main", *argumentos):
+    """Ejecuta una función String y reconstruye el texto desde el descriptor en memoria."""
     motor = wasmtime.Engine()
     modulo = wasmtime.Module(motor, wasm)
     almacen = wasmtime.Store(motor)
