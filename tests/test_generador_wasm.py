@@ -667,6 +667,96 @@ def test_copias_completas_de_matrices_y_rechazos_de_move():
     assert move["wasm"] is None
 
 
+def test_borrowing_escalar_obligatorio_lecturas_y_escrituras():
+    local = compilar_programa("""fn main() -> i32 {
+    let mut numero = 10;
+    { let referencia = &mut numero; *referencia = 25; }
+    numero
+}""")
+    parametro = compilar_programa("""fn incrementar(r: &mut i32) { *r += 1; }
+fn main() -> i32 {
+    let mut numero = 10;
+    incrementar(&mut numero);
+    numero
+}""")
+    compartidos = compilar_programa("""fn main() -> i32 {
+    let numero = 10;
+    let a = &numero;
+    let b = a;
+    *a + *b
+}""")
+    sombreado = compilar_programa("""fn main() -> i32 {
+    let numero = 10;
+    let exterior = &numero;
+    { let numero = 20; let interior = &numero; if *interior != 20 { return 0; } }
+    *exterior
+}""")
+    transferencia = compilar_programa("""fn main() -> i32 {
+    let mut numero = 10;
+    let referencia = &mut numero;
+    let destino = referencia;
+    *destino += 2;
+    *destino
+}""")
+
+    assert local["valido"]
+    assert ejecutar_modulo_wasm(local["wasm"]) == 25
+    assert parametro["valido"]
+    assert ejecutar_modulo_wasm(parametro["wasm"]) == 11
+    assert compartidos["valido"]
+    assert ejecutar_modulo_wasm(compartidos["wasm"]) == 20
+    assert sombreado["valido"]
+    assert ejecutar_modulo_wasm(sombreado["wasm"]) == 10
+    assert transferencia["valido"]
+    assert ejecutar_modulo_wasm(transferencia["wasm"]) == 12
+
+
+def test_borrowing_escalar_f64_bool_char_y_rechazos_controlados():
+    decimales = compilar_programa("""fn aumentar(r: &mut f64) { *r += 2.0; }
+fn main() -> f64 {
+    let mut valor = 1.5;
+    aumentar(&mut valor);
+    valor
+}""")
+    booleanos = compilar_programa("""fn main() -> bool {
+    let valor = true;
+    let referencia = &valor;
+    !*referencia
+}""")
+    caracteres = compilar_programa("""fn main() -> char {
+    let mut letra = 'a';
+    { let referencia = &mut letra; *referencia = 'ñ'; }
+    letra
+}""")
+    conflicto = compilar_programa("""fn main() -> i32 {
+    let mut numero = 1;
+    let referencia = &numero;
+    numero = 2;
+    0
+}""")
+    compuesto = compilar_programa("""fn main() -> i32 {
+    let datos = [1, 2];
+    let referencia = &datos;
+    (*referencia)[0]
+}""")
+    receptor = compilar_programa("""fn main() -> i32 {
+    match 1 { numero => { let referencia = &numero; *referencia } }
+}""")
+
+    assert decimales["valido"]
+    assert ejecutar_modulo_wasm(decimales["wasm"]) == pytest.approx(3.5)
+    assert booleanos["valido"]
+    assert ejecutar_modulo_wasm(booleanos["wasm"]) == 0
+    assert caracteres["valido"]
+    assert ejecutar_modulo_wasm(caracteres["wasm"]) == ord("ñ")
+    assert not conflicto["valido"]
+    assert conflicto["wasm"] is None
+    assert not compuesto["valido"]
+    assert compuesto["wasm"] is None
+    assert not receptor["valido"]
+    assert receptor["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

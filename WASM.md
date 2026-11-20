@@ -237,6 +237,17 @@ parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamada
 sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
 resultado WebAssembly.
 
+Los préstamos locales `&T` y `&mut T` de `i32`, `f64`, `bool` y `char` se
+representan como direcciones `i32`. Cuando una variable escalar aparece como
+origen en el mapa `prestamos` del frontend, el generador la reserva en memoria
+lineal y sus lecturas y escrituras directas usan esa misma celda. Se admiten
+lecturas `*r`, escrituras `*r = valor`, asignaciones compuestas numéricas y
+parámetros referencia escalares. La exclusividad, las vidas y la mutabilidad
+siguen siendo responsabilidad del frontend. Aún se rechazan préstamos de
+`String` o valores compuestos, referencias a receptores de `match`, accesos a
+campos o elementos mediante referencias, préstamos de parámetros escalares y
+retornos o reasignaciones de referencias.
+
 Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,
 `then` y `else`. Sus ramas conservan las variables locales identificadas por
 el análisis semántico, permiten retornos anticipados y ejecutan solamente la

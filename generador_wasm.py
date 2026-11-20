@@ -9,6 +9,7 @@ import wasmtime
 from main import analizar_programa
 from flujo_control import salidas_control
 from tipos_compuestos import accesos_escritura, accesos_lectura, separar_tipo_tupla
+from tipos_referencias import separar_referencia
 
 
 TAMANO_PAGINA_WASM = 65536
@@ -65,6 +66,8 @@ class EstadoModulo:
     siguiente_match: int = 0
     temporales_enum: list | None = None
     siguiente_enum: int = 0
+    prestamos: dict | None = None
+    escalares_en_memoria: set | None = None
 
 
 @dataclass
@@ -91,7 +94,29 @@ def _error(mensaje, contexto):
 
 
 def _tipo_wasm(tipo, estructuras=None, enumeraciones=None):
+    referencia = separar_referencia(tipo)
+    if referencia is not None:
+        return "i32"
     return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, estructuras) is not None or _info_enum(tipo, enumeraciones) is not None else tipo
+
+
+def _escalar_prestable(tipo):
+    return tipo in {"i32", "f64", "bool", "char"}
+
+
+def _tamano_y_alineacion_escalar(tipo):
+    if not _escalar_prestable(tipo):
+        return None
+    tamano = _tamano_elemento_arreglo(tipo)
+    return tamano, tamano
+
+
+def _carga_escalar_memoria(tipo):
+    return _instruccion_carga_arreglo(tipo)
+
+
+def _almacenamiento_escalar_memoria(tipo):
+    return _instruccion_almacenamiento_arreglo(tipo, 0)
 
 
 def _info_arreglo(tipo):
@@ -591,6 +616,40 @@ def _compilar_multiplicativa(contexto, referencias, locales, funciones, nombres_
 
 
 def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    if contexto.borrowExpr() is not None:
+        prestamo = nombres_funcion.prestamos.get(contexto.borrowExpr())
+        if prestamo is None:
+            _error("El préstamo no está disponible para generar WASM.", contexto.borrowExpr())
+        identificador = prestamo["simbolo_id"]
+        if identificador not in nombres_funcion.escalares_en_memoria:
+            _error("Solo se admiten préstamos de variables escalares locales.", contexto.borrowExpr())
+        instrucciones = [f"local.get $local_{identificador}"]
+        tipo_operando = tipos.get(contexto.borrowExpr())
+    elif contexto.dereferenceExpr() is not None:
+        referencia = contexto.dereferenceExpr()
+        tipo = tipos.get(referencia)
+        if not _escalar_prestable(tipo):
+            _error("Solo se admite desreferenciar tipos escalares.", referencia)
+        instrucciones = [
+            *_compilar_unaria(
+                referencia.unary(), referencias, locales, funciones, nombres_funcion, tipos
+            ),
+            _carga_escalar_memoria(tipo),
+        ]
+        tipo_operando = tipo
+    else:
+        instrucciones = None
+        tipo_operando = None
+    if instrucciones is not None:
+        if contexto.NOT() is not None:
+            return [*instrucciones, "i32.eqz"]
+        if contexto.MINUS() is not None:
+            if tipo_operando == "f64":
+                return [*instrucciones, "f64.neg"]
+            if tipo_operando == "i32":
+                return ["i32.const 0", *instrucciones, "i32.sub"]
+            _error("La negación aritmética solo está disponible para i32 y f64.", contexto)
+        return instrucciones
     if contexto.getChildCount() == 1:
         return _compilar_postfija(
             contexto.postfix(), referencias, locales, funciones, nombres_funcion, tipos
@@ -965,6 +1024,9 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
             return _compilar_constante(constante, nombres_funcion, contexto)
         if identificador not in locales:
             _error("La referencia no corresponde a una variable local i32.", contexto)
+        if identificador in nombres_funcion.escalares_en_memoria:
+            tipo = nombres_funcion.simbolos[identificador]["tipo"]
+            return [f"local.get $local_{identificador}", _carga_escalar_memoria(tipo)]
         return [f"local.get $local_{identificador}"]
     if contexto.functionCall() is not None:
         instrucciones, retorno = _compilar_llamada(
@@ -1121,7 +1183,24 @@ def _compilar_declaracion(
     if identificador not in locales:
         _error("La declaración no corresponde a una variable local i32.", declaracion)
     expresion = declaracion.expression()
-    estructura = _distribucion_estructura(simbolos[identificador]["tipo"], nombres_funcion.estructuras)
+    tipo_local = simbolos[identificador]["tipo"]
+    if identificador in nombres_funcion.escalares_en_memoria:
+        tamano_alineacion = _tamano_y_alineacion_escalar(tipo_local)
+        if tamano_alineacion is None:
+            _error("Solo se admiten préstamos de variables escalares.", declaracion)
+        tamano, alineacion = tamano_alineacion
+        instrucciones = [
+            f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+            f"local.set $local_{identificador}",
+        ]
+        if expresion is not None:
+            instrucciones.append(f"local.get $local_{identificador}")
+            instrucciones.extend(_compilar_expresion(
+                expresion, referencias, locales, funciones, nombres_funcion, tipos
+            ))
+            instrucciones.append(_almacenamiento_escalar_memoria(tipo_local))
+        return instrucciones
+    estructura = _distribucion_estructura(tipo_local, nombres_funcion.estructuras)
     if estructura is not None:
         if expresion is None:
             _error("Una estructura local requiere un constructor para inicializarse.", declaracion)
@@ -1319,6 +1398,33 @@ def _compilar_asignacion(
         _error("La asignación no corresponde a una variable local i32.", asignacion)
     operador = asignacion.assignmentOp().getText()
     tipo_variable = simbolos[identificador]["tipo"]
+    if asignacion.dereferenceTarget() is not None:
+        referencia = separar_referencia(tipo_variable)
+        if referencia is None or not _escalar_prestable(referencia[1]):
+            _error("Solo se admite escribir referencias escalares.", asignacion)
+        tipo = referencia[1]
+        expresion = _compilar_expresion(
+            asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+        if "normal" not in salidas_control(asignacion.expression()):
+            return expresion
+        if operador == "=":
+            return [
+                f"local.get $local_{identificador}", *expresion,
+                _almacenamiento_escalar_memoria(tipo),
+            ]
+        if tipo not in {"i32", "f64"}:
+            _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
+        instruccion = {
+            "+=": f"{tipo}.add", "-=": f"{tipo}.sub", "*=": f"{tipo}.mul",
+            "/=": "i32.div_s" if tipo == "i32" else "f64.div",
+        }[operador]
+        return [
+            f"local.get $local_{identificador}", "local.tee $direccion_asignacion",
+            _carga_escalar_memoria(tipo), *expresion, instruccion,
+            f"local.set $valor_asignacion_{tipo}", "local.get $direccion_asignacion",
+            f"local.get $valor_asignacion_{tipo}", _almacenamiento_escalar_memoria(tipo),
+        ]
     layout = _layout_copia_compuesta(
         tipo_variable, nombres_funcion.estructuras, nombres_funcion.enumeraciones
     )
@@ -1333,6 +1439,31 @@ def _compilar_asignacion(
                 nombres_funcion, tipos,
             ),
             f"local.set $local_{identificador}",
+        ]
+    if identificador in nombres_funcion.escalares_en_memoria:
+        expresion = _compilar_expresion(
+            asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+        if "normal" not in salidas_control(asignacion.expression()):
+            return expresion
+        if operador == "=":
+            return [
+                f"local.get $local_{identificador}", *expresion,
+                _almacenamiento_escalar_memoria(tipo_variable),
+            ]
+        if tipo_variable not in {"i32", "f64"}:
+            _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
+        instruccion = {
+            "+=": f"{tipo_variable}.add", "-=": f"{tipo_variable}.sub",
+            "*=": f"{tipo_variable}.mul",
+            "/=": "i32.div_s" if tipo_variable == "i32" else "f64.div",
+        }[operador]
+        return [
+            f"local.get $local_{identificador}", "local.tee $direccion_asignacion",
+            _carga_escalar_memoria(tipo_variable), *expresion, instruccion,
+            f"local.set $valor_asignacion_{tipo_variable}", "local.get $direccion_asignacion",
+            f"local.get $valor_asignacion_{tipo_variable}",
+            _almacenamiento_escalar_memoria(tipo_variable),
         ]
     expresion = _compilar_expresion(
         asignacion.expression(), referencias, locales, funciones, nombres_funcion, tipos
@@ -1551,7 +1682,11 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
     firma = funciones.get(nombre)
     if firma is None or nombre not in nombres_funcion.nombres_funcion:
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
-    if any(tipo not in {"i32", "bool", "f64", "char", "String"} for tipo in firma["parametros"]):
+    if any(
+        tipo not in {"i32", "bool", "f64", "char", "String"}
+        and not _escalar_prestable((separar_referencia(tipo) or (None, None))[1])
+        for tipo in firma["parametros"]
+    ):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
     if firma["retorno"] not in {"i32", "bool", "f64", "char", "String", "unit"}:
         _error(f"La función '{nombre}' tiene un retorno no soportado.", llamada)
@@ -1750,12 +1885,34 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     variables.update(parametros)
     for identificador in parametros:
         tipo = analisis["simbolos"][identificador]["tipo"]
+        referencia = separar_referencia(tipo)
+        if referencia is not None:
+            if not _escalar_prestable(referencia[1]):
+                _error("Solo se admiten parámetros referencia escalares.", funcion)
+            continue
         if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, nombres_funcion.estructuras) is not None or _info_enum(tipo, nombres_funcion.enumeraciones) is not None:
             _error("Los parámetros de valores compuestos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
-        if tipo not in {"i32", "bool", "f64", "char", "String"} and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _info_tupla(tipo) is None and _info_estructura(tipo, nombres_funcion.estructuras) is None and _info_enum(tipo, nombres_funcion.enumeraciones) is None:
+        referencia = separar_referencia(tipo)
+        if referencia is not None and not _escalar_prestable(referencia[1]):
+            _error("Solo se admiten referencias escalares locales.", funcion)
+        if tipo not in {"i32", "bool", "f64", "char", "String"} and referencia is None and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _info_tupla(tipo) is None and _info_estructura(tipo, nombres_funcion.estructuras) is None and _info_enum(tipo, nombres_funcion.enumeraciones) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
+    escalares_en_memoria = {
+        prestamo["simbolo_id"]
+        for prestamo in analisis["prestamos"].values()
+        if analisis["simbolos"][prestamo["simbolo_id"]]["funcion"] == nombre
+    }
+    declaraciones_por_id = {
+        identificador: declaracion
+        for declaracion, identificador in analisis["declaraciones"].items()
+    }
+    for identificador in escalares_en_memoria:
+        if identificador in parametros or not _escalar_prestable(analisis["simbolos"][identificador]["tipo"]):
+            _error("Solo se admiten préstamos de variables escalares locales.", funcion)
+        if type(declaraciones_por_id.get(identificador)).__name__ == "PatternContext":
+            _error("Los préstamos de receptores de match todavía no están implementados.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "
         f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'], nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"
@@ -1764,7 +1921,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     resultado_wat = "" if tipo_retorno == "unit" else f" (result {_tipo_wasm(tipo_retorno)})"
     declaraciones_locales = "\n".join(
         f"    (local $local_{identificador} "
-        f"{_tipo_wasm(analisis['simbolos'][identificador]['tipo'], nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"
+        f"{'i32' if identificador in escalares_en_memoria else _tipo_wasm(analisis['simbolos'][identificador]['tipo'], nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"
         for identificador in sorted(variables - parametros)
     )
     temporales_asignacion = "\n".join([
@@ -1780,6 +1937,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     nombres_funcion.siguiente_match = 0
     nombres_funcion.temporales_enum = []
     nombres_funcion.siguiente_enum = 0
+    nombres_funcion.prestamos = analisis["prestamos"]
+    nombres_funcion.escalares_en_memoria = escalares_en_memoria
     continua = True
     for sentencia in funcion.block().statement():
         instrucciones.extend(
