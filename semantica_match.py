@@ -112,6 +112,10 @@ def analizar_match(sem, ctx):
     """Analiza cada brazo desde el mismo estado y une su inicialización."""
     inicio = len(sem.errores)
     tipo = sem.visit(ctx.expression())
+    if isinstance(tipo, str) and tipo.startswith('&'):
+        # No se inventa una procedencia para receptores de patrones referencia.
+        # Esta etapa admite match de valores, no patrones sobre referencias.
+        sem.reportar(ctx.start, "Esta versión no admite patrones sobre referencias.")
 
     # Evaluar el valor del match puede tener efectos sobre las variables.
     # Ese estado, anterior a seleccionar un brazo, es el punto de partida.

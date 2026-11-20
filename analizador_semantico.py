@@ -16,6 +16,7 @@ from tipos_compuestos import (
 )
 from gestor_enumeraciones import GestorEnumeraciones
 from flujo_control import salidas_control
+from tipos_referencias import separar_referencia, identificador_simple
 
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
@@ -204,6 +205,27 @@ class AnalizadorSemantico(RustiQVisitor):
 
         gestor_constantes.validar_y_calcular()
         self.valores_constantes = gestor_constantes.valores
+
+        # Primera versión acotada: no se almacenan referencias en compuestos,
+        # ni se retornan referencias. Evita prometer vidas útiles no comprobadas.
+        for funcion in ctx.functionDecl():
+            if '&' in (self.obtener_tipo_declarado(funcion) or ''):
+                self.reportar(funcion.start, "Esta versión no admite devolver referencias.")
+        for constante in ctx.constDecl():
+            if '&' in (self.obtener_tipo_declarado(constante) or ''):
+                self.reportar(constante.start, "Las constantes globales no admiten referencias.")
+        for declaracion in ctx.structDecl() + ctx.enumDecl():
+            for nodo in gestor_estructuras.recorrer(declaracion):
+                if isinstance(nodo, RustiQParser.TypeContext) and nodo.AMP() is not None:
+                    self.reportar(nodo.start, "No se admiten referencias almacenadas en estructuras o enums.")
+        for nodo in gestor_estructuras.recorrer(ctx):
+            if isinstance(nodo, RustiQParser.TypeContext) and nodo.AMP() is not None:
+                interior = self.normalizar_tipo(nodo.getTypedRuleContext(RustiQParser.TypeContext, 0))
+                if '&' in interior:
+                    self.reportar(nodo.start, "Las referencias anidadas no se admiten en esta versión.")
+                padre = nodo.parentCtx
+                if isinstance(padre, RustiQParser.TypeContext) and padre.AMP() is None:
+                    self.reportar(nodo.start, "No se admiten referencias dentro de arreglos o tuplas.")
 
         # Con los registros disponibles, revisar cada función.
         for funcion in ctx.functionDecl():
@@ -691,9 +713,70 @@ class AnalizadorSemantico(RustiQVisitor):
             "puede_inicializada": inicializada,
         }
 
+    def visitBorrowExpr(self, ctx):
+        """Comprueba tipo y mutabilidad; los conflictos activos se revisan luego."""
+        tipo = self.visit(ctx.unary())
+        origen = identificador_simple(ctx.unary())
+        if origen is None:
+            self.reportar(ctx.start, "Solo se permite prestar una variable completa; no campos ni temporales.")
+            return self.guardar_tipo(ctx, None)
+        variable = self.buscar_variable(origen.IDENT().getText())
+        if tipo is None or variable is None:
+            return self.guardar_tipo(ctx, None)
+        if separar_referencia(tipo) is not None:
+            self.reportar(ctx.start, "Las referencias anidadas y los représtamos no se admiten todavía.")
+            return self.guardar_tipo(ctx, None)
+        if variable.get('es_constante'):
+            self.reportar(ctx.start, "Esta versión solo presta variables, no constantes globales.")
+            return self.guardar_tipo(ctx, None)
+        mutable = ctx.MUT() is not None
+        if mutable and not variable['mutable']:
+            self.reportar(ctx.start, "Un préstamo mutable requiere una variable declarada con mut.")
+            return self.guardar_tipo(ctx, None)
+        return self.guardar_tipo(ctx, ('&mut ' if mutable else '&') + tipo)
+
+    def visitDereferenceExpr(self, ctx):
+        """Obtiene el tipo del valor apuntado, conservando el nodo del operando."""
+        referencia = separar_referencia(self.visit(ctx.unary()))
+        if referencia is None:
+            self.reportar(ctx.start, "La desreferenciación requiere un tipo de referencia.")
+            return self.guardar_tipo(ctx, None)
+        return self.guardar_tipo(ctx, referencia[1])
+
+    def visitar_escritura_referencia(self, ctx):
+        """Permite escribir *r cuando r tiene tipo &mut T; r no requiere let mut."""
+        destino = ctx.dereferenceTarget()
+        token = destino.IDENT().getSymbol()
+        variable = self.buscar_variable(token.text)
+        referencia = separar_referencia(variable['tipo']) if variable else None
+        if referencia is None:
+            self.reportar(token, "La escritura desreferenciada requiere una referencia.")
+            self.visit(ctx.expression())
+            return
+        mutable, interior = referencia
+        recibido = self.visitar_con_tipo(ctx.expression(), interior)
+        self.guardar_tipo(destino, interior)
+        self.guardar_tipo(ctx, interior)
+        if not variable['inicializada']:
+            self.reportar(token, f"La variable '{token.text}' se usa antes de inicializarla.")
+        if not mutable:
+            self.reportar(token, "No se puede escribir mediante una referencia inmutable.")
+        if recibido is None or 'normal' not in salidas_control(ctx.expression()):
+            return
+        operador = ctx.assignmentOp().start
+        if operador.text == '=':
+            if recibido != interior:
+                self.reportar(token, f"Asignación desreferenciada incompatible: se esperaba {interior}, pero se recibió {recibido}.")
+        else:
+            aritmetico = copy(operador)
+            aritmetico.text = operador.text[:-1]
+            self.comprobar_operacion(interior, recibido, aritmetico)
+
     def visitAssignment(self, ctx):
         # Conservar el comportamiento de las asignaciones simples.
         """Distingue reemplazo completo de escritura de un campo o elemento. Comprueba lectura previa en asignaciones compuestas."""
+        if ctx.dereferenceTarget() is not None:
+            return self.visitar_escritura_referencia(ctx)
         if ctx.indexAccess() or ctx.tupleAccess() or ctx.fieldAccess():
             return self.visitar_asignacion_elemento(ctx)
 
@@ -1075,12 +1158,13 @@ class AnalizadorSemantico(RustiQVisitor):
         # Primero resolver el valor y sus accesos:
         # por ejemplo, numeros[0].
         """Calcula el tipo tras los accesos y después comprueba - o !. No calcula el valor numérico."""
-        tipo = self.visit(ctx.postfix())
+        operando = ctx.postfix() or ctx.borrowExpr() or ctx.dereferenceExpr()
+        tipo = self.visit(operando)
         # Si el operando abandona el contexto, el operador
         # negativo o lógico no llega a aplicarse.
         if (
             (ctx.MINUS() is not None or ctx.NOT() is not None)
-            and "normal" not in salidas_control(ctx.postfix())
+            and "normal" not in salidas_control(operando)
         ):
             return self.guardar_tipo(ctx, "unit")
         if tipo is not None:
@@ -1171,6 +1255,12 @@ class AnalizadorSemantico(RustiQVisitor):
     def comprobar_accesos(self, tipo, accesos):
         """Aplica accesos de arreglo y de tupla en el orden escrito."""
         for clase, nodo in accesos:
+            # Un acceso sobre &T o &mut T consulta el valor apuntado.
+            # Conservamos el tipo de la base: el backend necesita saber que
+            # primero debe cargar una dirección y después acceder al campo.
+            referencia = separar_referencia(tipo)
+            if referencia is not None:
+                tipo = referencia[1]
             if clase == "indice":
                 es_destino = isinstance(nodo, RustiQParser.IndexAccessContext)
                 expresion = nodo.expression() if es_destino else nodo
@@ -1248,9 +1338,15 @@ class AnalizadorSemantico(RustiQVisitor):
         if "normal" not in salidas_control(ctx):
             return
 
-        if not variable["mutable"]:
+        # Para p.campo mediante &mut T importa la capacidad del préstamo,
+        # no si el binding p fue declarado como let mut. &T nunca permite escribir.
+        referencia = separar_referencia(variable["tipo"])
+        permite_escribir = referencia[0] if referencia is not None else variable["mutable"]
+        if not permite_escribir:
             self.reportar(
                 token,
+                "No se puede escribir mediante una referencia inmutable."
+                if referencia is not None else
                 f"No se puede modificar '{token.text}' porque no fue declarada con 'mut'."
             )
             return
@@ -1285,6 +1381,9 @@ class AnalizadorSemantico(RustiQVisitor):
         if any(tipo is None for tipo in tipos):
             return self.guardar_tipo(ctx, None)
 
+        if any('&' in tipo for tipo in tipos if tipo is not None):
+            self.reportar(ctx.start, "No se admiten referencias dentro de arreglos o tuplas.")
+            return self.guardar_tipo(ctx, None)
         # Un elemento que salta no produce un valor para comparar.
         # Conservamos la posición original para ubicar los errores.
         normales = [
@@ -1320,6 +1419,9 @@ class AnalizadorSemantico(RustiQVisitor):
             for i, e in enumerate(expresiones)
         ]
         if any(tipo is None for tipo in tipos):
+            return self.guardar_tipo(ctx, None)
+        if any('&' in tipo for tipo in tipos if tipo is not None):
+            self.reportar(ctx.start, "No se admiten referencias dentro de arreglos o tuplas.")
             return self.guardar_tipo(ctx, None)
         for expresion, tipo in zip(expresiones, tipos):
             # Un unit normal es inválido como elemento; un salto no es un valor.

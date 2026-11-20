@@ -5,6 +5,9 @@ from generated.RustiQParser import RustiQParser
 def normalizar_tipo(nodo):
     """Convierte un tipo de ANTLR en su representación canónica."""
     interiores = nodo.getTypedRuleContexts(RustiQParser.TypeContext)
+    if nodo.AMP() is not None:
+        prefijo = "&mut " if nodo.MUT() is not None else "&"
+        return prefijo + normalizar_tipo(interiores[0])
     if nodo.LBRACKET() is not None:
         return f"[{normalizar_tipo(interiores[0])};{int(nodo.INT().getText())}]"
     if nodo.LPAREN() is not None:

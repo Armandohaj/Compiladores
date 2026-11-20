@@ -209,6 +209,13 @@ class ResolucionVariables(RustiQVisitor):
 
     def visitAssignment(self, ctx):
         """Vincula el destino con su símbolo y recorre las variables leídas en índices y en el valor derecho."""
+        if ctx.dereferenceTarget() is not None:
+            destino = ctx.dereferenceTarget()
+            identificador = self.buscar(destino.IDENT().getText())
+            self.referencias[destino] = identificador
+            self.referencias[ctx] = identificador
+            self.visit(ctx.expression())
+            return
         nombre = ctx.IDENT().getText()
         self.referencias[ctx] = self.buscar(nombre)
         # Un índice puede leer otras variables: datos[posicion] = valor.

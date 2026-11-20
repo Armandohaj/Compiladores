@@ -4,6 +4,7 @@ Este módulo solo clasifica tipos. No realiza copias, movimientos ni préstamos.
 Utiliza los tipos canónicos y los registros existentes del frontend.
 """
 from tipos_compuestos import separar_tipo_tupla
+from tipos_referencias import separar_referencia
 
 
 def clasificar_tipo(tipo, estructuras, enumeraciones, visitando=None):
@@ -13,6 +14,13 @@ def clasificar_tipo(tipo, estructuras, enumeraciones, visitando=None):
     recursiva inválida. La validación de tipos del frontend debe diagnosticar
     esos casos antes de aplicar reglas de propiedad.
     """
+    referencia = separar_referencia(tipo)
+    if referencia is not None:
+        mutable, interior = referencia
+        if not interior or '&' in interior:
+            return None
+        # La referencia compartida se copia; la exclusiva se transfiere.
+        return 'Move' if mutable else 'Copy'
     if tipo in ('i32', 'f64', 'bool', 'char'):
         return 'Copy'
     if tipo == 'String':

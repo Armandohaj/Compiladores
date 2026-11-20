@@ -143,6 +143,15 @@ class AnalizadorOwnership:
         """Recorre en orden de evaluación; un salto detiene el camino actual."""
         if nodo is None or not self.vivo:
             return
+        if isinstance(nodo, P.BorrowExprContext):
+            # Prestar no transfiere la propiedad del valor original.
+            self.evaluar(nodo.unary(), False)
+            return
+        if isinstance(nodo, P.DereferenceExprContext):
+            self.evaluar(nodo.unary(), False)
+            if self.vivo and transferir and self.clase(self.tipos.get(nodo)) == 'Move':
+                self.reportar(nodo.start, 'No se puede mover un valor a través de una referencia.')
+            return
         if isinstance(nodo, P.BlockContext):
             for sentencia in nodo.statement():
                 self.evaluar(sentencia, True)
@@ -161,6 +170,10 @@ class AnalizadorOwnership:
             return
         if isinstance(nodo, P.AssignmentContext):
             identificador = self.referencias[nodo]
+            if nodo.dereferenceTarget() is not None:
+                self.usar(identificador, nodo.dereferenceTarget().IDENT().getSymbol())
+                self.evaluar(nodo.expression(), True)
+                return
             parcial = bool(nodo.indexAccess() or nodo.tupleAccess() or nodo.fieldAccess())
             if parcial or nodo.assignmentOp().getText() != '=':
                 self.usar(identificador, nodo.IDENT().getSymbol())
