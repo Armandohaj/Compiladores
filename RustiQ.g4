@@ -103,7 +103,8 @@ block
     : LBRACE statement* expression? RBRACE
     ;
 statement
-    : letDecl
+    : constLocalDecl
+    | letDecl
     | assignment SEMICOLON
     | functionCall SEMICOLON
     | returnStmt
@@ -113,6 +114,9 @@ statement
     | breakStmt
     | continueStmt
     | block
+    // El resultado se descarta; la expresión final del bloque no lleva ;.
+    // Se conserva functionCall arriba para mantener su nodo en llamadas previas.
+    | expression SEMICOLON
     ;
 
 letDecl
@@ -481,4 +485,8 @@ BLOCK_COMMENT
 
 WS
     : [ \t\r\n]+ -> skip
+    ;
+// Constante con ámbito léxico: tipo e inicializador obligatorios.
+constLocalDecl
+    : CONST IDENT COLON type ASSIGN expression SEMICOLON
     ;

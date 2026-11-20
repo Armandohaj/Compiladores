@@ -259,5 +259,10 @@ class RustiQVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by RustiQParser#constLocalDecl.
+    def visitConstLocalDecl(self, ctx:RustiQParser.ConstLocalDeclContext):
+        return self.visitChildren(ctx)
+
+
 
 del RustiQParser

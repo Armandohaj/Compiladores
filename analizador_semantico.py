@@ -34,6 +34,7 @@ class AnalizadorSemantico(RustiQVisitor):
 
         # Tipo calculado para cada nodo de expresión.
         self.tipos_expresiones = {}
+        self.valores_constantes_locales = {}
 
         # Tipo contextual de arreglos y tuplas, incluidos arreglos vacíos.
         # Las claves son nodos del mismo árbol, sin crear un AST adicional.
@@ -633,6 +634,72 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
     # 8. VARIABLES Y ASIGNACIONES
     # =================================================
+
+    def visitConstLocalDecl(self, ctx):
+        """Calcula una constante local sin leer variables del programa en ejecución.
+
+        El nombre se registra después del inicializador y queda limitado al
+        ámbito actual. Solo puede depender de constantes visibles previamente.
+        Los valores calculados usan el nodo como clave para respetar sombreado.
+        """
+        from evaluador_constantes import EvaluadorConstantes, ErrorConstante
+        token = ctx.IDENT().getSymbol()
+        if self.nombre_incorporado(token):
+            return
+        if not self.ambitos or not hasattr(self, 'valores_constantes'):
+            self.reportar(token, 'No se admiten declaraciones const locales dentro de inicializadores globales.')
+            return
+        if token.text in self.ambitos[-1]:
+            self.reportar(token, f"La constante '{token.text}' ya fue declarada en este ámbito.")
+            return
+        esperado = self.obtener_tipo_declarado(ctx)
+        errores_antes = len(self.errores)
+        # Revisar todas las ramas: una llamada escondida tras cortocircuito
+        # tampoco forma parte de una expresión constante.
+        gestor = GestorConstantes(self)
+        for nodo in gestor.recorrer(ctx.expression()):
+            if isinstance(nodo, (RustiQParser.FunctionCallContext,
+                                 RustiQParser.BorrowExprContext,
+                                 RustiQParser.DereferenceExprContext)):
+                self.reportar(nodo.start, 'Una constante local no admite llamadas ni referencias.')
+            if isinstance(nodo, RustiQParser.StatementContext):
+                if nodo.letDecl() is None and nodo.block() is None:
+                    self.reportar(nodo.start, 'El inicializador constante solo admite let inmutable y bloques puros.')
+            if isinstance(nodo, RustiQParser.LetDeclContext) and nodo.MUT() is not None:
+                self.reportar(nodo.start, 'Una constante local no admite variables mutables.')
+        tipo = self.visitar_con_tipo(ctx.expression(), esperado)
+        if tipo is not None and tipo != esperado:
+            self.reportar(token, f"Tipos incompatibles en la constante '{token.text}': se esperaba {esperado}, pero se recibió {tipo}.")
+        if '&' in esperado:
+            self.reportar(token, 'Una constante local no admite tipos de referencia.')
+
+        def resolver(nombre):
+            """La variable visible tiene prioridad: nunca saltamos su sombreado."""
+            simbolo = self.buscar_variable(nombre.text)
+            if simbolo is None or not simbolo.get('es_constante'):
+                raise ErrorConstante(nombre, f"Una constante local no puede depender de la variable '{nombre.text}'.")
+            if 'valor' in simbolo:
+                return simbolo['valor']
+            return self.valores_constantes[nombre.text]
+
+        valor = None
+        if len(self.errores) == errores_antes:
+            try:
+                # También revisar dependencias no ejecutadas por cortocircuito.
+                from match_constante import dependencias_globales
+                for dependencia in dependencias_globales(ctx.expression()):
+                    resolver(dependencia)
+                evaluador = EvaluadorConstantes(self.tipos_expresiones, resolver, self.enumeraciones)
+                valor = evaluador.visit(ctx.expression())
+                evaluador.comprobar_rango(valor, esperado, token)
+                self.valores_constantes_locales[ctx] = valor
+            except ErrorConstante as error:
+                self.reportar(error.token, error.mensaje)
+        # Registrar aun con diagnóstico para evitar errores en cascada.
+        self.ambitos[-1][token.text] = {
+            'tipo': esperado, 'mutable': False, 'inicializada': True,
+            'puede_inicializada': True, 'es_constante': True, 'valor': valor,
+        }
 
     def visitLetDecl(self, ctx):
         """Analiza el valor antes de registrar el nombre, infiere o comprueba el tipo y registra mutabilidad e inicialización."""
