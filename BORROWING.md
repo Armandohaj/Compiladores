@@ -183,3 +183,16 @@ en 34 suites. Las 823 anteriores conservan sus expectativas.
 Las pruebas verifican el frontend y el contrato de nodos; no demuestran que
 los préstamos ya se ejecuten en WebAssembly. No se modificaron el generador,
 la web, Flask ni los ejecutores.
+
+## Corrección: receptores de patrones de match
+
+Los receptores introducidos por patrones, incluso tuplas y variantes anidadas,
+se consideran vivos dentro de su brazo. Pueden prestarse como otras variables
+inmutables. Su préstamo no puede sobrevivir al brazo que declara el receptor.
+
+El mapa prestamos conserva exactamente su formato. El simbolo_id de un préstamo
+a un receptor es el ID existente de declaraciones[PatternContext], aunque tenga
+el mismo nombre que una variable exterior. No cambia la gramática ni el backend.
+
+Pruebas: python pruebas_prestamos_match.py (13/13); regresión completa
+904/904 comprobaciones en 35 suites. Estas pruebas no ejecutan WASM.

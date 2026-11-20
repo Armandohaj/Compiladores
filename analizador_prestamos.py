@@ -92,6 +92,44 @@ class AnalizadorPrestamos:
             elif escritura and not prestamo['mutable']:
                 self.reportar(token, "No se puede escribir mediante una referencia inmutable.")
 
+    def evaluar_brazo(self, brazo):
+        """Los receptores de un patrón viven únicamente dentro de su brazo.
+
+        ResolucionVariables ya les asignó sus IDs. Aquí se reutilizan para
+        comprobar préstamos, incluso en patrones de tuplas y variantes anidadas.
+        El resultado puede prestar una variable exterior, pero no un receptor
+        que desaparece al terminar este brazo.
+        """
+        anteriores = set(self.activos)
+        locales = set()
+
+        def registrar_receptores(patron):
+            """Recoge solo declaraciones reales; ignora literales y variantes."""
+            identificador = self.declaraciones.get(patron)
+            if identificador is not None:
+                locales.add(identificador)
+            for hijo in patron.getChildren():
+                if hasattr(hijo, 'getChildren'):
+                    registrar_receptores(hijo)
+
+        registrar_receptores(brazo.pattern())
+        self.vivas.update(locales)
+        self.ambitos.append(locales)
+        resultado = set()
+        try:
+            resultado = self.evaluar(brazo.expression(), True)
+        finally:
+            self.ambitos.pop()
+            self.vivas.difference_update(locales)
+            for clave in resultado:
+                registro = self.activos.get(clave)
+                if registro is not None and registro['simbolo_id'] in locales:
+                    self.reportar(brazo.start, 'Una referencia no puede sobrevivir al receptor local del patrón de match.')
+            # Se conservan los préstamos exteriores y el valor del brazo, pero
+            # los préstamos locales sin un resultado dejan de estar activos.
+            self.limpiar(anteriores | resultado)
+        return resultado
+
     def evaluar(self, nodo, transferir=False):
         """Devuelve préstamos posibles si el nodo produce una referencia."""
         if nodo is None:
@@ -193,7 +231,7 @@ class AnalizadorPrestamos:
                 # Conservadoramente se acumulan préstamos de brazos que entregan
                 # referencias. Los patrones con referencias se limitan por tipos.
                 for brazo in nodo.matchArm():
-                    resultado.update(self.evaluar(brazo.expression(), True))
+                    resultado.update(self.evaluar_brazo(brazo))
             return resultado
         if isinstance(nodo, P.IfStmtContext):
             self.evaluar(nodo.expression())
