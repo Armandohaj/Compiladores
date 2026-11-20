@@ -242,10 +242,13 @@ representan como direcciones `i32`. Cuando una variable escalar aparece como
 origen en el mapa `prestamos` del frontend, el generador la reserva en memoria
 lineal y sus lecturas y escrituras directas usan esa misma celda. Se admiten
 lecturas `*r`, escrituras `*r = valor`, asignaciones compuestas numéricas y
-parámetros referencia escalares. La exclusividad, las vidas y la mutabilidad
-siguen siendo responsabilidad del frontend. Aún se rechazan préstamos de
-`String` o valores compuestos, referencias a receptores de `match`, accesos a
-campos o elementos mediante referencias, préstamos de parámetros escalares y
+parámetros referencia escalares. También se admiten préstamos de estructuras
+locales con campos básicos: la referencia reutiliza el puntero del layout de la
+estructura, y `p.campo` lee o escribe la dirección original con su desplazamiento
+y alineación, incluido `f64`. La exclusividad, las vidas y la mutabilidad siguen
+siendo responsabilidad del frontend. Aún se rechazan préstamos de `String`,
+tuplas, arreglos, matrices o enums, estructuras con campos no admitidos,
+referencias a receptores de `match`, préstamos de parámetros escalares normales,
 retornos o reasignaciones de referencias.
 
 Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,

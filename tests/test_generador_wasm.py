@@ -814,6 +814,86 @@ def test_expresiones_como_sentencias_descartan_valores_y_prestamos_temporales():
     assert ejecutar_modulo_wasm(retorno["wasm"]) == 9
 
 
+def test_borrowing_estructuras_ejemplo_oficial_y_lecturas_compartidas():
+    oficial = compilar_programa("""struct Punto { x: f64, y: f64 }
+fn mover_x(p: &mut Punto, dx: f64) { p.x = p.x + dx; }
+fn main() -> f64 {
+    let mut punto = Punto { x: 1.0, y: 2.0 };
+    mover_x(&mut punto, 3.0);
+    punto.x
+}""")
+    compartida = compilar_programa("""struct Punto {
+    x: i32, activo: bool, letra: char, valor: f64
+}
+fn main() -> i32 {
+    let punto = Punto { x: 10, activo: true, letra: 'ñ', valor: 2.5 };
+    let referencia = &punto;
+    if referencia.activo && referencia.letra == 'ñ' && referencia.valor == 2.5 {
+        return referencia.x;
+    }
+    return 0;
+}""")
+
+    assert oficial["valido"]
+    assert ejecutar_modulo_wasm(oficial["wasm"]) == pytest.approx(4.0)
+    assert compartida["valido"]
+    assert ejecutar_modulo_wasm(compartida["wasm"]) == 10
+
+
+def test_borrowing_estructuras_escrituras_compuestas_y_aislamiento():
+    mutacion = compilar_programa("""struct Punto { x: i32, y: f64 }
+fn cambiar(p: &mut Punto) { p.x += 2; p.y *= 2.0; }
+fn main() -> i32 {
+    let mut punto = Punto { x: 10, y: 2.5 };
+    cambiar(&mut punto);
+    if punto.y == 5.0 { return punto.x; }
+    return 0;
+}""")
+    independientes = compilar_programa("""struct Punto { x: i32, y: f64 }
+fn mover(p: &mut Punto) { p.x = 30; }
+fn main() -> i32 {
+    let mut primero = Punto { x: 10, y: 1.0 };
+    let mut segundo = Punto { x: 20, y: 2.0 };
+    mover(&mut segundo);
+    return primero.x + segundo.x;
+}""")
+    ambitos = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let mut punto = Punto { x: 10 };
+    { let exterior = &punto;
+      { let punto = Punto { x: 20 }; let interior = &punto; if interior.x != 20 { return 0; } }
+      if exterior.x != 10 { return 0; }
+    }
+    { let referencia = &mut punto; referencia.x = 25; }
+    punto.x
+}""")
+    invalida = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let punto = Punto { x: 1 };
+    let referencia = &punto;
+    referencia.x = 2;
+    0
+}""")
+    exclusivo = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let mut punto = Punto { x: 1 };
+    let referencia = &mut punto;
+    referencia.x = 2;
+    punto.x
+}""")
+
+    assert mutacion["valido"]
+    assert ejecutar_modulo_wasm(mutacion["wasm"]) == 12
+    assert independientes["valido"]
+    assert ejecutar_modulo_wasm(independientes["wasm"]) == 40
+    assert ambitos["valido"]
+    assert ejecutar_modulo_wasm(ambitos["wasm"]) == 25
+    assert not invalida["valido"]
+    assert invalida["wasm"] is None
+    assert not exclusivo["valido"]
+    assert exclusivo["wasm"] is None
+
+
 @pytest.mark.parametrize(
     "codigo",
     [

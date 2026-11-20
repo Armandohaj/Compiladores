@@ -68,6 +68,7 @@ class EstadoModulo:
     siguiente_enum: int = 0
     prestamos: dict | None = None
     escalares_en_memoria: set | None = None
+    origenes_prestados: set | None = None
 
 
 @dataclass
@@ -109,6 +110,15 @@ def _tamano_y_alineacion_escalar(tipo):
         return None
     tamano = _tamano_elemento_arreglo(tipo)
     return tamano, tamano
+
+
+def _referencia_admitida(tipo, estructuras):
+    referencia = separar_referencia(tipo)
+    if referencia is None:
+        return False
+    return _escalar_prestable(referencia[1]) or _distribucion_estructura(
+        referencia[1], estructuras
+    ) is not None
 
 
 def _carga_escalar_memoria(tipo):
@@ -621,8 +631,8 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
         if prestamo is None:
             _error("El préstamo no está disponible para generar WASM.", contexto.borrowExpr())
         identificador = prestamo["simbolo_id"]
-        if identificador not in nombres_funcion.escalares_en_memoria:
-            _error("Solo se admiten préstamos de variables escalares locales.", contexto.borrowExpr())
+        if identificador not in nombres_funcion.origenes_prestados:
+            _error("El origen del préstamo no está disponible para generar WASM.", contexto.borrowExpr())
         instrucciones = [f"local.get $local_{identificador}"]
         tipo_operando = tipos.get(contexto.borrowExpr())
     elif contexto.dereferenceExpr() is not None:
@@ -693,6 +703,11 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     if "normal" not in salidas_control(contexto.primary()):
         return instrucciones
     tipo_base = tipos[contexto.primary()]
+    referencia = separar_referencia(tipo_base)
+    if referencia is not None:
+        if _distribucion_estructura(referencia[1], nombres_funcion.estructuras) is None:
+            _error("Solo se admiten accesos mediante referencias a estructuras locales.", contexto)
+        tipo_base = referencia[1]
     estructura = _distribucion_estructura(tipo_base, nombres_funcion.estructuras)
     if estructura is not None:
         accesos = list(accesos_lectura(contexto))
@@ -1598,7 +1613,11 @@ def _compilar_direccion_estructura(asignacion, identificador, simbolos, estructu
     accesos = list(accesos_escritura(asignacion))
     if len(accesos) != 1 or accesos[0][0] != "nombre":
         _error("Solo se admite la asignación directa a campos de estructuras locales.", asignacion)
-    estructura = _distribucion_estructura(simbolos[identificador]["tipo"], estructuras)
+    tipo_base = simbolos[identificador]["tipo"]
+    referencia = separar_referencia(tipo_base)
+    if referencia is not None:
+        tipo_base = referencia[1]
+    estructura = _distribucion_estructura(tipo_base, estructuras)
     if estructura is None:
         _error("La asignación no corresponde a una estructura local admitida.", asignacion)
     nombre = accesos[0][1].IDENT().getText()
@@ -1684,7 +1703,7 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
     if any(
         tipo not in {"i32", "bool", "f64", "char", "String"}
-        and not _escalar_prestable((separar_referencia(tipo) or (None, None))[1])
+        and not _referencia_admitida(tipo, nombres_funcion.estructuras)
         for tipo in firma["parametros"]
     ):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
@@ -1903,19 +1922,19 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         tipo = analisis["simbolos"][identificador]["tipo"]
         referencia = separar_referencia(tipo)
         if referencia is not None:
-            if not _escalar_prestable(referencia[1]):
-                _error("Solo se admiten parámetros referencia escalares.", funcion)
+            if not _referencia_admitida(tipo, nombres_funcion.estructuras):
+                _error("Solo se admiten parámetros referencia escalares o de estructuras locales.", funcion)
             continue
         if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, nombres_funcion.estructuras) is not None or _info_enum(tipo, nombres_funcion.enumeraciones) is not None:
             _error("Los parámetros de valores compuestos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
         referencia = separar_referencia(tipo)
-        if referencia is not None and not _escalar_prestable(referencia[1]):
-            _error("Solo se admiten referencias escalares locales.", funcion)
+        if referencia is not None and not _referencia_admitida(tipo, nombres_funcion.estructuras):
+            _error("Solo se admiten referencias escalares o de estructuras locales.", funcion)
         if tipo not in {"i32", "bool", "f64", "char", "String"} and referencia is None and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _info_tupla(tipo) is None and _info_estructura(tipo, nombres_funcion.estructuras) is None and _info_enum(tipo, nombres_funcion.enumeraciones) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
-    escalares_en_memoria = {
+    origenes_prestados = {
         prestamo["simbolo_id"]
         for prestamo in analisis["prestamos"].values()
         if analisis["simbolos"][prestamo["simbolo_id"]]["funcion"] == nombre
@@ -1924,9 +1943,15 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         identificador: declaracion
         for declaracion, identificador in analisis["declaraciones"].items()
     }
-    for identificador in escalares_en_memoria:
-        if identificador in parametros or not _escalar_prestable(analisis["simbolos"][identificador]["tipo"]):
-            _error("Solo se admiten préstamos de variables escalares locales.", funcion)
+    escalares_en_memoria = set()
+    for identificador in origenes_prestados:
+        tipo = analisis["simbolos"][identificador]["tipo"]
+        if identificador in parametros:
+            _error("Solo se admiten préstamos de variables escalares o estructuras locales.", funcion)
+        if _escalar_prestable(tipo):
+            escalares_en_memoria.add(identificador)
+        elif _distribucion_estructura(tipo, nombres_funcion.estructuras) is None:
+            _error("Solo se admiten préstamos de variables escalares o estructuras locales.", funcion)
         if type(declaraciones_por_id.get(identificador)).__name__ == "PatternContext":
             _error("Los préstamos de receptores de match todavía no están implementados.", funcion)
     parametros_wat = " ".join(
@@ -1955,6 +1980,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     nombres_funcion.siguiente_enum = 0
     nombres_funcion.prestamos = analisis["prestamos"]
     nombres_funcion.escalares_en_memoria = escalares_en_memoria
+    nombres_funcion.origenes_prestados = origenes_prestados
     continua = True
     for sentencia in funcion.block().statement():
         instrucciones.extend(
