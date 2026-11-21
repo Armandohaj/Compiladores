@@ -608,6 +608,85 @@ fn main() -> i32 {
     assert ejecutar_main_con_entradas(efectos["wasm"], [20]) == (21, [20])
 
 
+def test_enumeraciones_con_datos_string_mueven_y_conservan_contenido():
+    principal = compilar_programa("""enum Resultado {
+    Correcto(i32),
+    Error(String),
+    Vacio
+}
+fn identidad(valor: Resultado) -> Resultado { return valor; }
+fn main() -> i32 {
+    let resultado = identidad(Resultado::Error("Falló"));
+    return match resultado {
+        Resultado::Correcto(_) => 0,
+        Resultado::Error(_) => 1,
+        Resultado::Vacio => 2
+    };
+}""")
+    receptor = compilar_programa("""enum Resultado { Error(String), Vacio }
+fn recibir(mensaje: String) -> i32 { return 3; }
+fn identidad(valor: Resultado) -> Resultado { return valor; }
+fn main() -> i32 {
+    let resultado = identidad(Resultado::Error("Falló"));
+    return match resultado {
+        Resultado::Error(mensaje) => recibir(mensaje),
+        Resultado::Vacio => 0
+    };
+}""")
+    reasignacion = compilar_programa("""enum Resultado { Error(String), Vacio }
+fn main() -> i32 {
+    let mut resultado = Resultado::Error("antes");
+    resultado = Resultado::Error("después");
+    return match resultado {
+        Resultado::Error("después") => 4,
+        Resultado::Error(_) => 0,
+        Resultado::Vacio => 0
+    };
+}""")
+    movimiento_invalido = compilar_programa("""enum Resultado { Error(String), Vacio }
+fn main() -> i32 {
+    let resultado = Resultado::Error("Falló");
+    let movido = resultado;
+    return match resultado { Resultado::Error(_) => 1, Resultado::Vacio => 0 };
+}""")
+
+    for resultado, esperado in [(principal, 1), (receptor, 3), (reasignacion, 4)]:
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+    assert not movimiento_invalido["valido"]
+    assert movimiento_invalido["wasm"] is None
+
+
+def test_patrones_de_enum_f64_negativos_y_string_utf8():
+    decimal = compilar_programa("""enum Dato {
+    Valor(f64),
+    Error(String)
+}
+fn main() -> i32 {
+    let dato = Dato::Valor(-1.5);
+    return match dato {
+        Dato::Valor(-1.5) => 1,
+        Dato::Valor(_) => 0,
+        Dato::Error(_) => 0
+    };
+}""")
+    utf8 = compilar_programa("""enum Dato { Valor(i32), Error(String) }
+fn main() -> i32 {
+    let dato = Dato::Error("Falló");
+    return match dato {
+        Dato::Valor(_) => 0,
+        Dato::Error("Falló") => 2,
+        Dato::Error(_) => 0
+    };
+}""")
+
+    for resultado, esperado in [(decimal, 1), (utf8, 2)]:
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
 def test_funciones_con_parametros_y_retornos_de_enumeraciones():
     con_datos = compilar_programa("""enum Resultado { Correcto(i32), Vacio }
 fn identidad(valor: Resultado) -> Resultado { return valor; }
@@ -1148,7 +1227,6 @@ def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
 @pytest.mark.parametrize(
     "codigo",
     [
-        "enum E { A, B(String) } fn main() -> i32 { return 0; }",
         "enum E { A } fn main() -> i32 { let valor = E::B; return 0; }",
         "enum E { A(i32) } fn main() -> i32 { let uno = E::A(1); let dos = E::A(1); if uno == dos { return 1; } return 0; }",
     ],

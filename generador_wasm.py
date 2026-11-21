@@ -233,7 +233,7 @@ def _distribucion_enum(tipo, enumeraciones):
         desplazamiento = 4
         campos = []
         for campo in datos.get(variante, []):
-            if campo not in {"i32", "bool", "char", "f64"}:
+            if campo not in {"i32", "bool", "char", "f64", "String"}:
                 return None
             alineacion = 8 if campo == "f64" else 4
             desplazamiento = (desplazamiento + alineacion - 1) & ~(alineacion - 1)
@@ -288,9 +288,16 @@ def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
     if estructura is not None:
         _, tamano, alineacion = estructura
         return tamano, alineacion
-    enumeracion = _distribucion_enum(tipo, enumeraciones)
-    if enumeracion is not None:
-        _, tamano, alineacion = enumeracion
+    enumeracion = _info_enum(tipo, enumeraciones)
+    if enumeracion is not None and all(
+        campo != "String"
+        for campos in enumeracion.get("datos_variantes", {}).values()
+        for campo in campos
+    ):
+        distribucion = _distribucion_enum(tipo, enumeraciones)
+        if distribucion is None:
+            return None
+        _, tamano, alineacion = distribucion
         return tamano, alineacion
     return None
 
@@ -889,12 +896,17 @@ def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, 
         elif tipo == "char" and literal.CHAR_LITERAL() is not None:
             valor = f"i32.const {_valor_char(literal.CHAR_LITERAL().getText(), literal)}"
         elif tipo == "f64" and literal.FLOAT() is not None:
-            valor = f"f64.const {literal.FLOAT().getText()}"
+            valor = f"f64.const {literal.getText()}"
+        elif tipo == "String" and literal.STRING_LITERAL() is not None:
+            descriptor = nombres_funcion.memoria.agregar(
+                _valor_string(literal.STRING_LITERAL().getText(), literal), literal
+            )
+            valor = f"i32.const {descriptor}"
         else:
             _error("El patrón de dato de enumeración todavía no está implementado.", patron)
         return [
             f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
-            valor, f"{tipo}.eq" if tipo == "f64" else "i32.eq",
+            valor, "call $string_eq" if tipo == "String" else f"{tipo}.eq" if tipo == "f64" else "i32.eq",
         ], []
     if patron.IDENT():
         identificador = nombres_funcion.declaraciones.get(patron)

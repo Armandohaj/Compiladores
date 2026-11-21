@@ -225,17 +225,22 @@ Las enumeraciones sin datos se representan como `i32` usando exactamente las
 etiquetas entregadas por el frontend. Si una enumeración contiene alguna
 variante con datos, todos sus valores se almacenan independientemente en la
 memoria lineal: la etiqueta ocupa los primeros 4 bytes y los datos `i32`,
-`bool`, `char` y `f64` siguen con sus alineaciones naturales. Se admiten
-variables locales inferidas o anotadas, reasignación de variables `mut` y
-copias locales independientes de esos valores. `match` compara primero la
+`bool`, `char`, `f64` y `String` siguen con sus alineaciones naturales. Los
+campos `String` guardan el puntero a su descriptor UTF-8 existente. Se admiten
+variables locales inferidas o anotadas y reasignación de variables `mut`.
+Las enumeraciones con sólo datos Copy mantienen sus copias locales independientes;
+las que contienen `String` son Move y transfieren su puntero sin usar `memory.copy`.
+`match` compara primero la
 etiqueta y después los patrones literales compatibles; los receptores usan los
 identificadores resueltos por el frontend y sólo se cargan en el brazo elegido.
 Las comparaciones `==` y `!=` de enums con datos se rechazan por ahora, porque
 no hay igualdad estructural implementada. Las enumeraciones admitidas pueden
 usarse como parámetros y retornos: las variantes sin datos viajan como su
 etiqueta `i32` y las variantes con datos Copy se copian a un bloque independiente
-antes de una llamada. No se admiten `String`, arreglos, tuplas, estructuras u
-otros enums como datos asociados, ni constantes globales de enum.
+antes de una llamada; las variantes Move con `String` se transfieren. Los
+patrones `String` comparan contenido mediante `$string_eq`. No se admiten
+arreglos, tuplas, estructuras u otros enums como datos asociados, ni constantes
+globales de enum.
 
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
