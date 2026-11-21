@@ -1,7 +1,8 @@
 # Cómo leer el compilador RustiQ
 
-Esta guía acompaña a los comentarios del código. Los ejemplos describen
-el frontend implementado; la generación y ejecución Wasm son otra etapa.
+Esta guía acompaña a los comentarios del código. El frontend entrega su
+análisis al generador WebAssembly, que produce y ejecuta módulos reales dentro
+del subconjunto documentado en `WASM.md`.
 
 ## Orden recomendado de lectura
 
@@ -15,6 +16,8 @@ el frontend implementado; la generación y ejecución Wasm son otra etapa.
 | `evaluador_constantes.py` | Cómo calcular valores constantes sin ejecutar funciones RustiQ. |
 | `tipos_compuestos.py` | Representación de arreglos y tuplas y orden de los accesos. |
 | `resolucion_variables.py` | Cómo vincular un uso con la declaración correcta. |
+| `generador_wasm.py` | Cómo usa el árbol y los mapas semánticos para emitir WAT y WASM. |
+| `app.py` | Cómo expone el análisis y la compilación al editor web. |
 | `ejecutar_pruebas.py` | Cómo ejecutar todas las suites y detectar fallos. |
 
 ## Qué significa `ctx`
@@ -79,6 +82,9 @@ inválido, entrega errores y deja vacíos los mapas destinados al backend.
 - `simbolos`: ID de declaración -> información de variable o constante.
 - `declaraciones`: nodo de declaración -> ID.
 - `referencias`: nodo de lectura o asignación -> ID de su declaración.
+- `enumeraciones`: variantes y etiquetas resueltas para cada enum.
+- `prestamos`: nodo de préstamo -> ID del origen, tipo y mutabilidad.
+- `llamadas_incorporadas`: llamada -> `read` o `print`.
 
 Los identificadores numéricos distinguen declaraciones del mismo nombre.
 Los nodos son claves dentro de Python; el árbol y esos mapas no se envían
@@ -98,9 +104,13 @@ Los archivos de `generated/` se regeneran desde la gramática. Las
 explicaciones se mantienen en los archivos escritos a mano para que no
 se pierdan al volver a generar el parser.
 
-## Qué sigue pendiente
+## Alcance pendiente
 
-Enumeraciones, `match`, ownership, movimientos, préstamos y revisión final
-de caminos de control e integración. También hacen falta las pruebas del
-backend y de ejecución Wasm. Una colección grande de pruebas de frontend
-no equivale a haber completado todos los requisitos del proyecto.
+El frontend ya incorpora enumeraciones, `match`, ownership, movimientos y
+préstamos; los errores de esas fases impiden entregar datos al backend. El
+generador produce WASM real y cuenta con pruebas de validación y ejecución con
+Wasmtime. Aun así, no todo lo que acepta el frontend tiene representación en
+el backend: continúan rechazándose de forma controlada los tipos compuestos o
+préstamos fuera del subconjunto de `WASM.md`, además de varios patrones y
+formas de referencia avanzadas. Las pruebas del frontend y las de WASM cubren
+capas distintas y deben ejecutarse juntas.

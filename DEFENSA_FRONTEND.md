@@ -1,8 +1,9 @@
 # Guía para defender el frontend de RustiQ
 
 Esta guía explica la gramática y el análisis del código. El frontend comprueba
-programas y entrega información al generador WebAssembly. Las pruebas de análisis
-no demuestran que el módulo WASM ya se genere y ejecute correctamente.
+programas y entrega información al generador WebAssembly. Las pruebas de
+análisis demuestran el frontend; la validación y ejecución del módulo real se
+comprueban adicionalmente en las pruebas del generador.
 
 ## Cómo explicar el recorrido de un programa
 
@@ -54,8 +55,8 @@ fn main() -> i32 {
 
 Explicar: se registran primero las firmas de las funciones. Después se validan
 los argumentos, los tipos y el retorno. Los parámetros están inicializados
-al entrar en la función. El resultado esperado al ejecutarlo es 30; aquí se
-verificó su aceptación por el frontend, no su ejecución WASM.
+al entrar en la función. El resultado esperado al ejecutarlo es 30; este tipo
+de función también está cubierto por la ejecución WASM real.
 
 ## Ejemplo válido 2 Mutabilidad y ciclos
 
@@ -104,8 +105,9 @@ fn main() -> i32 {
 Explicar: BASE se calcula como 10 durante la compilación. Estado::Listo lleva
 una tupla como dato asociado. El receptor numero existe solo en su brazo.
 La exhaustividad comprueba que no queden variantes ni combinaciones de datos
-sin cubrir. El backend recibe BASE ya calculada. El análisis de propiedad de
-estos valores todavía está pendiente y no debe presentarse como implementado.
+sin cubrir. El backend recibe BASE ya calculada. El análisis de propiedad ya
+clasifica transferencias y movimientos; este ejemplo sigue siendo solo de
+frontend porque el backend no admite enums con tuplas como datos asociados.
 
 ## Ejemplo válido 4 Entrada y salida reconocidas
 
@@ -121,8 +123,9 @@ fn main() -> i32 {
 
 Explicar: el analizador no pide datos ni imprime los valores del programa.
 llamadas_incorporadas identifica las llamadas para que el backend genere las
-importaciones acordadas env.read_i32 y env.print_i32. La ejecución necesita
-que Armando implemente y pruebe esas importaciones en web y escritorio.
+importaciones acordadas env.read_i32 y env.print_i32. Los ejecutores web y de
+escritorio ya proporcionan esas importaciones y consumen las entradas dadas
+antes de iniciar la ejecución.
 
 ## Ejemplo inválido 1 Error léxico
 
@@ -176,9 +179,8 @@ Para las regresiones del frontend:
 python ejecutar_pruebas.py
 ```
 
-Último resultado verificado antes de preparar esta guía: 752/752 comprobaciones
-en 31 suites. Los siete ejemplos anteriores se verificaron adicionalmente
-sin modificar ese contador ni agregar otra suite.
+La referencia actual del frontend es 966/966 comprobaciones. La suite pytest
+del proyecto añade validación y ejecución de los módulos WASM reales.
 
 ## Preguntas habituales
 
@@ -207,8 +209,9 @@ fuera de esos casos ni sustituye la validación y ejecución de WASM.
 
 ## Pendientes que debo declarar
 
-- Ownership y borrowing requieren acuerdo con Armando antes de implementar
-  las reglas de copia, movimiento, referencias y duración de préstamos.
+- Ownership y borrowing ya se validan en el frontend y el backend implementa
+  un subconjunto documentado de copias y referencias. No deben presentarse
+  como soporte completo de Rust ni de todos los compuestos.
 - No se detectan brazos redundantes de match.
 - Los ciclos mantienen un análisis conservador: un ciclo por sí solo no
   garantiza retorno ni inicialización de variables externas al salir.
@@ -218,5 +221,6 @@ fuera de esos casos ni sustituye la validación y ejecución de WASM.
   asignaciones, ciclos, saltos ni variables locales mutables.
 - La revisión de combinaciones adicionales de flujo y expresiones sigue
   abierta. No afirmar que todos los casos posibles de saltos están resueltos.
-- La integración, validación del binario y ejecución real WASM se comprueban
-  junto con Armando. Los avances del frontend no sustituyen esas evidencias.
+- La integración, validación del binario y ejecución real WASM se cubren con
+  la suite pytest y deben complementarse con las comprobaciones manuales del
+  editor y los ejecutores descritas en el README.

@@ -10,9 +10,9 @@
 - Los arreglos se clasifican por el tipo de elemento, incluso con longitud cero.
 - Los movimientos parciales de campos quedan fuera del alcance inicial.
 
-Un valor Move no podrá usarse después de transferir su propiedad hasta una
-reinicialización válida según las reglas de mutabilidad. Esa validación aún
-no se ha conectado al analizador en esta primera etapa.
+Un valor Move no puede usarse después de transferir su propiedad hasta una
+reinicialización válida según las reglas de mutabilidad. Esa validación está
+conectada al análisis semántico y sus errores bloquean la generación WASM.
 
 ## Primera etapa implementada
 
@@ -28,7 +28,7 @@ No modifica la gramática ni los campos de analizar_programa. No copia memoria,
 no mueve variables y no comprueba préstamos. El backend debe copiar los datos
 de un compuesto Copy, no limitarse a compartir su dirección.
 
-## Borrowing acordado para la implementación posterior
+## Borrowing implementado y representación del backend
 
 Se permitirán múltiples referencias inmutables &T o una mutable exclusiva
 &mut T. Se impedirán movimientos y modificaciones que entren en conflicto
@@ -41,9 +41,9 @@ lineal, usando load/store y reservando memoria para valores prestados cuando
 corresponda. Los registros semánticos seguirán describiendo tipos RustiQ,
 no confundirán &T con el tipo fuente i32 por esa representación del backend.
 
-El nuevo mapa de préstamos debe identificar el nodo ANTLR del préstamo,
-el ID del símbolo prestado, el tipo y la mutabilidad. Su formato exacto
-se coordinará antes de conectarlo al generador; todavía no se agrega ese mapa.
+El mapa `prestamos` identifica el nodo ANTLR del préstamo, el ID del símbolo
+prestado, su tipo y mutabilidad. `analizador_prestamos.py` lo completa antes
+de generar código; su contrato y límites del backend están en `BORROWING.md`.
 
 ## Pruebas de esta etapa
 
@@ -52,7 +52,9 @@ python ejecutar_pruebas.py
 
 Resultado verificado en la copia de trabajo: 31/31 pruebas nuevas de
 clasificación; total 783/783 comprobaciones del frontend en 32 suites.
-No son pruebas de movimientos, préstamos ni ejecución WASM.
+Ese resultado corresponde a la primera entrega de clasificación; actualmente
+las pruebas del frontend cubren movimientos y préstamos, y la suite WASM
+comprueba el subconjunto que el generador puede materializar.
 
 ## Segunda etapa implementada Movimientos de valores completos
 
@@ -141,8 +143,9 @@ fn main() -> String {
 
 Ejecutar python pruebas_movimientos.py y python ejecutar_pruebas.py.
 Resultado local: 40/40 comprobaciones nuevas y 823/823 en 33 suites.
-Son pruebas del frontend, no de ejecución WASM. Borrowing, referencias y el
-mapa acordado de préstamos permanecen pendientes de implementación.
+Son pruebas de frontend de esa etapa. Borrowing, referencias y el mapa
+`prestamos` ya están integrados; el alcance WASM de referencias se detalla en
+`BORROWING.md` y `WASM.md`.
 
 ## Primera implementación de borrowing
 

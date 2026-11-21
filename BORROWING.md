@@ -1,7 +1,8 @@
-# Borrowing de variables completas Primera implementación
+# Borrowing de valores completos
 
-Base de integración: 015138c, posterior a la validación de ownership.
-Esta etapa implementa análisis del frontend; no genera ni ejecuta WASM.
+Base de la integración inicial: 015138c, posterior a la validación de
+ownership. El frontend valida los préstamos y el generador WASM implementa
+el subconjunto de referencias descrito al final de este documento.
 
 ## Reglas admitidas
 
@@ -78,9 +79,9 @@ el ID de r identifica la variable que contiene la referencia.
 - Las expresiones entre paréntesis conservan sus nodos y tipos. Los parámetros
   referencia se identifican con los símbolos y firmas de funciones existentes.
 
-Armando deberá implementar operaciones de memoria y reservar almacenamiento
-para un origen escalar prestado. Para compuestos utilizará su layout acordado.
-Los campos anteriores y los IDs no cambian de formato.
+El generador reserva almacenamiento para un origen escalar prestado y reutiliza
+el layout de los compuestos que ya viven en memoria. Los campos anteriores y
+los IDs no cambian de formato.
 
 ## Ejemplos
 
@@ -134,11 +135,13 @@ fn main() -> i32 {
 }
 ```
 
-## Límites de esta etapa
+## Límites del frontend
 
 Se rechazan de forma controlada préstamos a campos, elementos, constantes
-globales y temporales; représtamos y referencias anidadas; referencias en
-arreglos, tuplas, estructuras o enums; y patrones sobre referencias.
+globales y temporales; représtamos y referencias anidadas; y patrones sobre
+referencias. El frontend sí permite prestar valores completos de arreglos,
+tuplas, estructuras, enums y `String`, pero el backend solo materializa el
+subconjunto indicado más abajo.
 
 No se admite todavía asignar o reasignar una variable referencia: utilizar
 let r = &x con inicializador. Se rechazan todas las funciones que declaran
@@ -178,11 +181,9 @@ python pruebas_prestamos.py
 python ejecutar_pruebas.py
 ```
 
-Resultado local verificado: 68/68 pruebas nuevas; total 891/891 comprobaciones
-en 34 suites. Las 823 anteriores conservan sus expectativas.
-Las pruebas verifican el frontend y el contrato de nodos; no demuestran que
-los préstamos ya se ejecuten en WebAssembly. No se modificaron el generador,
-la web, Flask ni los ejecutores.
+Resultado histórico de esta etapa: 68/68 pruebas nuevas. Las pruebas de
+frontend verifican el contrato de nodos; las pruebas del generador validan y
+ejecutan con Wasmtime las referencias que el backend admite.
 
 ## Corrección: receptores de patrones de match
 
@@ -194,8 +195,9 @@ El mapa prestamos conserva exactamente su formato. El simbolo_id de un préstamo
 a un receptor es el ID existente de declaraciones[PatternContext], aunque tenga
 el mismo nombre que una variable exterior. No cambia la gramática ni el backend.
 
-Pruebas: python pruebas_prestamos_match.py (13/13); regresión completa
-904/904 comprobaciones en 35 suites. Estas pruebas no ejecutan WASM.
+Pruebas: `python pruebas_prestamos_match.py`. El generador admite préstamos
+compartidos de receptores de patrones escalares y de variantes compatibles;
+los demás receptores se rechazan controladamente.
 
 ## Accesos mediante referencias a valores compuestos
 
@@ -206,7 +208,7 @@ También se admiten accesos de tupla e índices de arreglo por la misma regla.
 Los préstamos siguen cubriendo la variable completa; no se crean préstamos
 parciales y no se permite extraer un campo Move para transferir su propiedad.
 
-### Adaptación necesaria en el backend
+### Representación en el backend
 
 No cambia la gramática ni se agregan claves a analizar_programa.
 PostfixContext conserva su PrimaryContext y los accesos existentes. Si el tipo
@@ -235,6 +237,9 @@ fn main() -> f64 {
 }
 ```
 
-Resultado esperado tras integrar WASM: 4.0. El frontend solo valida el programa.
-Pruebas nuevas: python pruebas_campos_referencias.py, 17/17.
-Regresión: 921/921 en 36 suites. La ejecución WASM queda a cargo de integración.
+El ejemplo genera WASM y devuelve `4.0` con Wasmtime. El backend también
+admite accesos por referencia a tuplas planas, arreglos unidimensionales y
+matrices bidimensionales con elementos básicos. Se rechazan préstamos de
+`String`, enums completos, compuestos anidados, receptores `f64`, préstamos
+de parámetros normales, retornos y reasignaciones de referencias; `*r` sobre
+un compuesto sigue rechazado para no crear copias que compartan memoria.

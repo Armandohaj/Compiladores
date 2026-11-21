@@ -19,7 +19,9 @@ fn main() -> i32 {
 - Constantes globales de estructuras y accesos a sus campos.
 - Rechazo de campos duplicados, ausentes, desconocidos o de tipo incorrecto.
 - Rechazo de tipos desconocidos y dependencias recursivas de estructuras por valor.
-- Las referencias y ownership no se incorporan todavía; tampoco la inicialización parcial por campos.
+- Ownership y referencias ya se validan; la inicialización parcial por campos
+  sigue fuera del alcance. El soporte WASM se limita a estructuras locales con
+  campos básicos y al préstamo de la estructura completa.
 
 ## Contrato para Anthony
 
@@ -44,8 +46,11 @@ En un destino, `referencias[asignacion]` sigue apuntando al símbolo base y
 `tipos_expresiones[asignacion]` entrega el tipo final del destino.
 No confundir nombres de tipos ni nombres de campos con variables locales.
 
-No se modifica la interfaz web ni se implementa el backend. Los índices
-dinámicos de arreglos todavía requieren guardas en la ejecución Wasm.
+El generador utiliza el orden de este registro para el layout de estructuras
+locales con campos `i32`, `f64`, `bool` y `char`. Admite lectura, escritura,
+copia independiente y parámetros por referencia de esas estructuras. No
+admite estructuras con campos `String` o compuestos, ni parámetros o retornos
+por valor de estructuras.
 
 ## Verificación
 
@@ -54,6 +59,6 @@ java -jar tools/antlr-4.13.2-complete.jar -Dlanguage=Python3 -visitor -no-listen
 python ejecutar_pruebas.py
 ```
 
-Resultado verificado con Python 3.12.14 y ANTLR/runtime 4.13.2:
-460/460 comprobaciones en 17 suites, incluidos 73 casos de estructuras.
-Confirmar en Python 3.14 del equipo antes de publicar los cambios.
+La validación actual del proyecto se ejecuta con `python ejecutar_pruebas.py`
+y `python -m pytest tests -q`; la segunda suite valida la generación y
+ejecución WASM del subconjunto admitido.

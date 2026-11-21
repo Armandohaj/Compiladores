@@ -175,8 +175,9 @@ ni parámetros, retornos o comparaciones de matrices; las matrices con
 Con el análisis de ownership actual, `String` y los arreglos o matrices que lo
 contienen son valores `Move`. Por ello, comparar un elemento `String` es válido,
 pero retornarlo, asignarlo o pasarlo por valor intentaría hacer un movimiento
-parcial y el frontend lo rechaza antes de generar WASM. Esta restricción se
-mantiene hasta que exista soporte de borrowing; el generador no la elude.
+parcial y el frontend lo rechaza antes de generar WASM. El backend ya admite
+préstamos de contenedores con elementos básicos, pero no de `String`; esta
+restricción se mantiene para evitar transferencias parciales incorrectas.
 
 También se admiten tuplas locales de dos o más campos `i32`, `f64`, `bool` y
 `char`, declaradas con tipo explícito o inferido. Cada tupla reserva un bloque
@@ -217,9 +218,10 @@ como valor del `match` se materializa con el mismo layout de memoria de las
 tuplas locales. El valor se evalúa una sola vez en un local Wasm y los brazos
 se prueban en el orden escrito, por lo que sólo se ejecuta el primer brazo
 compatible. Los receptores reutilizan su identificador resuelto por el frontend
-y los brazos pueden usar bloques con valor, `return`, `read()` y `print()`. Aún
-no se admiten patrones o valores de `f64` y `String` fuera de campos de tupla,
-ni tuplas anidadas; se rechazan con un error de generación controlado.
+y los brazos pueden usar bloques con valor, `return`, `read()` y `print()`. No
+se admiten `match` directos sobre `f64` o `String`, ni tuplas anidadas. Los
+campos `f64` y `String` de patrones de enum se describen en la sección de
+enumeraciones; las demás combinaciones se rechazan controladamente.
 
 Las enumeraciones sin datos se representan como `i32` usando exactamente las
 etiquetas entregadas por el frontend. Si una enumeración contiene alguna

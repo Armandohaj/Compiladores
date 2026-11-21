@@ -13,7 +13,7 @@ nueva alternativa, junto con SEMICOLON(). La expresión conserva su tipo en
 tipos_expresiones. Las llamadas directas conservan la alternativa anterior
 StatementContext.functionCall() y llamadas_incorporadas conserva su formato.
 
-El generador debe evaluar la expresión y descartar el resultado si produce
+El generador evalúa la expresión y descarta el resultado si produce
 un valor. En WASM esto suele requerir drop según la representación y cantidad
 de valores de la expresión; unit no produce valor. Si hay return, break o
 continue, se debe respetar el salto, sin intentar descartar un resultado que
@@ -41,5 +41,5 @@ El subconjunto de inicializadores constantes sigue exigiendo bloques puros:
 no se amplía su evaluación con esta modificación.
 
 Ejecutar python pruebas_expresiones_sentencia.py (17/17) y
-python ejecutar_pruebas.py (966/966 en 38 suites). Estas pruebas validan
-el frontend; el generador requiere adaptar esta alternativa y probar WASM.
+python ejecutar_pruebas.py. Estas pruebas validan el frontend; el generador
+emite `drop` cuando corresponde y sus pruebas WASM cubren esa alternativa.

@@ -12,13 +12,25 @@ escritorio.
 
 ## Instalación en Windows
 
-Desde la raíz del repositorio:
+Cloná el repositorio y entrá en su carpeta:
+
+```powershell
+git clone https://github.com/Armandohaj/Compiladores.git
+Set-Location .\Compiladores
+```
+
+Creá y activá el entorno virtual. Si PowerShell bloquea la activación, ejecutá
+primero `Set-ExecutionPolicy -Scope Process Bypass` en esa misma ventana.
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-editor-web.txt -r requirements-wasm.txt
 ```
+
+Ese comando instala ANTLR4, Flask y Wasmtime con las versiones usadas por el
+proyecto. Todos los comandos siguientes se ejecutan desde esa misma terminal
+con el entorno virtual activo.
 
 ## Editor web
 
@@ -29,7 +41,7 @@ python app.py
 Abrí `http://127.0.0.1:5000` en el navegador. El editor permite cargar un
 archivo, analizarlo, compilarlo, ejecutar el módulo y descargar `programa.wasm`.
 Los errores léxicos, sintácticos, semánticos o de generación aparecen con línea
-y columna.
+y columna; al seleccionar un error, el editor lo ubica en el código.
 
 La ejecución web admite por ahora `main()` sin parámetros que retorne `i32`.
 Los valores para `read()` se indican antes de ejecutar, como enteros `i32`
@@ -39,7 +51,7 @@ resultado. Cada ejecución tiene un límite de tres segundos.
 ## Ejecutar código RustiQ desde la terminal
 
 ```powershell
-python .\ejecutar_escritorio.py .\ejemplo.rustiq
+python .\ejecutar_escritorio.py .\ejemplos\01_aritmetica_funciones.rustiq
 python .\ejecutar_escritorio.py .\ejemplo.rustiq --entrada 15 --entrada 22
 ```
 
@@ -48,8 +60,11 @@ en un proceso separado y muestra las salidas de `print()` y el resultado final.
 
 ## Ejecutar un WASM existente
 
+El primer comando anterior deja el binario junto al fuente. Podés ejecutar
+exactamente ese mismo archivo sin recompilar RustiQ:
+
 ```powershell
-python .\ejecutar_wasm.py .\programa.wasm
+python .\ejecutar_wasm.py .\ejemplos\01_aritmetica_funciones.wasm
 python .\ejecutar_wasm.py .\programa.wasm --entrada 15 --entrada 22
 ```
 
@@ -59,6 +74,31 @@ También se puede abrir una ventana sencilla con:
 ```powershell
 python .\visor_wasm.py
 ```
+
+En la ventana, elegí **Abrir archivo**, seleccioná un `.wasm` generado y pulsá
+**Ejecutar**. El visor ejecuta directamente el binario seleccionado; no vuelve
+a compilar el archivo RustiQ.
+
+## Ejemplos
+
+Los archivos en `ejemplos\` no requieren entradas y tienen `main() -> i32`, por
+lo que se pueden ejecutar en el editor, la terminal y el visor después de
+compilarlos:
+
+- `01_aritmetica_funciones.rustiq`: variables, aritmética y funciones. Resultado: `25`.
+- `02_ciclo_while.rustiq`: variables mutables y ciclo `while`. Resultado: `10`.
+- `03_struct_enum_match.rustiq`: estructura, enum y `match`. Resultado: `7`.
+
+Para probar cualquiera desde la terminal:
+
+```powershell
+python .\ejecutar_escritorio.py .\ejemplos\02_ciclo_while.rustiq
+python .\ejecutar_wasm.py .\ejemplos\02_ciclo_while.wasm
+```
+
+En el editor web, iniciá `python app.py`, abrí `http://127.0.0.1:5000`, usá
+**Cargar archivo** para elegir un ejemplo y después pulsá **Compilar** o
+**Ejecutar**. La descarga guarda el mismo WASM que produjo la compilación.
 
 ## Pruebas
 

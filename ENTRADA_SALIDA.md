@@ -47,9 +47,10 @@ const LIMITE: i32 = read(); // La lectura sucede en ejecución.
 ## Defensa y ejecución
 
 El frontend comprueba tipos y registra llamadas: no solicita entrada ni
-imprime los valores del programa. Armando debe emitir las importaciones
-acordadas y proveerlas en web y escritorio. No se han probado aquí esas
-importaciones ni la ejecución WASM.
+imprime los valores del programa. El generador emite las importaciones
+acordadas y los ejecutores web y de escritorio las proporcionan. Las entradas
+se entregan antes de iniciar la ejecución, en el orden de las llamadas a
+`read`; las salidas de `print` se conservan en su orden.
 
 Ejecutar desde la raíz con el entorno virtual activo:
 ```bash
@@ -57,5 +58,6 @@ python pruebas_entrada_salida.py
 python ejecutar_pruebas.py
 ```
 
-Validación local: Python 3.12, runtime ANTLR 4.13.2, 36/36 comprobaciones
-nuevas; total 550/550 en 20 suites. No se modificó el código del backend.
+La suite del frontend y las pruebas WASM verifican por separado el contrato,
+las importaciones y la ejecución real. La falta de entradas o valores fuera
+del rango `i32` se informa como error; no se inventan valores.

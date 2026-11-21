@@ -23,8 +23,9 @@ Las lecturas del receptor se vinculan por referencias a esa misma identidad.
 Cada brazo tiene su propio ámbito y los receptores son inmutables.
 Los nombres read y print continúan protegidos también en los patrones.
 
-Armando debe adaptar la generación de estos nodos; estas pruebas no ejecutan WASM.
-No se modifica el backend ni se agregan claves al contrato público.
+El generador reutiliza estos nodos y los mapas existentes. Implementa `match`
+para escalares, tuplas planas admitidas y enums del subconjunto de `WASM.md`;
+no se agregan claves al contrato público.
 
 ## Bloques con valor y retornos implícitos
 
@@ -39,8 +40,6 @@ como retorno cuando corresponda al cuerpo de una función.
 
 La inicialización posterior a match combina los estados de todos sus brazos.
 Una variable queda definitivamente inicializada si recibe valor en todos ellos.
-
-## Pendiente
 
 ## Match en constantes globales
 
@@ -59,14 +58,15 @@ El valor calculado conserva el formato existente en simbolos[id]["valor"].
 El backend debe utilizar ese valor; no necesita ejecutar el match constante.
 Los símbolos locales de esta evaluación no representan variables de ejecución.
 
-Validación actual del frontend: 734/734 comprobaciones en 30 suites.
-Estas pruebas no verifican la ejecución WebAssembly.
+Las pruebas de constantes validan el frontend; el generador utiliza el valor
+constante ya calculado, sin volver a evaluar el `match` en tiempo de ejecución.
 
 No se detectan brazos redundantes. El tratamiento de saltos dentro de
 expresiones requiere una revisión adicional.
 
-Ownership y borrowing se implementarán después de acordar sus reglas.
-La ejecución WASM de las nuevas construcciones requiere integración del backend.
+Ownership y borrowing se validan antes de generar código. El backend conserva
+sus propias limitaciones: por ejemplo, no implementa patrones de tuplas
+anidadas ni préstamos de todos los valores compuestos.
 ## Ejemplos
 
 ```rust
@@ -94,8 +94,8 @@ Ejecutar desde la carpeta principal con el entorno virtual activo:
 - python pruebas_bloques.py
 - python ejecutar_pruebas.py
 
-Resultado verificado: 602/602 comprobaciones en 22 suites.
-Estas pruebas validan el frontend; no ejecutan WebAssembly.
+Estas pruebas validan el frontend. Las pruebas pytest del generador validan y
+ejecutan con Wasmtime los patrones que el backend admite.
 
 
 ## Saltos en argumentos e inicializadores
@@ -118,8 +118,8 @@ para la operación siguiente.
 Esta información debe considerarse junto con tipos_expresiones.
 No se agregan campos al resultado público de analizar_programa.
 
-Validación actual del frontend: 652/652 comprobaciones en 26 suites.
-La ejecución WASM requiere adaptación y pruebas del backend.
+El generador respeta `salidas_control` al compilar argumentos e
+inicializadores; los casos fuera de su subconjunto generan un error controlado.
 
 
 ## Saltos dentro de constructores
@@ -137,8 +137,8 @@ si ocurre uno, no se completa la construcción del valor.
 tipos_expresiones debe consultarse junto con salidas_control.
 Un tipo registrado no garantiza que la evaluación produzca un valor.
 
-Validación actual del frontend: 704/704 comprobaciones en 29 suites.
-Estas pruebas no verifican la ejecución WebAssembly.
+Las pruebas del generador cubren construcciones admitidas y conservan el
+rechazo controlado para construcciones compuestas fuera de alcance.
 
 
 ## Tipos esperados en bloques y match
@@ -155,4 +155,5 @@ Limitación: un bloque anidado usado como retorno implícito debe
 escribirse entre paréntesis para evitar que se interprete como sentencia.
 Ejemplo: fn vacio() -> [i32; 0] { ({ [] }) }
 
-Validación actual del frontend: 752/752 comprobaciones en 31 suites.
+La referencia actual del frontend es 966/966 comprobaciones; ejecutar
+`python ejecutar_pruebas.py` para comprobarla en la copia de trabajo.
