@@ -4,9 +4,50 @@ grammar RustiQ;
 // 1. PROGRAMA, FUNCIONES Y TIPOS
 // =====================================================
 
-// El archivo puede contener funciones y constantes globales.
+// Declaraciones permitidas en el archivo.
 program
-    : (functionDecl | constDecl)* EOF
+    : (functionDecl | constDecl | structDecl | enumDecl)* EOF
+    ;
+// Una enumeración debe declarar al menos una variante.
+// Ejemplo: enum Estado { Pendiente, Completado }
+enumDecl
+    : ENUM IDENT LBRACE variantDecl (COMMA variantDecl)* COMMA? RBRACE
+    ;
+
+// Variante sin datos o con tipos asociados.
+// Ejemplos: Vacio, Correcto(i32), Coordenada(i32, i32).
+variantDecl
+    : IDENT (LPAREN variantTypeList RPAREN)?
+    ;
+
+// Lista de tipos que necesita la variante.
+// Separa los tipos con comas y permite una coma final.
+variantTypeList
+    : type (COMMA type)* COMMA?
+    ;
+
+// Construcción de un valor de enumeración.
+//
+// Ejemplos:
+// Resultado::Vacio
+// Resultado::Correcto(10)
+// Resultado::Error("Archivo no encontrado")
+//
+// La gramática reconoce la forma de la llamada.
+// El semántico comprobará si la variante necesita datos,
+// cuántos recibe y si sus tipos son compatibles.
+enumValue
+    : IDENT DOUBLE_COLON IDENT (LPAREN argumentList? RPAREN)?
+    ;
+
+// Estructura nominal: cada nombre define un tipo diferente.
+// Todos sus campos deben indicarse al construir un valor.
+structDecl
+    : STRUCT IDENT LBRACE (fieldDecl (COMMA fieldDecl)* COMMA?)? RBRACE
+    ;
+
+fieldDecl
+    : IDENT COLON type
     ;
 
 // Constante global con tipo y valor obligatorios.
@@ -32,23 +73,38 @@ parameter
 // Tipos básicos y arreglos de tamaño fijo.
 // Ejemplos: i32, String, [i32; 3], [[bool; 2]; 3].
 type
-    : I32
+    : AMP MUT? type
+    | I32
     | F64
     | BOOL
     | CHAR
     | STRING
     | LBRACKET type SEMICOLON INT RBRACKET
+    | LPAREN type COMMA type (COMMA type)* COMMA? RPAREN
+    | IDENT
     ;
 // =====================================================
 // 2. BLOQUES Y SENTENCIAS
 // =====================================================
 
+// Un bloque contiene sentencias y una expresión final opcional.
+// Las sentencias realizan acciones.
+// La expresión final, sin punto y coma, produce el valor del bloque.
+//
+// Ejemplo:
+// {
+//     let base = 10;
+//     base + 1
+// }
+//
+// Si no tiene expresión final, su tipo será unit.
+// El analizador semántico comprobará esos tipos.
 block
-    : LBRACE statement* RBRACE
+    : LBRACE statement* expression? RBRACE
     ;
-
 statement
-    : letDecl
+    : constLocalDecl
+    | letDecl
     | assignment SEMICOLON
     | functionCall SEMICOLON
     | returnStmt
@@ -58,6 +114,9 @@ statement
     | breakStmt
     | continueStmt
     | block
+    // El resultado se descarta; la expresión final del bloque no lleva ;.
+    // Se conserva functionCall arriba para mantener su nodo en llamadas previas.
+    | expression SEMICOLON
     ;
 
 letDecl
@@ -66,7 +125,13 @@ letDecl
 
 // Asignación simple o compuesta a una variable.
 assignment
-    : IDENT indexAccess* assignmentOp expression
+    : IDENT (indexAccess | tupleAccess | fieldAccess)* assignmentOp expression
+    | dereferenceTarget assignmentOp expression
+    ;
+
+// Escritura a través de una referencia simple: *referencia = valor.
+dereferenceTarget
+    : STAR IDENT
     ;
 
 // Cada acceso mantiene su propia expresión de índice.
@@ -74,6 +139,19 @@ assignment
 // al identificador y al valor de las asignaciones existentes.
 indexAccess
     : LBRACKET expression RBRACKET
+    ;
+
+// Acceso por posición a una tupla, por ejemplo dato.0.
+// TUPLE_FIELD evita que dato.0.1 se confunda con un decimal.
+// La alternativa DOT INT admite espacios entre el punto y el número.
+tupleAccess
+    : TUPLE_FIELD
+    | DOT INT
+    ;
+
+// Acceso a un campo por nombre: persona.edad.
+fieldAccess
+    : DOT IDENT
     ;
 
 // El análisis semántico comprobará mutabilidad,
@@ -163,16 +241,27 @@ multiplicative
 // Los operadores unarios se aplican después de los accesos.
 // Ejemplo: -numeros[0].
 unary
-    : (MINUS | NOT)? postfix
+    : (MINUS | NOT)? (borrowExpr | dereferenceExpr | postfix)
+    ;
+
+// El semántico limita inicialmente el destino a una variable completa.
+borrowExpr
+    : AMP MUT? unary
+    ;
+
+// El operando debe tener tipo &T o &mut T.
+dereferenceExpr
+    : STAR unary
     ;
 
 // Acceso a elementos de arreglos.
 // Permite accesos anidados: matriz[0][1].
 postfix
-    : primary (LBRACKET expression RBRACKET)*
+    : primary (LBRACKET expression RBRACKET | tupleAccess | fieldAccess)*
     ;
 
-// Valores básicos y expresiones entre paréntesis.
+// Valores básicos que pueden formar una expresión.
+// match también produce un valor, como un número o una llamada.
 primary
     : INT
     | FLOAT
@@ -181,9 +270,77 @@ primary
     | CHAR_LITERAL
     | STRING_LITERAL
     | arrayLiteral
+    | tupleLiteral
     | functionCall
+    | enumValue
     | IDENT
+    | structLiteral
+    | matchExpr
+    | block
     | LPAREN expression RPAREN
+    ;
+// =====================================================
+// MATCH Y PATRONES
+// =====================================================
+
+// Evalúa un valor y selecciona el primer brazo compatible.
+// Debe tener al menos un brazo y permite una coma final.
+// Ejemplo: match numero { 0 => 10, _ => 20 }
+matchExpr
+    : MATCH expression LBRACE matchArm (COMMA matchArm)* COMMA? RBRACE
+    ;
+
+// Cada brazo relaciona un patrón con una expresión.
+// La comprobación de tipos corresponde al analizador semántico.
+matchArm
+    : pattern FAT_ARROW expression
+    ;
+
+// Formas de reconocer el valor evaluado:
+// _                        ignora cualquier valor.
+// 10, true, 'a'            comparan un literal.
+// Resultado::Correcto(x)   reconoce una variante y extrae sus datos.
+// (x, _)                  descompone una tupla.
+// nombre                  recibe el valor en una variable local.
+pattern
+    : UNDERSCORE
+    | patternLiteral
+    | IDENT DOUBLE_COLON IDENT (LPAREN patternList RPAREN)?
+    | LPAREN pattern COMMA pattern (COMMA pattern)* COMMA? RPAREN
+    | IDENT
+    ;
+
+// Patrones de los datos asociados a una variante.
+// También permite patrones anidados.
+patternList
+    : pattern (COMMA pattern)* COMMA?
+    ;
+
+// Los números negativos incluyen el signo en el patrón.
+// Aquí no se admiten operaciones como 1 + 2.
+patternLiteral
+    : MINUS? INT
+    | MINUS? FLOAT
+    | TRUE
+    | FALSE
+    | CHAR_LITERAL
+    | STRING_LITERAL
+    ;
+
+// Construcción de una estructura. El orden de los campos puede variar.
+// Ejemplo: Persona { edad: 20, activo: true }.
+structLiteral
+    : IDENT LBRACE (fieldInit (COMMA fieldInit)* COMMA?)? RBRACE
+    ;
+
+fieldInit
+    : IDENT COLON expression
+    ;
+
+// Tupla de dos o más elementos, que pueden tener distintos tipos.
+// Una sola expresión entre paréntesis sigue siendo agrupación.
+tupleLiteral
+    : LPAREN expression COMMA expression (COMMA expression)* COMMA? RPAREN
     ;
 
 // Elementos separados por comas.
@@ -194,7 +351,14 @@ arrayLiteral
 // =====================================================
 // 5. PALABRAS RESERVADAS
 // =====================================================
-
+// Palabra reservada y símbolos utilizados por match.
+// UNDERSCORE debe aparecer antes de IDENT para distinguir
+// el comodín "_" de un nombre de variable.
+MATCH      : 'match';
+FAT_ARROW  : '=>';
+UNDERSCORE : '_';
+STRUCT   : 'struct';
+ENUM     : 'enum';
 FN       : 'fn';
 RETURN   : 'return';
 LET      : 'let';
@@ -228,8 +392,12 @@ LBRACKET  : '[';
 RBRACKET  : ']';
 ARROW     : '->';
 SEMICOLON : ';';
+DOUBLE_COLON : '::';
 COLON     : ':';
 COMMA     : ',';
+// Un campo completo permite encadenar .0.1 sin consumir FLOAT.
+TUPLE_FIELD : '.' [0-9]+;
+DOT         : '.';
 
 EQ     : '==';
 NEQ    : '!=';
@@ -238,6 +406,7 @@ GE     : '>=';
 LT     : '<';
 GT     : '>';
 
+AMP    : '&';
 AND    : '&&';
 OR     : '||';
 NOT    : '!';
@@ -316,4 +485,8 @@ BLOCK_COMMENT
 
 WS
     : [ \t\r\n]+ -> skip
+    ;
+// Constante con ámbito léxico: tipo e inicializador obligatorios.
+constLocalDecl
+    : CONST IDENT COLON type ASSIGN expression SEMICOLON
     ;

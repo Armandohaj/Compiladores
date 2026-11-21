@@ -7,6 +7,9 @@ h1, h2, p { margin: 0; }
 h1 { font-size: 1.7rem; }
 header p { color: #5d6879; margin-top: .25rem; }
 .acciones { display: flex; gap: .6rem; }
+.entradas { margin-bottom: 1rem; }
+.entradas label { display: block; margin-bottom: .35rem; color: #5d6879; }
+.entradas input { width: min(100%, 360px); padding: .55rem .7rem; border: 1px solid #ccd6e2; border-radius: .4rem; font: inherit; }
 button, .boton { border: 0; border-radius: .4rem; padding: .65rem .9rem; font: inherit; cursor: pointer; background: #1769aa; color: white; }
 .secundario { background: #e6edf5; color: #172033; }
 .editor-panel { display: flex; min-height: 420px; border: 1px solid #ccd6e2; border-radius: .5rem; overflow: hidden; background: #fff; }
@@ -15,5 +18,6 @@ textarea { width: 100%; resize: vertical; border: 0; outline: 0; padding: 1rem; 
 .resultados { margin-top: 1rem; padding: 1rem; background: #fff; border: 1px solid #ccd6e2; border-radius: .5rem; }
 .resultados h2 { font-size: 1rem; margin-bottom: .5rem; }
 #estado.correcto { color: #18723a; } #estado.error { color: #a12b2b; }
+#estado { white-space: pre-line; }
 #errores { margin: .75rem 0 0; padding-left: 1.4rem; } #errores li { margin: .35rem 0; }
 @media (max-width: 600px) { header { align-items: flex-start; flex-direction: column; } }

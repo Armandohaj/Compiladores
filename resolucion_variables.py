@@ -1,6 +1,13 @@
+"""Prepara identidades de símbolos para el backend después del semántico.
+
+Dos declaraciones llamadas igual reciben identificadores diferentes.
+Los mapas usan nodos del árbol original como claves para vincular lecturas,
+destinos y declaraciones sin introducir otro árbol de representación.
+"""
 from generated.RustiQVisitor import RustiQVisitor
 from generated.RustiQParser import RustiQParser
-
+from tipos_compuestos import normalizar_tipo
+from flujo_control import salidas_control
 
 class ResolucionVariables(RustiQVisitor):
     """
@@ -10,10 +17,12 @@ class ResolucionVariables(RustiQVisitor):
     correcto y utiliza el mismo árbol de ANTLR.
     """
 
-    def __init__(self, tipos_expresiones, valores_constantes=None):
+    def __init__(self, tipos_expresiones, valores_constantes=None, constantes_locales=None):
+        """Prepara mapas vacíos para un recorrido de resolución independiente."""
         super().__init__()
 
         self.tipos_expresiones = tipos_expresiones
+        self.constantes_locales = constantes_locales or {}
 
         # Nombre de constante -> valor calculado.
         self.valores_constantes = (
@@ -45,15 +54,12 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def obtener_tipo_declarado(self, ctx):
+        """Usa la misma normalización del semántico para no entregar tipos distintos al backend."""
         nodo = ctx.getTypedRuleContext(RustiQParser.TypeContext, 0)
-        def normalizar(tipo):
-            interior = tipo.getTypedRuleContext(RustiQParser.TypeContext, 0)
-            if interior is None:
-                return tipo.getText()
-            return f"[{normalizar(interior)};{int(tipo.INT().getText())}]"
-        return normalizar(nodo) if nodo is not None else None
+        return normalizar_tipo(nodo) if nodo is not None else None
 
     def buscar(self, nombre):
+        """Busca el ID visible desde el ámbito interior. Si falla tras validar semántica, señala una inconsistencia interna."""
         for ambito in reversed(self.ambitos):
             if nombre in ambito:
                 return ambito[nombre]
@@ -65,6 +71,7 @@ class ResolucionVariables(RustiQVisitor):
     def registrar(
         self, ctx, tipo, es_parametro=False, es_constante=False
     ):
+        """Crea un ID único y registra nombre, tipo y ubicación; las constantes también guardan su valor calculado."""
         token = ctx.IDENT().getSymbol()
         identificador = self.siguiente_id
         self.siguiente_id += 1
@@ -89,7 +96,8 @@ class ResolucionVariables(RustiQVisitor):
 
         if es_constante:
             # Una constante incluye su valor ya calculado.
-            simbolo["valor"] = self.valores_constantes[token.text]
+            simbolo["valor"] = (self.constantes_locales[ctx] if ctx in self.constantes_locales
+                                else self.valores_constantes[token.text])
 
         self.simbolos[identificador] = simbolo
         self.ambitos[-1][token.text] = identificador
@@ -100,6 +108,7 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitProgram(self, ctx):
+        """Registra primero todas las constantes y después vincula inicializadores y cuerpos de funciones."""
         self.ambitos = [self.globales]
 
         # Registrar todas las constantes antes de recorrer
@@ -124,6 +133,7 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitFunctionDecl(self, ctx):
+        """Comparte el ámbito global de constantes y crea un ámbito local para parámetros y variables de la función."""
         ambitos_anteriores = self.ambitos
         funcion_anterior = self.funcion_actual
 
@@ -146,31 +156,54 @@ class ResolucionVariables(RustiQVisitor):
             # comparten el mismo ámbito local.
             for sentencia in ctx.block().statement():
                 self.visit(sentencia)
+                # La expresión final puede leer los parámetros
+                # y las variables declaradas en el cuerpo.
+            if ctx.block().expression() is not None:
+                self.visit(ctx.block().expression())
         finally:
             self.ambitos = ambitos_anteriores
             self.funcion_actual = funcion_anterior
 
     def visitBlock(self, ctx):
+        """Vincula los usos de variables dentro de todo el bloque."""
         self.ambitos.append({})
 
         try:
+            # Registrar declaraciones y resolver las instrucciones.
             for sentencia in ctx.statement():
                 self.visit(sentencia)
+
+            # Resolver también las variables de la expresión final.
+            # Todavía estamos dentro del ámbito del bloque.
+            if ctx.expression() is not None:
+                self.visit(ctx.expression())
+
         finally:
+            # Las variables del bloque dejan de estar disponibles.
             self.ambitos.pop()
 
     # =================================================
     # 4. DECLARACIONES LOCALES
     # =================================================
 
+    def visitConstLocalDecl(self, ctx):
+        """Vincula el inicializador antes de introducir la constante de este ámbito."""
+        self.visit(ctx.expression())
+        self.registrar(ctx, self.obtener_tipo_declarado(ctx), es_constante=True)
+
     def visitLetDecl(self, ctx):
+        """Resuelve el inicializador antes de registrar la variable."""
         expresion = ctx.expression()
         tipo = self.obtener_tipo_declarado(ctx)
 
-        # Resolver el inicializador antes de registrar
-        # la nueva variable.
         if expresion is not None:
+            # Vincular primero las lecturas del inicializador.
             self.visit(expresion)
+
+            # Coincide con el semántico: si hay un salto
+            # incondicional, no se crea esta declaración.
+            if "normal" not in salidas_control(expresion):
+                return
 
             if tipo is None:
                 tipo = self.tipos_expresiones[expresion]
@@ -182,6 +215,14 @@ class ResolucionVariables(RustiQVisitor):
     # =================================================
 
     def visitAssignment(self, ctx):
+        """Vincula el destino con su símbolo y recorre las variables leídas en índices y en el valor derecho."""
+        if ctx.dereferenceTarget() is not None:
+            destino = ctx.dereferenceTarget()
+            identificador = self.buscar(destino.IDENT().getText())
+            self.referencias[destino] = identificador
+            self.referencias[ctx] = identificador
+            self.visit(ctx.expression())
+            return
         nombre = ctx.IDENT().getText()
         self.referencias[ctx] = self.buscar(nombre)
         # Un índice puede leer otras variables: datos[posicion] = valor.
@@ -189,9 +230,51 @@ class ResolucionVariables(RustiQVisitor):
             self.visit(acceso.expression())
         self.visit(ctx.expression())
 
+    def visitStructLiteral(self, ctx):
+        # El nombre del tipo y los nombres de campo no son variables.
+        # Sus expresiones sí pueden leer variables o constantes.
+        """Recorre valores de campos; el nombre del tipo y los nombres de campos no son variables."""
+        for campo in ctx.fieldInit():
+            self.visit(campo.expression())
+
     def visitPrimary(self, ctx):
+        """Vincula lecturas de identificadores; en otros valores sigue recorriendo hijos para encontrar lecturas interiores."""
         if ctx.IDENT() is not None:
             nombre = ctx.IDENT().getText()
             self.referencias[ctx] = self.buscar(nombre)
         else:
             return self.visitChildren(ctx)
+
+    def visitMatchExpr(self, ctx):
+        """Resuelve primero el valor y limita cada variable al brazo que la declara."""
+        self.visit(ctx.expression())
+        for brazo in ctx.matchArm():
+            self.ambitos.append({})
+            try:
+                self.registrar_patron(brazo.pattern())
+                self.visit(brazo.expression())
+            finally:
+                self.ambitos.pop()
+
+    def registrar_patron(self, ctx):
+        """Asigna identidades a receptores; los nombres de variantes no son variables."""
+        if ctx.DOUBLE_COLON() is not None:
+            lista = ctx.patternList()
+            if lista is not None:
+                for hijo in lista.pattern():
+                    self.registrar_patron(hijo)
+        elif ctx.LPAREN() is not None:
+            for hijo in ctx.pattern():
+                self.registrar_patron(hijo)
+        elif ctx.IDENT():
+            token = ctx.IDENT(0).getSymbol()
+            identificador = self.siguiente_id
+            self.siguiente_id += 1
+            self.simbolos[identificador] = {
+                "nombre": token.text, "tipo": self.tipos_expresiones[ctx],
+                "mutable": False, "funcion": self.funcion_actual,
+                "es_parametro": False, "es_constante": False,
+                "linea": token.line, "columna": token.column + 1,
+            }
+            self.ambitos[-1][token.text] = identificador
+            self.declaraciones[ctx] = identificador

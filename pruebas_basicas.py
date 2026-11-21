@@ -1,3 +1,9 @@
+"""Pruebas de léxico, sintaxis, declaración de variables y ámbitos.
+
+Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
+son éxitos de la prueba cuando se detecta el error correcto. Estas pruebas
+no ejecutan el programa RustiQ ni reemplazan las pruebas del backend Wasm.
+"""
 from main import analizar_programa
 
 
