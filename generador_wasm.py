@@ -1879,10 +1879,14 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
     if any(
         tipo not in {"i32", "bool", "f64", "char", "String"}
         and not _referencia_admitida(tipo, nombres_funcion.estructuras)
+        and _info_enum(tipo, nombres_funcion.enumeraciones) is None
         for tipo in firma["parametros"]
     ):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
-    if firma["retorno"] not in {"i32", "bool", "f64", "char", "String", "unit"}:
+    if (
+        firma["retorno"] not in {"i32", "bool", "f64", "char", "String", "unit"}
+        and _info_enum(firma["retorno"], nombres_funcion.enumeraciones) is None
+    ):
         _error(f"La función '{nombre}' tiene un retorno no soportado.", llamada)
 
     argumentos = []
@@ -1890,13 +1894,21 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
     if lista is not None:
         argumentos = lista.expression()
     instrucciones = []
-    for argumento in argumentos:
+    for argumento, tipo_parametro in zip(argumentos, firma["parametros"]):
         # Cada argumento se deja en la pila antes de call, como exige la firma WASM.
-        instrucciones.extend(
-            _compilar_expresion(
-                argumento, referencias, locales, funciones, nombres_funcion, tipos
+        if _info_enum(tipo_parametro, nombres_funcion.enumeraciones) is not None:
+            instrucciones.extend(
+                _compilar_valor_para_local(
+                    argumento, tipo_parametro, referencias, locales, funciones,
+                    nombres_funcion, tipos,
+                )
             )
-        )
+        else:
+            instrucciones.extend(
+                _compilar_expresion(
+                    argumento, referencias, locales, funciones, nombres_funcion, tipos
+                )
+            )
         if "normal" not in salidas_control(argumento):
             return instrucciones, firma["retorno"]
     instrucciones.append(f"call $funcion_{nombres_funcion.nombres_funcion[nombre]}")
@@ -2087,7 +2099,10 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     """Prepara locales, parámetros y cuerpo de una función antes de exportarla."""
     nombre = funcion.IDENT().getText()
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
-    if tipo_retorno not in {"i32", "bool", "f64", "char", "String", "unit"}:
+    if (
+        tipo_retorno not in {"i32", "bool", "f64", "char", "String", "unit"}
+        and _info_enum(tipo_retorno, nombres_funcion.enumeraciones) is None
+    ):
         _error(f"La función '{nombre}' tiene un retorno no soportado.", funcion)
     variables = {
         identificador
@@ -2108,7 +2123,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
             if not _referencia_admitida(tipo, nombres_funcion.estructuras):
                 _error("Solo se admiten parámetros referencia con layouts locales compatibles.", funcion)
             continue
-        if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, nombres_funcion.estructuras) is not None or _info_enum(tipo, nombres_funcion.enumeraciones) is not None:
+        if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, nombres_funcion.estructuras) is not None:
             _error("Los parámetros de valores compuestos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
@@ -2148,7 +2163,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         for identificador in sorted(parametros)
     )
     # Los parámetros referencia también son i32 porque transportan una dirección.
-    resultado_wat = "" if tipo_retorno == "unit" else f" (result {_tipo_wasm(tipo_retorno)})"
+    resultado_wat = "" if tipo_retorno == "unit" else f" (result {_tipo_wasm(tipo_retorno, nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"
     declaraciones_locales = "\n".join(
         f"    (local $local_{identificador} "
         f"{'i32' if identificador in escalares_en_memoria else _tipo_wasm(analisis['simbolos'][identificador]['tipo'], nombres_funcion.estructuras, nombres_funcion.enumeraciones)})"

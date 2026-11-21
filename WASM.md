@@ -231,9 +231,11 @@ copias locales independientes de esos valores. `match` compara primero la
 etiqueta y después los patrones literales compatibles; los receptores usan los
 identificadores resueltos por el frontend y sólo se cargan en el brazo elegido.
 Las comparaciones `==` y `!=` de enums con datos se rechazan por ahora, porque
-no hay igualdad estructural implementada. Tampoco se admiten `String`,
-arreglos, tuplas, estructuras u otros enums como datos asociados, ni parámetros,
-retornos o constantes globales de enum.
+no hay igualdad estructural implementada. Las enumeraciones admitidas pueden
+usarse como parámetros y retornos: las variantes sin datos viajan como su
+etiqueta `i32` y las variantes con datos Copy se copian a un bloque independiente
+antes de una llamada. No se admiten `String`, arreglos, tuplas, estructuras u
+otros enums como datos asociados, ni constantes globales de enum.
 
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como

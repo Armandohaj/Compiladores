@@ -608,6 +608,44 @@ fn main() -> i32 {
     assert ejecutar_main_con_entradas(efectos["wasm"], [20]) == (21, [20])
 
 
+def test_funciones_con_parametros_y_retornos_de_enumeraciones():
+    con_datos = compilar_programa("""enum Resultado { Correcto(i32), Vacio }
+fn identidad(valor: Resultado) -> Resultado { return valor; }
+fn main() -> i32 {
+    let original = Resultado::Correcto(42);
+    let dato = identidad(identidad(original));
+    return match dato { Resultado::Correcto(n) => n, Resultado::Vacio => 0 };
+}""")
+    sin_datos = compilar_programa("""enum Estado { Pendiente, Listo }
+fn identidad(estado: Estado) -> Estado { estado }
+fn main() -> i32 {
+    let estado = identidad(identidad(Estado::Listo));
+    return match estado { Estado::Pendiente => 0, Estado::Listo => 10 };
+}""")
+    copia = compilar_programa("""enum Resultado { Correcto(i32), Vacio }
+fn identidad(valor: Resultado) -> Resultado { return valor; }
+fn main() -> i32 {
+    let original = Resultado::Correcto(7);
+    let copia = identidad(original);
+    return match original { Resultado::Correcto(n) => match copia { Resultado::Correcto(m) => n + m, Resultado::Vacio => 0 }, Resultado::Vacio => 0 };
+}""")
+    tipos_basicos = compilar_programa("""enum Dato { Medida(f64), Marca(bool, char) }
+fn identidad(valor: Dato) -> Dato { valor }
+fn main() -> i32 {
+    let medida = identidad(Dato::Medida(2.5));
+    let marca = identidad(Dato::Marca(true, 'ñ'));
+    return match medida {
+        Dato::Medida(_) => match marca { Dato::Marca(true, 'ñ') => 12, Dato::Marca(_, _) => 0, Dato::Medida(_) => 0 },
+        Dato::Marca(_, _) => 0,
+    };
+}""")
+
+    for resultado, esperado in [(con_datos, 42), (sin_datos, 10), (copia, 14), (tipos_basicos, 12)]:
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
 def test_copias_completas_de_tuplas_y_asignaciones_independientes():
     obligatorio = compilar_programa("""fn main() -> i32 {
     let original = (10, true);
@@ -1111,7 +1149,6 @@ def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
     "codigo",
     [
         "enum E { A, B(String) } fn main() -> i32 { return 0; }",
-        "enum E { A } fn identidad(valor: E) -> i32 { return 1; } fn main() -> i32 { return identidad(E::A); }",
         "enum E { A } fn main() -> i32 { let valor = E::B; return 0; }",
         "enum E { A(i32) } fn main() -> i32 { let uno = E::A(1); let dos = E::A(1); if uno == dos { return 1; } return 0; }",
     ],
