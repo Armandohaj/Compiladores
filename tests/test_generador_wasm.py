@@ -413,7 +413,7 @@ def test_match_evalua_una_vez_y_ejecuta_solo_el_brazo_elegido():
     assert ejecutar_main_con_entradas(resultado["wasm"], [2]) == (20, [20])
 
 
-def test_match_con_return_anticipado_y_patrones_pendientes_controlados():
+def test_match_con_return_anticipado_y_patrones_de_tupla():
     retorno = compilar_programa("""fn main() -> i32 {
     let valor = match 1 {
         1 => { return 9; },
@@ -429,8 +429,68 @@ def test_match_con_return_anticipado_y_patrones_pendientes_controlados():
 
     assert retorno["valido"]
     assert ejecutar_modulo_wasm(retorno["wasm"]) == 9
-    assert not tupla["valido"]
-    assert tupla["wasm"] is None
+    assert tupla["valido"]
+    wasmtime.Module(wasmtime.Engine(), tupla["wasm"])
+    assert ejecutar_modulo_wasm(tupla["wasm"]) == 1
+
+
+def test_match_tuplas_literales_receptores_y_rechazos_controlados():
+    booleanos = compilar_programa("""fn main() -> i32 {
+    return match (true, false) {
+        (true, _) => 1,
+        (false, _) => 0,
+    };
+}""")
+    seleccion = compilar_programa("""fn main() -> i32 {
+    return match (false, true) {
+        (true, _) => 0,
+        (false, true) => 2,
+        _ => 3,
+    };
+}""")
+    sombreado = compilar_programa("""fn main() -> i32 {
+    let x = 9;
+    let y = match (1, true) {
+        (x, _) => { let r = &x; *r },
+    };
+    return x + y;
+}""")
+    literales = compilar_programa("""fn main() -> i32 {
+    return match (1.5, 'ñ') {
+        (2.0, _) => 0,
+        (1.5, 'ñ') => 1,
+        _ => 2,
+    };
+}""")
+    decimal_negativo = compilar_programa("""fn main() -> i32 {
+    return match (-1.5, true) {
+        (1.5, _) => 9,
+        (-1.5, _) => 1,
+        _ => 0,
+    };
+}""")
+    variable = compilar_programa("""fn main() -> i32 {
+    let datos = (4, false);
+    return match datos {
+        (x, false) => x,
+        _ => 0,
+    };
+}""")
+    anidada = compilar_programa("""fn main() -> i32 {
+    return match ((1, true), 2) {
+        ((x, _), _) => x,
+    };
+}""")
+
+    for resultado, esperado in [
+        (booleanos, 1), (seleccion, 2), (sombreado, 10), (literales, 1),
+        (decimal_negativo, 1), (variable, 4),
+    ]:
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+    assert not anidada["valido"]
+    assert anidada["wasm"] is None
 
 
 def test_enumeraciones_sin_datos_obligatorias_variables_y_comparaciones():

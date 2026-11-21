@@ -210,13 +210,16 @@ termina mediante `return`, no se genera el resto de ese bloque ni la operación
 que habría consumido su valor. Los valores de enums se generan con la
 representación descrita más adelante.
 
-Se admiten expresiones `match` sobre `i32`, `bool` y `char` con patrones
-literales, comodín `_` y receptor. El valor se evalúa una sola vez en un local
-Wasm y los brazos se prueban en el orden escrito, por lo que sólo se ejecuta el
-primer brazo compatible. Los receptores reutilizan su identificador resuelto
-por el frontend y los brazos pueden usar bloques con valor, `return`, `read()`
-y `print()`. Aún no se admiten patrones o valores de `f64` y `String`, ni
-patrones de tuplas; se rechazan con un error de generación controlado.
+Se admiten expresiones `match` sobre `i32`, `bool`, `char` y tuplas locales
+planas de campos `i32`, `f64`, `bool` o `char`. Los patrones de tupla admiten
+literales compatibles, comodín `_` y receptores; un literal usado directamente
+como valor del `match` se materializa con el mismo layout de memoria de las
+tuplas locales. El valor se evalúa una sola vez en un local Wasm y los brazos
+se prueban en el orden escrito, por lo que sólo se ejecuta el primer brazo
+compatible. Los receptores reutilizan su identificador resuelto por el frontend
+y los brazos pueden usar bloques con valor, `return`, `read()` y `print()`. Aún
+no se admiten patrones o valores de `f64` y `String` fuera de campos de tupla,
+ni tuplas anidadas; se rechazan con un error de generación controlado.
 
 Las enumeraciones sin datos se representan como `i32` usando exactamente las
 etiquetas entregadas por el frontend. Si una enumeración contiene alguna

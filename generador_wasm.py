@@ -940,6 +940,52 @@ def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, no
     return condiciones, enlaces
 
 
+def _compilar_patron_tupla(patron, temporal, tipo_valor, referencias, locales,
+                           nombres_funcion):
+    distribucion = _distribucion_tupla(tipo_valor)
+    patrones = patron.pattern()
+    if distribucion is None or len(patrones) != len(distribucion[0]):
+        _error("El patrón de tupla no está disponible para generar WASM.", patron)
+    condiciones = []
+    enlaces = []
+    for hijo, (tipo, desplazamiento) in zip(patrones, distribucion[0]):
+        if hijo.UNDERSCORE() is not None:
+            continue
+        if hijo.patternLiteral() is not None:
+            literal = hijo.patternLiteral()
+            if tipo == "i32" and literal.INT() is not None:
+                valor = f"i32.const {int(literal.getText())}"
+            elif tipo == "bool" and literal.TRUE() is not None:
+                valor = "i32.const 1"
+            elif tipo == "bool" and literal.FALSE() is not None:
+                valor = "i32.const 0"
+            elif tipo == "char" and literal.CHAR_LITERAL() is not None:
+                valor = f"i32.const {_valor_char(literal.CHAR_LITERAL().getText(), literal)}"
+            elif tipo == "f64" and literal.FLOAT() is not None:
+                valor = f"f64.const {literal.getText()}"
+            else:
+                _error("El literal del patrón de tupla no está disponible para generar WASM.", hijo)
+            condiciones.extend([
+                f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+                valor, "f64.eq" if tipo == "f64" else "i32.eq",
+            ])
+            if len(condiciones) > 4:
+                condiciones.append("i32.and")
+            continue
+        if hijo.IDENT() is not None:
+            identificador = nombres_funcion.declaraciones.get(hijo)
+            if identificador is None or identificador not in locales:
+                _error("El receptor del patrón de tupla no está disponible para generar WASM.", hijo)
+            enlaces.extend(_enlazar_receptor_patron(
+                identificador,
+                [f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento)],
+                tipo, nombres_funcion, hijo,
+            ))
+            continue
+        _error("El patrón de tupla todavía no está implementado.", hijo)
+    return condiciones or ["i32.const 1"], enlaces
+
+
 def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
                            referencias, locales, funciones, nombres_funcion, tipos):
     """Genera brazos anidados para conservar la regla del primer patrón compatible."""
@@ -968,7 +1014,20 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
             ),
         ]
     if patron.LPAREN() is not None:
-        _error("Este patrón de match todavía no está implementado.", patron)
+        condicion, enlaces = _compilar_patron_tupla(
+            patron, temporal, tipo_valor, referencias, locales, nombres_funcion
+        )
+        siguiente = _compilar_brazos_match(
+            brazos, indice + 1, temporal, tipo_valor, tipo_resultado,
+            referencias, locales, funciones, nombres_funcion, tipos,
+        )
+        return [
+            *condicion,
+            _wat_condicional_resultado(
+                [*enlaces, *expresion], siguiente,
+                _tipo_wasm(tipo_resultado, enumeraciones=nombres_funcion.enumeraciones),
+            ),
+        ]
     if patron.DOUBLE_COLON() is not None:
         literal = _literal_patron(patron, tipo_valor, nombres_funcion.enumeraciones)
     elif patron.IDENT():
@@ -1000,22 +1059,41 @@ def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, 
     """Evalúa el valor una sola vez y lo conserva en un local temporal del match."""
     tipo_valor = tipos.get(contexto.expression())
     tipo_resultado = tipos.get(contexto)
-    if tipo_valor not in {"i32", "bool", "char"} and _info_enum(tipo_valor, nombres_funcion.enumeraciones) is None:
-        _error("Solo se admiten match de i32, bool, char y enumeraciones.", contexto)
+    if (tipo_valor not in {"i32", "bool", "char"}
+            and _distribucion_tupla(tipo_valor) is None
+            and _info_enum(tipo_valor, nombres_funcion.enumeraciones) is None):
+        _error("Solo se admiten match de i32, bool, char, tuplas y enumeraciones.", contexto)
     if tipo_resultado not in {"i32", "f64", "bool", "char", "String"}:
         _error("El resultado de match todavía no está implementado.", contexto)
-    valor = _compilar_expresion(
-        contexto.expression(), referencias, locales, funciones, nombres_funcion, tipos
-    )
-    if "normal" not in salidas_control(contexto.expression()):
-        return valor
     temporal = f"valor_match_{nombres_funcion.siguiente_match}"
     nombres_funcion.siguiente_match += 1
     nombres_funcion.temporales_match.append(temporal)
+    literal_tupla = _obtener_literal_tupla(contexto.expression())
+    if literal_tupla is not None and _distribucion_tupla(tipo_valor) is not None:
+        campos, tamano, alineacion = _distribucion_tupla(tipo_valor)
+        expresiones = literal_tupla.expression()
+        if len(expresiones) != len(campos):
+            _error("El literal no coincide con los campos de la tupla.", literal_tupla)
+        valor = [
+            f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+            f"local.set ${temporal}",
+        ]
+        for (tipo, desplazamiento), expresion in zip(campos, expresiones):
+            valor.append(f"local.get ${temporal}")
+            valor.extend(_compilar_expresion(
+                expresion, referencias, locales, funciones, nombres_funcion, tipos
+            ))
+            valor.append(_instruccion_almacenamiento_arreglo(tipo, desplazamiento))
+    else:
+        valor = _compilar_expresion(
+            contexto.expression(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+        if "normal" not in salidas_control(contexto.expression()):
+            return valor
+        valor.append(f"local.set ${temporal}")
     brazos = contexto.matchArm()
     return [
         *valor,
-        f"local.set ${temporal}",
         *_compilar_brazos_match(
             brazos, 0, temporal, tipo_valor, tipo_resultado,
             referencias, locales, funciones, nombres_funcion, tipos,
