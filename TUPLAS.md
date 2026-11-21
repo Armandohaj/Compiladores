@@ -22,7 +22,9 @@ fn main() -> i32 {
 - Escribir campos requiere un valor inicializado y una variable `mut`.
 - Las operaciones compuestas requieren un campo numérico de tipo compatible.
 - El contexto de una tupla anotada permite arreglos vacíos en sus campos.
-- La inicialización parcial por campos y ownership/préstamos siguen pendientes.
+- La inicialización parcial por campos sigue pendiente. Ownership y préstamos
+  se validan en el frontend; el soporte WASM se limita al subconjunto indicado
+  a continuación.
 
 ## Datos para Anthony
 
@@ -51,8 +53,11 @@ sus significados. Los accesos de arreglos y tuplas pueden mezclarse:
 La alternativa `DOT INT` también admite espacios entre el punto y el campo.
 Los literales decimales mantienen su sintaxis anterior.
 
-Los índices dinámicos de arreglos requieren guardas en el backend.
-Estas pruebas validan el frontend; no verifican la ejecución Wasm.
+Los índices dinámicos de arreglos requieren guardas en el backend. El
+generador admite tuplas locales planas de campos `i32`, `f64`, `bool` y `char`,
+incluyendo lectura, escritura, copia independiente, préstamos y patrones
+`match` compatibles. No admite todavía tuplas con `String`, tuplas anidadas ni
+parámetros o retornos de tuplas completas.
 
 ## Pruebas
 
@@ -61,6 +66,6 @@ java -jar tools/antlr-4.13.2-complete.jar -Dlanguage=Python3 -visitor -no-listen
 python ejecutar_pruebas.py
 ```
 
-Verificado con Python 3.12.14 y ANTLR/runtime 4.13.2:
-387/387 comprobaciones en 16 suites; 68 casos nuevos de tuplas.
-Confirmar también en Python 3.14 del equipo.
+Las pruebas de este documento corresponden al frontend. La validación actual
+del proyecto debe ejecutarse con `python ejecutar_pruebas.py` y
+`python -m pytest tests -q`.

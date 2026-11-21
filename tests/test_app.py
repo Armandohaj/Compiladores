@@ -21,6 +21,7 @@ def test_editor_y_analizar_conservan_su_comportamiento():
 
     assert inicio.status_code == 200
     assert "RustiQ" in inicio.get_data(as_text=True)
+    assert 'id="compilar"' in inicio.get_data(as_text=True)
     assert 'id="descargar-wasm"' in inicio.get_data(as_text=True)
     assert 'id="entradas"' in inicio.get_data(as_text=True)
     assert analisis.status_code == 200
@@ -157,7 +158,7 @@ function crearElemento(valor = "") {
     append(item) { this.children.push(item); },
   };
 }
-for (const id of ["codigo", "lineas", "analizar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
+for (const id of ["codigo", "lineas", "analizar", "compilar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
   elementos[id] = crearElemento(id === "codigo" ? "viejo" : "");
 }
 const resolutores = [];
@@ -207,6 +208,257 @@ const respuesta = (valido) => ({ ok: true, json: async () => ({ valido, errores:
   await antigua;
   if (elementos.estado.className !== "correcto") throw new Error("Una respuesta fuera de orden reemplazó la reciente.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+def test_editor_compila_sin_ejecutar_y_descarta_respuestas_obsoletas():
+    script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const elementos = {};
+function crearElemento(valor = "") {
+  return {
+    value: valor, textContent: "", className: "", hidden: false, disabled: false,
+    children: [], listeners: {}, files: [], scrollTop: 0,
+    addEventListener(nombre, funcion) { this.listeners[nombre] = funcion; },
+    replaceChildren() { this.children = []; },
+    append(item) { this.children.push(item); },
+  };
+}
+for (const id of ["codigo", "lineas", "analizar", "compilar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
+  elementos[id] = crearElemento(id === "codigo" ? "viejo" : "");
+}
+const resolutores = [];
+const contexto = {
+  document: {
+    querySelector(selector) { return elementos[selector.slice(1)]; },
+    createElement() { return crearElemento(); },
+  },
+  fetch() { return new Promise((resolver) => resolutores.push(resolver)); },
+  window: { setTimeout() { return 0; }, clearTimeout() {} },
+  setImmediate,
+  FileReader: class {},
+  atob(valor) { return valor === "nuevo" ? "\x02" : "\x01"; },
+  Blob: class {}, URL: {}, Worker: class { constructor() { throw new Error("No debe ejecutar."); } }, console,
+};
+vm.createContext(contexto);
+const fuente = fs.readFileSync("static/js/editor.js", "utf8");
+vm.runInContext(`${fuente}\nglobalThis.probar = { compilar, wasm: () => wasmCompilado };`, contexto);
+const respuesta = (wasm, retorno = "bool") => ({
+  ok: true,
+  json: async () => ({ valido: true, errores: [], wasm_base64: wasm, main: { parametros: [], retorno } }),
+});
+const error = () => ({
+  ok: true,
+  json: async () => ({ valido: false, errores: [{ fase: "generacion", linea: 1, columna: 1, mensaje: "error" }], wasm_base64: null }),
+});
+
+(async () => {
+  const antigua = contexto.probar.compilar();
+  elementos.codigo.value = "nuevo";
+  elementos.codigo.listeners.input();
+  resolutores.shift()(respuesta("viejo"));
+  await antigua;
+  if (!elementos["descargar-wasm"].disabled || contexto.probar.wasm() !== null) {
+    throw new Error("Conservó una compilación antigua.");
+  }
+
+  const reciente = contexto.probar.compilar();
+  resolutores.shift()(respuesta("nuevo"));
+  await reciente;
+  if (elementos["descargar-wasm"].disabled || elementos.estado.className !== "correcto"
+      || contexto.probar.wasm()[0] !== 2) {
+    throw new Error("No conservó el WASM compilado.");
+  }
+
+  const anterior = contexto.probar.compilar();
+  const posterior = contexto.probar.compilar();
+  const resolverAnterior = resolutores.shift();
+  const resolverPosterior = resolutores.shift();
+  resolverPosterior(respuesta("nuevo"));
+  await posterior;
+  resolverAnterior(respuesta("viejo"));
+  await anterior;
+  if (contexto.probar.wasm()[0] !== 2) {
+    throw new Error("Una compilación fuera de orden reemplazó la reciente.");
+  }
+
+  elementos.codigo.value = "invalido";
+  elementos.codigo.listeners.input();
+  const invalida = contexto.probar.compilar();
+  resolutores.shift()(error());
+  await invalida;
+  if (!elementos["descargar-wasm"].disabled || elementos.estado.className !== "error") {
+    throw new Error("Presentó una compilación inválida como correcta.");
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+def test_editor_descarta_compilacion_y_ejecucion_solapadas():
+    script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const elementos = {};
+function crearElemento(valor = "") {
+  return {
+    value: valor, textContent: "", className: "", hidden: false, disabled: false,
+    children: [], listeners: {}, files: [], scrollTop: 0,
+    addEventListener(nombre, funcion) { this.listeners[nombre] = funcion; },
+    replaceChildren() { this.children = []; },
+    append(item) { this.children.push(item); },
+  };
+}
+for (const id of ["codigo", "lineas", "analizar", "compilar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
+  elementos[id] = crearElemento(id === "codigo" ? "codigo" : "");
+}
+const resolutores = [];
+const workers = [];
+class WorkerFalso {
+  constructor() { workers.push(this); }
+  postMessage() {}
+  terminate() {}
+}
+const contexto = {
+  document: {
+    querySelector(selector) { return elementos[selector.slice(1)]; },
+    createElement() { return crearElemento(); },
+  },
+  fetch() { return new Promise((resolver) => resolutores.push(resolver)); },
+  window: { setTimeout() { return 0; }, clearTimeout() {} },
+  FileReader: class {},
+  atob(valor) { return valor === "ejecutar" ? "\x02" : "\x03"; },
+  Blob: class {}, URL: {}, Worker: WorkerFalso, console,
+};
+vm.createContext(contexto);
+const fuente = fs.readFileSync("static/js/editor.js", "utf8");
+vm.runInContext(`${fuente}\nglobalThis.probar = { compilar, ejecutar, wasm: () => wasmCompilado };`, contexto);
+const respuesta = (wasm, retorno = "i32") => ({
+  ok: true,
+  json: async () => ({ valido: true, errores: [], wasm_base64: wasm, main: { parametros: [], retorno } }),
+});
+const invalida = () => ({
+  ok: true,
+  json: async () => ({ valido: false, errores: [{ fase: "generacion", linea: 1, columna: 1, mensaje: "antiguo" }], wasm_base64: null }),
+});
+
+(async () => {
+  const compilacion = contexto.probar.compilar();
+  const ejecucion = contexto.probar.ejecutar();
+  const resolverCompilacion = resolutores.shift();
+  const resolverEjecucion = resolutores.shift();
+  resolverEjecucion(respuesta("ejecutar"));
+  await new Promise((resolver) => setImmediate(resolver));
+  resolverCompilacion(invalida());
+  await compilacion;
+  workers[0].onmessage({ data: { valor: 7, salidas: [] } });
+  await ejecucion;
+  if (elementos.estado.textContent !== "Resultado de main(): 7" || contexto.probar.wasm()[0] !== 2
+      || elementos.compilar.disabled || elementos.ejecutar.disabled) {
+    throw new Error("La compilación antigua reemplazó la ejecución reciente.");
+  }
+
+  const ejecucionAntigua = contexto.probar.ejecutar();
+  const resolverEjecucionAntigua = resolutores.shift();
+  resolverEjecucionAntigua(respuesta("ejecutar"));
+  await new Promise((resolver) => setImmediate(resolver));
+  const compilacionReciente = contexto.probar.compilar();
+  const resolverCompilacionReciente = resolutores.shift();
+  resolverCompilacionReciente(respuesta("compilar", "bool"));
+  await compilacionReciente;
+  workers[1].onmessage({ data: { valor: 9, salidas: [] } });
+  await ejecucionAntigua;
+  if (elementos.estado.textContent !== "La compilación fue correcta." || elementos.estado.className !== "correcto"
+      || contexto.probar.wasm()[0] !== 3 || elementos.compilar.disabled || elementos.ejecutar.disabled) {
+    throw new Error("La ejecución antigua reemplazó la compilación reciente.");
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+def test_editor_localiza_errores_e_invalida_posiciones_antiguas():
+    script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const elementos = {};
+function crearElemento(valor = "") {
+  return {
+    value: valor, textContent: "", className: "", hidden: false, disabled: false,
+    children: [], listeners: {}, files: [], scrollTop: 0, inicio: null, fin: null, enfocado: false,
+    addEventListener(nombre, funcion) { this.listeners[nombre] = funcion; },
+    replaceChildren() { this.children = []; },
+    append(item) { this.children.push(item); },
+    focus() { this.enfocado = true; },
+    setSelectionRange(inicio, fin) { this.inicio = inicio; this.fin = fin; },
+  };
+}
+for (const id of ["codigo", "lineas", "analizar", "compilar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
+  elementos[id] = crearElemento(id === "codigo" ? "uno\ndos\ntres" : "");
+}
+const contexto = {
+  document: {
+    querySelector(selector) { return elementos[selector.slice(1)]; },
+    createElement() { return crearElemento(); },
+  },
+  window: { setTimeout() { return 0; }, clearTimeout() {} },
+  FileReader: class {}, atob() {}, Blob: class {}, URL: {}, Worker: class {}, console,
+};
+vm.createContext(contexto);
+const fuente = fs.readFileSync("static/js/editor.js", "utf8");
+vm.runInContext(`${fuente}\nglobalThis.probar = { mostrarResultado };`, contexto);
+const resultado = { valido: false, errores: [
+  { fase: "lexico", linea: 2, columna: 2, mensaje: "error" },
+  { fase: "sintactico", linea: 99, columna: 99, mensaje: "final" },
+] };
+contexto.probar.mostrarResultado(resultado);
+elementos.errores.children[0].listeners.click();
+if (!elementos.codigo.enfocado || elementos.codigo.inicio !== 5 || elementos.codigo.fin !== 6) {
+  throw new Error("No localizó la línea y columna del error.");
+}
+elementos.errores.children[1].listeners.click();
+if (elementos.codigo.inicio !== 12 || elementos.codigo.fin !== 12) {
+  throw new Error("No limitó la posición al final del archivo.");
+}
+const errorAntiguo = elementos.errores.children[0];
+elementos.codigo.value = "nuevo";
+elementos.codigo.listeners.input();
+errorAntiguo.listeners.click();
+if (elementos.codigo.inicio !== 12 || elementos.codigo.fin !== 12 || !elementos.errores.hidden) {
+  throw new Error("Una ubicación antigua siguió activa después de modificar el código.");
+}
 '''
 
     resultado = subprocess.run(

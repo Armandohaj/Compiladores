@@ -1,0 +1,22 @@
+struct Punto {
+    x: i32,
+    y: i32,
+}
+
+enum Estado {
+    Pendiente,
+    Completado(i32),
+}
+
+fn codigo(estado: Estado) -> i32 {
+    match estado {
+        Estado::Pendiente => 0,
+        Estado::Completado(valor) => valor,
+    }
+}
+
+fn main() -> i32 {
+    let punto = Punto { x: 3, y: 4 };
+    let estado = Estado::Completado(punto.x + punto.y);
+    return codigo(estado);
+}

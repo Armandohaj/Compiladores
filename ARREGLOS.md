@@ -32,8 +32,13 @@ El backend debe evaluar cada índice una vez, en orden, y comprobar
 índices literales fuera de rango; el evaluador comprueba también índices
 calculados en constantes. Los índices dinámicos necesitan guardas Wasm.
 
-Esta entrega valida el frontend; no implementa ejecución Wasm,
-inicialización parcial, ownership ni préstamos.
+El generador implementa arreglos locales unidimensionales de `i32`, `f64`,
+`bool`, `char` y `String`, y matrices locales bidimensionales de esos tipos.
+Emite comprobaciones de límites antes de cada acceso dinámico y hace `trap`
+ante índices inválidos. Los arreglos y matrices Copy de elementos básicos
+admiten copia y asignación completas independientes; los que contienen
+`String` no. Los préstamos WASM se admiten para los contenedores de elementos
+básicos, no para `String` ni compuestos anidados.
 
 ## Verificación
 
@@ -44,5 +49,6 @@ java -jar tools/antlr-4.13.2-complete.jar -Dlanguage=Python3 -visitor -no-listen
 python ejecutar_pruebas.py
 ```
 
-Resultado verificado con Python 3.12.14: 319/319 comprobaciones,
-15 suites, sin fallos. Confirmar también en el entorno Python del equipo.
+La comprobación vigente del proyecto se realiza con `python ejecutar_pruebas.py`
+y `python -m pytest tests -q`; la suite pytest incluye ejecución real con
+Wasmtime.

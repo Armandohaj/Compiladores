@@ -1,0 +1,11 @@
+fn main() -> i32 {
+    let mut contador = 0;
+    let mut suma = 0;
+
+    while contador < 5 {
+        suma += contador;
+        contador += 1;
+    }
+
+    return suma;
+}

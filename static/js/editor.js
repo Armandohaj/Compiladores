@@ -1,6 +1,7 @@
 const codigo = document.querySelector("#codigo");
 const lineas = document.querySelector("#lineas");
 const botonAnalizar = document.querySelector("#analizar");
+const botonCompilar = document.querySelector("#compilar");
 const botonEjecutar = document.querySelector("#ejecutar");
 const botonDescargarWasm = document.querySelector("#descargar-wasm");
 const campoEntradas = document.querySelector("#entradas");
@@ -11,15 +12,38 @@ const LIMITE_EJECUCION_MS = 3000;
 let wasmCompilado = null;
 let revisionCodigo = 0;
 let ultimaSolicitudAnalisis = 0;
+let ultimaSolicitudCompilacion = 0;
+let ultimaAccion = 0;
+let ubicacionErrores = null;
 
 function actualizarLineas() {
   const total = codigo.value.split("\n").length;
   lineas.textContent = Array.from({ length: total }, (_, indice) => indice + 1).join("\n");
 }
 
+function localizarError(linea, columna) {
+  if (!ubicacionErrores
+    || ubicacionErrores.revision !== revisionCodigo
+    || ubicacionErrores.codigo !== codigo.value) {
+    return;
+  }
+  const lineasCodigo = codigo.value.split("\n");
+  const lineaSegura = Math.min(Math.max(Number(linea) || 1, 1), lineasCodigo.length);
+  const columnaSegura = Math.min(
+    Math.max(Number(columna) || 1, 1), lineasCodigo[lineaSegura - 1].length + 1
+  );
+  const inicio = lineasCodigo.slice(0, lineaSegura - 1).reduce(
+    (total, texto) => total + texto.length + 1, 0
+  ) + columnaSegura - 1;
+  const fin = inicio < codigo.value.length && codigo.value[inicio] !== "\n" ? inicio + 1 : inicio;
+  codigo.focus();
+  codigo.setSelectionRange(inicio, fin);
+}
+
 function mostrarResultado(resultado) {
   listaErrores.replaceChildren();
   if (resultado.valido) {
+    ubicacionErrores = null;
     estado.textContent = "El análisis léxico, sintáctico y semántico fue correcto.";
     estado.className = "correcto";
     listaErrores.hidden = true;
@@ -28,15 +52,26 @@ function mostrarResultado(resultado) {
 
   estado.textContent = `Se encontraron ${resultado.errores.length} error(es).`;
   estado.className = "error";
+  ubicacionErrores = { revision: revisionCodigo, codigo: codigo.value };
   resultado.errores.forEach(({ fase, linea, columna, mensaje }) => {
     const item = document.createElement("li");
     item.textContent = `${fase}: línea ${linea}, columna ${columna}: ${mensaje}`;
+    item.tabIndex = 0;
+    item.role = "button";
+    item.addEventListener("click", () => localizarError(linea, columna));
+    item.addEventListener("keydown", (evento) => {
+      if (evento.key === "Enter" || evento.key === " ") {
+        evento.preventDefault();
+        localizarError(linea, columna);
+      }
+    });
     listaErrores.append(item);
   });
   listaErrores.hidden = false;
 }
 
 function mostrarMensaje(mensaje, clase = "") {
+  ubicacionErrores = null;
   listaErrores.replaceChildren();
   listaErrores.hidden = true;
   estado.textContent = mensaje;
@@ -52,6 +87,7 @@ function invalidarWasm() {
 function invalidarResultados() {
   // Una respuesta pendiente no debe presentar el análisis de una versión anterior.
   revisionCodigo += 1;
+  ubicacionErrores = null;
   listaErrores.replaceChildren();
   listaErrores.hidden = true;
   estado.textContent = "El código cambió. Analiza nuevamente.";
@@ -164,8 +200,54 @@ async function analizar() {
   }
 }
 
+async function compilar() {
+  const codigoEnviado = codigo.value;
+  const revisionEnviada = revisionCodigo;
+  const solicitud = ++ultimaSolicitudCompilacion;
+  const accion = ++ultimaAccion;
+  botonCompilar.disabled = true;
+  invalidarWasm();
+  mostrarMensaje("Compilando…");
+  try {
+    const respuesta = await fetch("/api/compilar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codigo: codigoEnviado }),
+    });
+    const resultado = await respuesta.json();
+    if (accion !== ultimaAccion
+      || solicitud !== ultimaSolicitudCompilacion
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
+      return;
+    }
+    if (!respuesta.ok) throw new Error(resultado.error || "No se pudo compilar el programa.");
+    if (!resultado.valido) {
+      mostrarResultado(resultado);
+      return;
+    }
+    wasmCompilado = decodificarWasm(resultado.wasm_base64);
+    botonDescargarWasm.disabled = false;
+    mostrarMensaje("La compilación fue correcta.", "correcto");
+  } catch (error) {
+    if (accion !== ultimaAccion
+      || solicitud !== ultimaSolicitudCompilacion
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
+      return;
+    }
+    mostrarMensaje(error.message, "error");
+  } finally {
+    if (solicitud === ultimaSolicitudCompilacion) {
+      botonCompilar.disabled = false;
+    }
+  }
+}
+
 async function ejecutar() {
   const codigoEnviado = codigo.value;
+  const revisionEnviada = revisionCodigo;
+  const accion = ++ultimaAccion;
   let entradas;
   try {
     entradas = obtenerEntradas();
@@ -183,13 +265,20 @@ async function ejecutar() {
       body: JSON.stringify({ codigo: codigoEnviado }),
     });
     const resultado = await respuesta.json();
+    if (accion !== ultimaAccion
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
+      return;
+    }
     if (!respuesta.ok) throw new Error(resultado.error || "No se pudo compilar el programa.");
     if (!resultado.valido) {
       mostrarResultado(resultado);
       return;
     }
     const wasm = decodificarWasm(resultado.wasm_base64);
-    if (codigo.value !== codigoEnviado) {
+    if (accion !== ultimaAccion
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
       mostrarMensaje("El código cambió durante la compilación. Ejecuta nuevamente.", "error");
       return;
     }
@@ -202,7 +291,10 @@ async function ejecutar() {
     }
     mostrarMensaje("Ejecutando main()…");
     const ejecucion = await ejecutarEnWorker(wasmCompilado, entradas);
-    if (codigo.value !== codigoEnviado) {
+    if (accion !== ultimaAccion) {
+      return;
+    }
+    if (revisionEnviada !== revisionCodigo || codigo.value !== codigoEnviado) {
       invalidarWasm();
       mostrarMensaje("El código cambió durante la ejecución. Ejecuta nuevamente.", "error");
       return;
@@ -210,6 +302,11 @@ async function ejecutar() {
     const salidas = ejecucion.salidas.map((salida) => `Salida: ${salida}`);
     mostrarMensaje([...salidas, `Resultado de main(): ${ejecucion.valor}`].join("\n"), "correcto");
   } catch (error) {
+    if (accion !== ultimaAccion
+      || revisionEnviada !== revisionCodigo
+      || codigo.value !== codigoEnviado) {
+      return;
+    }
     mostrarMensaje(error.message, "error");
   } finally {
     botonEjecutar.disabled = false;
@@ -223,6 +320,7 @@ codigo.addEventListener("input", () => {
 });
 codigo.addEventListener("scroll", () => { lineas.scrollTop = codigo.scrollTop; });
 botonAnalizar.addEventListener("click", analizar);
+botonCompilar.addEventListener("click", compilar);
 botonEjecutar.addEventListener("click", ejecutar);
 botonDescargarWasm.addEventListener("click", descargarWasm);
 archivo.addEventListener("change", () => {

@@ -22,13 +22,13 @@ Nuevo nodo ConstLocalDeclContext: IDENT(), type_() según el parser generado
 (o getTypedRuleContext(TypeContext, 0)) y expression(). StatementContext
 expone constLocalDecl(). Se conserva el árbol ANTLR y las claves públicas.
 
-Hay que reconocer este nuevo tipo de sentencia en el generador.
 declaraciones[nodo_const_local] contiene su ID. simbolos[id] conserva
 nombre, tipo, funcion, es_constante=True, mutable=False y valor calculado,
 como las constantes globales. referencias sigue vinculando las lecturas
 al ID correcto. El nombre por sí solo no basta: puede estar sombreado.
-El backend puede materializar el valor ya calculado, sin ejecutar el
-inicializador en runtime. No cambia prestamos ni llamadas_incorporadas.
+El generador reconoce esta sentencia y materializa el valor ya calculado sin
+ejecutar el inicializador en runtime. No cambia prestamos ni
+llamadas_incorporadas.
 
 Los mapas internos de valores locales se indexan por nodo, no por nombre,
 para evitar mezclar constantes de distintas funciones o bloques.
@@ -41,7 +41,7 @@ fn main() -> i32 {
 }
 ```
 
-Valor esperado tras integrar WASM: 12.
+El módulo WASM generado devuelve 12.
 
 ```rust
 fn main() {
@@ -51,5 +51,5 @@ fn main() {
 ```
 
 Ejecutar python pruebas_constantes_locales.py (28/28) y
-python ejecutar_pruebas.py (949/949 en 37 suites). Son pruebas del
-frontend; la ejecución WASM requiere adaptar y probar el generador.
+python ejecutar_pruebas.py. Estas pruebas validan el frontend; el generador
+también tiene pruebas de Wasmtime para las constantes locales admitidas.

@@ -1,0 +1,9 @@
+fn duplicar(numero: i32) -> i32 {
+    return numero * 2;
+}
+
+fn main() -> i32 {
+    let base = 10;
+    let resultado = duplicar(base) + 5;
+    return resultado;
+}
