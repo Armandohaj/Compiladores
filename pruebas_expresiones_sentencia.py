@@ -1,9 +1,15 @@
+# Suite del frontend: descarte de resultados sin perder movimientos, préstamos o saltos. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Expresiones descartadas: el punto y coma no elimina sus efectos semánticos."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Comprueba tipos, consumo de Move, liberación de temporales y saltos."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Aritmética descartada', 'fn main()->i32{10+20;5}', True),
         ('Booleano descartado', 'fn main(){true;}', True),

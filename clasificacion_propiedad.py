@@ -1,3 +1,5 @@
+# Política Copy/Move del lenguaje. Clasificar un tipo no copia memoria ni mueve bindings;
+# esas decisiones se aplican en fases posteriores.
 """Clasificación Copy/Move acordada para RustiQ.
 
 Este módulo solo clasifica tipos. No realiza copias, movimientos ni préstamos.
@@ -14,6 +16,9 @@ def clasificar_tipo(tipo, estructuras, enumeraciones, visitando=None):
     recursiva inválida. La validación de tipos del frontend debe diagnosticar
     esos casos antes de aplicar reglas de propiedad.
     """
+    # Se inspecciona el tipo completo, no solo la variante activa o el valor actual. Un enum
+    # con cualquier componente Move es Move. None indica clasificación no válida, nunca una
+    # decisión implícita de mover.
     referencia = separar_referencia(tipo)
     if referencia is not None:
         mutable, interior = referencia

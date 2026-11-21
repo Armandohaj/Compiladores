@@ -1,3 +1,5 @@
+# Análisis de préstamos por ámbitos. El mapa prestamos describe origen, tipo y mutabilidad;
+# las direcciones físicas se deciden en el generador.
 """Préstamos léxicos de variables completas sobre los IDs existentes.
 
 Una referencia local conserva su préstamo hasta salir de su ámbito. Los
@@ -23,6 +25,9 @@ class AnalizadorPrestamos:
         self.prestamos = {}  # Contrato público: únicamente BorrowExprContext.
         self.errores = []
         self.reportados = set()
+        # activos describe capacidades de acceso; vinculos indica qué
+        # variables referencia conservan esas capacidades. Son distintos:
+        # x es el propietario y r, en let r=&x, guarda la referencia a x.
         self.activos = {}
         self.vinculos = {}   # ID de variable referencia -> préstamos posibles.
         self.vivas = set()
@@ -63,6 +68,12 @@ class AnalizadorPrestamos:
 
     def limpiar(self, conservar=()):
         """Mantiene préstamos vinculados a referencias vivas o resultados temporales."""
+        # activos describe préstamos; vinculos relaciona bindings referencia con sus
+        # préstamos. Se eliminan temporales sin un binding vivo, conservando resultados que
+        # todavía deben salir de un bloque.
+        # Un temporal sin binding puede terminar al acabar la sentencia.
+        # Una referencia guardada conserva su préstamo hasta salir de su
+        # ámbito, incluso si no vuelve a leerse: no implementamos último uso.
         usados = set(conservar)
         for identificador in self.vivas:
             usados.update(self.vinculos.get(identificador, ()))
@@ -83,6 +94,9 @@ class AnalizadorPrestamos:
 
     def comprobar_referencia(self, claves, token, escritura=False):
         """Valida que una desreferenciación siga apuntando a un origen vivo."""
+        # La clave del préstamo debe seguir activa y el ID del origen debe seguir vivo. Para
+        # escritura se exige además préstamo mutable; una dirección válida por sí sola no
+        # otorga permiso de escritura.
         if not claves:
             self.reportar(token, "No se pudo determinar un origen válido para la referencia.")
         for clave in claves:
@@ -100,6 +114,9 @@ class AnalizadorPrestamos:
         El resultado puede prestar una variable exterior, pero no un receptor
         que desaparece al terminar este brazo.
         """
+        # Un receptor del patrón es una variable propia del brazo, aunque se llame igual que
+        # una exterior. Prestarlo dentro del brazo es válido; devolver una referencia a él
+        # fuera del brazo no lo es.
         anteriores = set(self.activos)
         locales = set()
 
@@ -132,6 +149,9 @@ class AnalizadorPrestamos:
 
     def evaluar(self, nodo, transferir=False):
         """Devuelve préstamos posibles si el nodo produce una referencia."""
+        # Devuelve claves de préstamos si el nodo produce una referencia. Un conjunto vacío
+        # no es un tipo unit: significa que este recorrido no entrega una referencia para
+        # vincular.
         if nodo is None:
             return set()
         if isinstance(nodo, P.BorrowExprContext):
@@ -141,6 +161,9 @@ class AnalizadorPrestamos:
             anteriores = self.conflictos(identificador)
             if (mutable and anteriores) or any(p['mutable'] for p in anteriores):
                 self.reportar(nodo.start, 'El préstamo es incompatible con los préstamos activos de la variable.')
+            # Este es el contrato público. tipo es el del ORIGEN (i32, Punto,
+            # etc.); tipos_expresiones guarda el tipo de &x o &mut x. La
+            # dirección i32 de WASM no es un tipo fuente y la decide Armando.
             registro = {
                 'simbolo_id': identificador,
                 'tipo': self.simbolos[identificador]['tipo'],
@@ -168,6 +191,9 @@ class AnalizadorPrestamos:
                 if continua and nodo.expression() is not None:
                     resultado = self.evaluar(nodo.expression(), True)
             finally:
+                # Al abandonar el bloque se eliminan los propietarios locales.
+                # Si el valor de salida los sigue prestando, sería una referencia
+                # colgante: se informa el error en lugar de dejarla al backend.
                 locales = self.ambitos.pop()
                 self.vivas.difference_update(locales)
                 for clave in resultado:

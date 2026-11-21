@@ -1,3 +1,5 @@
+# Registro nominal de enums. Las variantes, etiquetas y tipos de datos asociados son
+# información compartida con patrones y generación.
 """
 Registro de enumeraciones y datos asociados a sus variantes.
 
@@ -16,6 +18,8 @@ class GestorEnumeraciones:
     """Registra variantes, etiquetas y tipos de datos asociados."""
 
     def __init__(self, semantico):
+        # Conserva el analizador que recibe diagnósticos y los registros que se llenan al
+        # recorrer las declaraciones de enums.
         self.semantico = semantico
         self.enumeraciones = {}
 

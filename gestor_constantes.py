@@ -1,3 +1,5 @@
+# Constantes globales: registro previo, comprobación de inicializadores y cálculo con
+# dependencias y detección de ciclos.
 """Coordina el registro, validación y cálculo de constantes globales.
 
 Las firmas se conocen antes de revisar inicializadores. El registro de
@@ -129,6 +131,9 @@ class GestorConstantes:
 
     def calcular(self, token):
         """Devuelve un valor en caché o resuelve sus dependencias. Detecta ciclos y siempre limpia el estado en_proceso."""
+        # valores evita repetir cálculos y en_proceso detecta ciclos. La comprobación de
+        # dependencias recorre también ramas que el cortocircuito omitiría al calcular el
+        # valor.
         nombre = token.text
 
         if nombre in self.valores:

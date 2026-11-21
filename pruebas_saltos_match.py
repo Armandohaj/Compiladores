@@ -1,3 +1,6 @@
+# Suite del frontend: brazos que saltan frente a brazos que sí entregan un valor. Se analiza
+# código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas
+# de integración.
 """Prueba salidas de brazos de match; no genera ni ejecuta WASM."""
 from main import analizar_programa
 from flujo_control import salidas_control
@@ -5,6 +8,9 @@ from flujo_control import salidas_control
 
 def ejecutar_pruebas():
     """Distingue brazos que producen valores de los que transfieren el control."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Return en un brazo', 'fn main()->i32{match true{true=>{return 1;},false=>2}}', None),
         ('Return en ambos brazos', 'fn main()->i32{match true{true=>{return 1;},false=>{return 2;}}}', None),

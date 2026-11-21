@@ -1,3 +1,6 @@
+# Suite del frontend: tipos por posición, accesos y símbolos de valores compuestos. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Pruebas de tipos, valores constantes y destinos de tuplas.
 
 La gramática del proyecto exige dos o más campos. (x) sigue siendo
@@ -83,6 +86,7 @@ INVALIDAS = [
 ]
 
 
+# Recorre los hijos del árbol original para comprobar tipos o vínculos en nodos interiores.
 def recorrer(nodo):
     yield nodo
     for hijo in nodo.getChildren():
@@ -90,6 +94,8 @@ def recorrer(nodo):
             yield from recorrer(hijo)
 
 
+# Comprueba el contrato de símbolos y referencias que consume el generador, además de la
+# aceptación del programa.
 def comprobar_backend():
     r = analizar_programa(
         "fn main() { let mut t = ([(1, true)], false); let i = 0; let x = false; t.0[i].1 = x; }"
@@ -105,7 +111,11 @@ def comprobar_backend():
     assert {r["simbolos"][r["referencias"][n]]["nombre"] for n in lecturas} == {"i", "x"}
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
     for nombre, codigo, esperados in VALIDAS:
         r = analizar_programa(codigo)

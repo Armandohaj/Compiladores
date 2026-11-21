@@ -1,9 +1,15 @@
+# Suite del frontend: compatibilidad y cobertura de patrones, receptores y tipos de brazos.
+# Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a
+# las pruebas de integración.
 """Pruebas del frontend para match; no ejecutan WebAssembly."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Incluye cobertura de datos anidados, ámbitos y contrato de símbolos."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('literal', 'fn main()->i32{return match 2 {0=>10,_=>20};}', True),
         ('bool completo', 'fn main()->i32{return match true {true=>1,false=>2};}', True),

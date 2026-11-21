@@ -1,3 +1,6 @@
+# Suite del frontend: char, String, Unicode, escapes y operaciones admitidas. Se analiza
+# código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas
+# de integración.
 """Pruebas de caracteres, cadenas, escapes y errores de tipos.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
@@ -307,7 +310,11 @@ fn main() -> String {
 ]
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
 
     for nombre, codigo, fase, fragmento in PRUEBAS:

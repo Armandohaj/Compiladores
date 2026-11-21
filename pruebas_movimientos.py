@@ -1,9 +1,15 @@
+# Suite del frontend: disponibilidad de valores Move, reinicialización y uniones de flujo.
+# Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a
+# las pruebas de integración.
 """Propiedad de valores completos: Copy, Move, reinicialización y caminos."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Comprueba errores ubicados y que un rechazo vacíe el contrato del backend."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Copy entero conserva origen', 'fn main()->i32{let a=1;let b=a;a+b}', None),
         ('Move String una vez', 'fn main()->String{let a="hola";let b=a;b}', None),

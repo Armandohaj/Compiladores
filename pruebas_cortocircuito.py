@@ -1,9 +1,15 @@
+# Suite del frontend: inicialización conservadora cuando && u || pueden omitir un operando.
+# Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a
+# las pruebas de integración.
 """Verifica inicialización conservadora al omitir operandos lógicos."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """No ejecuta RustiQ; comprueba aceptación y diagnósticos del frontend."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('AND puede omitir asignación', 'fn main()->i32{let x:i32;let b=false && {x=10;true};return x;}', 'antes de inicializarla'),
         ('OR puede omitir asignación', 'fn main()->i32{let x:i32;let b=true || {x=10;false};return x;}', 'antes de inicializarla'),

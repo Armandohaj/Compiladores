@@ -1,9 +1,15 @@
+# Suite del frontend: destinos, valores y condiciones que no llegan a continuar normalmente.
+# Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a
+# las pruebas de integración.
 """Comprueba saltos en asignaciones simples, compuestas y condiciones."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Verifica aceptación, diagnósticos y conservación de los ámbitos vigentes."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Asignación simple con return', 'fn main()->i32{let mut x=0;x={return 7;};}', None),
         ('Primera asignación con return', 'fn main()->i32{let x:i32;x={return 7;};}', None),

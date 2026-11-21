@@ -1,3 +1,5 @@
+# Utilidades de referencias. Distinguen mutabilidad y tipo apuntado e identifican orígenes
+# simples admitidos por el análisis.
 """Tipos fuente de referencias y destinos simples del préstamo inicial."""
 from generated.RustiQParser import RustiQParser as P
 

@@ -1,3 +1,5 @@
+# Visitor de tipos y nombres. Calcula tipos sobre el árbol ANTLR y mantiene ámbitos léxicos;
+# no ejecuta las funciones del usuario ni produce instrucciones WASM.
 """Análisis semántico: comprueba qué significa un programa ya bien formado.
 
 ANTLR entrega el árbol; este visitor lo recorre y calcula tipos, busca
@@ -21,6 +23,9 @@ from tipos_referencias import separar_referencia, identificador_simple
 class AnalizadorSemantico(RustiQVisitor):
     def __init__(self):
         """Prepara el estado de un análisis independiente. No reutilizar símbolos entre programas."""
+        # La pila ambitos guarda visibilidad; tipos_expresiones guarda resultados de
+        # inferencia; tipos_esperados transporta contexto en sentido contrario. No son tres
+        # tablas equivalentes.
         super().__init__()
 
         # Pila de ámbitos: cada diccionario contiene variables.
@@ -38,6 +43,9 @@ class AnalizadorSemantico(RustiQVisitor):
 
         # Tipo contextual de arreglos y tuplas, incluidos arreglos vacíos.
         # Las claves son nodos del mismo árbol, sin crear un AST adicional.
+        # Contexto va de afuera hacia adentro: en let a:[i32;0]=[], el
+        # literal vacío no puede inferir por sí solo su elemento. El tipo
+        # declarado le proporciona esa información, sin ejecutar el programa.
         self.tipos_esperados = {}
 
         # Firmas de funciones: parámetros y tipo de retorno.
@@ -86,6 +94,9 @@ class AnalizadorSemantico(RustiQVisitor):
         No lo propaga a operandos, índices ni argumentos de llamadas: allí
         el tipo esperado se determina por las reglas propias de cada operación.
         """
+        # Ejemplo: [] no revela su elemento por sí solo, pero let a:[i32;0]=[] sí aporta un
+        # tipo esperado. El contexto atraviesa envoltorios y expresiones finales, no se
+        # impone a cualquier operando.
         if esperado is not None:
             nodo = ctx
             destinos = (
@@ -160,6 +171,9 @@ class AnalizadorSemantico(RustiQVisitor):
         4. Constantes.
         5. Cuerpos de funciones.
         """
+        # Se conocen primero los tipos y firmas globales, antes de revisar cuerpos. Esto
+        # permite llamadas a funciones declaradas después sin ejecutar ninguna función
+        # durante el registro.
 
         # Conocer primero los enums permite utilizarlos
         # en campos de estructuras y firmas de funciones.
@@ -237,6 +251,9 @@ class AnalizadorSemantico(RustiQVisitor):
     # =================================================
     def visitFunctionDecl(self, ctx):
         """Analiza parámetros, instrucciones y retorno de una función."""
+        # Los parámetros se consideran inicializados al entrar. Su ámbito se comparte con el
+        # cuerpo principal; los bloques interiores crean ámbitos adicionales. El contexto
+        # anterior se restaura al salir.
         anteriores = self.ambitos
         retorno_anterior = self.tipo_retorno
         ciclos_anteriores = self.limites_ciclos
@@ -507,6 +524,9 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitIfStmt(self, ctx):
         """Analiza ambas ramas desde copias del mismo estado. Una variable solo queda inicializada si lo está en todos los caminos que continúan."""
+        # Se analizan ambas alternativas desde el mismo estado. Inicializada exige todas las
+        # continuaciones; puede_inicializada registra cualquiera y evita segundas escrituras
+        # posibles sin mut.
         tipo = self.visit(ctx.expression())
 
         if (
@@ -520,6 +540,9 @@ class AnalizadorSemantico(RustiQVisitor):
             )
 
         # Las dos ramas parten del mismo estado.
+        # DEFENSA: inicializada usa «todos» los caminos; puede_inicializada
+        # usa «alguno». Esto permite detectar tanto lecturas sin valor seguro
+        # como una posible segunda escritura a una variable inmutable.
         inicial = deepcopy(self.ambitos)
         bloques = ctx.block()
 
@@ -573,6 +596,9 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitWhileStmt(self, ctx):
         """Exige condición bool y analiza el cuerpo en contexto de ciclo. Restaura inicialización externa porque puede ejecutarse cero veces."""
+        # No se presupone que el cuerpo se ejecute: inicializar solo dentro del while no
+        # garantiza valor después. El análisis de tipos y el de propiedad usan reglas
+        # complementarias.
         tipo = self.visit(ctx.expression())
 
         if (
@@ -642,6 +668,9 @@ class AnalizadorSemantico(RustiQVisitor):
         ámbito actual. Solo puede depender de constantes visibles previamente.
         Los valores calculados usan el nodo como clave para respetar sombreado.
         """
+        # const no es simplemente let sin mut: su inicializador se calcula al compilar y no
+        # puede capturar valores de parámetros o variables de ejecución. El valor se guarda
+        # por nodo para distinguir nombres sombreados.
         from evaluador_constantes import EvaluadorConstantes, ErrorConstante
         token = ctx.IDENT().getSymbol()
         if self.nombre_incorporado(token):
@@ -703,6 +732,8 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitLetDecl(self, ctx):
         """Analiza el valor antes de registrar el nombre, infiere o comprueba el tipo y registra mutabilidad e inicialización."""
+        # El inicializador se analiza antes de introducir el nuevo binding. Si no tiene
+        # continuación normal, no se inventa una variable inicializada con el tipo unit.
         token = ctx.IDENT().getSymbol()
         nombre = token.text
         if self.nombre_incorporado(token):
@@ -782,6 +813,9 @@ class AnalizadorSemantico(RustiQVisitor):
 
     def visitBorrowExpr(self, ctx):
         """Comprueba tipo y mutabilidad; los conflictos activos se revisan luego."""
+        # Esta fase comprueba tipo, origen y mutabilidad. Los conflictos entre préstamos
+        # activos se verifican después con los IDs resueltos, para no confundir dos
+        # variables del mismo nombre.
         tipo = self.visit(ctx.unary())
         origen = identificador_simple(ctx.unary())
         if origen is None:
@@ -842,6 +876,9 @@ class AnalizadorSemantico(RustiQVisitor):
     def visitAssignment(self, ctx):
         # Conservar el comportamiento de las asignaciones simples.
         """Distingue reemplazo completo de escritura de un campo o elemento. Comprueba lectura previa en asignaciones compuestas."""
+        # Una escritura simple puede inicializar o reemplazar el valor completo; una
+        # compuesta necesita leer un valor ya disponible. Escribir un campo no reinicializa
+        # un contenedor movido o incompleto.
         if ctx.dereferenceTarget() is not None:
             return self.visitar_escritura_referencia(ctx)
         if ctx.indexAccess() or ctx.tupleAccess() or ctx.fieldAccess():
@@ -1376,11 +1413,17 @@ class AnalizadorSemantico(RustiQVisitor):
             self.comprobar_accesos(None, accesos)
             return self.guardar_tipo(ctx, "unit")
 
+        # El tipo del Postfix es el resultado del acceso, no el de su base.
+        # Ejemplo: p:&mut Punto conserva ese tipo en el símbolo; p.x:f64
+        # indica al generador el dato que debe cargar desde la dirección.
         tipo = self.comprobar_accesos(tipo_base, accesos)
         return self.guardar_tipo(ctx, tipo)
 
     def visitar_asignacion_elemento(self, ctx):
         """Exige un valor completo inicializado y mutable; comprueba tipo del destino y del valor. No inicializa parcialmente por campos."""
+        # En r.campo mediante &mut T, la capacidad de escritura proviene del tipo
+        # referencia, no de declarar mut el binding r. Mediante &T no se permite modificar
+        # el origen.
         token = ctx.IDENT().getSymbol()
         variable = self.buscar_variable(token.text)
         errores_antes = len(self.errores)

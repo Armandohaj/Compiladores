@@ -1,9 +1,15 @@
+# Suite del frontend: lecturas y escrituras a campos o elementos mediante &T y &mut T. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Accesos al valor apuntado: tipos, mutabilidad y contrato del frontend."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Revisa lecturas Copy y escrituras sin mover ni reemplazar referencias."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     prefijo = 'struct Punto{x:f64,y:f64} '
     casos = [
         ('Ejemplo oficial', prefijo+'fn mover_x(p:&mut Punto,dx:f64){p.x=p.x+dx;}', True),

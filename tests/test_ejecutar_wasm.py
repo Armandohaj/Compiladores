@@ -1,3 +1,5 @@
+# Suite de integración: ejecución de binarios existentes y sus errores. Los casos usan
+# archivos o instancias de prueba para aislar resultados.
 import hashlib
 import subprocess
 import sys
@@ -15,6 +17,7 @@ from ejecutar_wasm import (
 from generador_wasm import compilar_programa
 
 
+# Prepara un binario de prueba a partir de WAT para aislar la ejecución de la compilación RustiQ.
 def crear_wasm(tmp_path, nombre, wat):
     archivo = tmp_path / nombre
     archivo.write_bytes(wasmtime.wat2wasm(wat))
@@ -22,6 +25,8 @@ def crear_wasm(tmp_path, nombre, wat):
 
 
 def test_ejecutor_wasm_ejecuta_y_no_modifica_el_archivo(tmp_path, capsys):
+    # Objetivo: ejecutor wasm ejecuta y no modifica el archivo. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_wasm(
         tmp_path,
         "treinta.wasm",
@@ -37,6 +42,8 @@ def test_ejecutor_wasm_ejecuta_y_no_modifica_el_archivo(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_ejecuta_binario_generado_por_rustiq(tmp_path, capsys):
+    # Objetivo: ejecutor wasm ejecuta binario generado por rustiq. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("fn main() -> i32 { return 10 + 20; }")
     archivo = tmp_path / "rustiq.wasm"
     archivo.write_bytes(resultado["wasm"])
@@ -49,6 +56,9 @@ def test_ejecutor_wasm_ejecuta_binario_generado_por_rustiq(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_entrega_entradas_y_captura_salidas_en_orden(tmp_path):
+    # Objetivo: ejecutor wasm entrega entradas y captura salidas en orden. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     archivo = crear_wasm(
         tmp_path,
         "entrada-salida.wasm",
@@ -72,6 +82,9 @@ def test_ejecutor_wasm_entrega_entradas_y_captura_salidas_en_orden(tmp_path):
 
 
 def test_ejecutor_wasm_rechaza_entradas_insuficientes_y_fuera_de_rango(tmp_path):
+    # Objetivo: ejecutor wasm rechaza entradas insuficientes y fuera de rango. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     archivo = crear_wasm(
         tmp_path,
         "dos-lecturas.wasm",
@@ -96,6 +109,8 @@ def test_ejecutor_wasm_rechaza_entradas_insuficientes_y_fuera_de_rango(tmp_path)
     ],
 )
 def test_ejecutor_wasm_rechaza_importaciones_incompatibles(tmp_path, wat, capsys):
+    # Objetivo: ejecutor wasm rechaza importaciones incompatibles. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_wasm(tmp_path, "importacion.wasm", wat)
     modulo = wasmtime.Module(wasmtime.Engine(), archivo.read_bytes())
 
@@ -109,6 +124,8 @@ def test_ejecutor_wasm_rechaza_importaciones_incompatibles(tmp_path, wat, capsys
 
 
 def test_ejecutor_wasm_rechaza_archivo_inexistente(tmp_path, capsys):
+    # Objetivo: ejecutor wasm rechaza archivo inexistente. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     codigo_salida = ejecutar_archivo_wasm(tmp_path / "ausente.wasm")
 
     assert codigo_salida == 2
@@ -116,6 +133,8 @@ def test_ejecutor_wasm_rechaza_archivo_inexistente(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_rechaza_archivo_corrupto(tmp_path, capsys):
+    # Objetivo: ejecutor wasm rechaza archivo corrupto. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = tmp_path / "corrupto.wasm"
     archivo.write_bytes(b"esto no es wasm")
 
@@ -126,6 +145,8 @@ def test_ejecutor_wasm_rechaza_archivo_corrupto(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_rechaza_modulo_sin_main(tmp_path, capsys):
+    # Objetivo: ejecutor wasm rechaza modulo sin main. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_wasm(tmp_path, "sin-main.wasm", '(module (func (export "otra")))')
 
     codigo_salida = ejecutar_archivo_wasm(archivo)
@@ -135,6 +156,8 @@ def test_ejecutor_wasm_rechaza_modulo_sin_main(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_rechaza_firma_incompatible(tmp_path, capsys):
+    # Objetivo: ejecutor wasm rechaza firma incompatible. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_wasm(
         tmp_path,
         "firma.wasm",
@@ -148,6 +171,8 @@ def test_ejecutor_wasm_rechaza_firma_incompatible(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_detiene_ciclo_infinito(tmp_path, capsys):
+    # Objetivo: ejecutor wasm detiene ciclo infinito. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_wasm(
         tmp_path,
         "infinito.wasm",
@@ -161,6 +186,8 @@ def test_ejecutor_wasm_detiene_ciclo_infinito(tmp_path, capsys):
 
 
 def test_ejecutor_wasm_no_importa_el_compilador():
+    # Objetivo: ejecutor wasm no importa el compilador. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     codigo = Path("ejecutar_wasm.py").read_text(encoding="utf-8")
 
     assert "generador_wasm" not in codigo
@@ -169,6 +196,8 @@ def test_ejecutor_wasm_no_importa_el_compilador():
 
 
 def test_ejecutor_wasm_funciona_desde_powershell(tmp_path):
+    # Objetivo: ejecutor wasm funciona desde powershell. Lanza el comando como proceso
+    # externo y comprueba su respuesta; necesita las herramientas de su plataforma.
     archivo = crear_wasm(
         tmp_path,
         "consola.wasm",

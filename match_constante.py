@@ -1,3 +1,5 @@
+# Patrones usados en compilación: coincidencia con valores constantes y recolección de
+# dependencias respetando ámbitos.
 """Ayudas para patrones y dependencias léxicas durante la compilación."""
 from generated.RustiQParser import RustiQParser as P
 

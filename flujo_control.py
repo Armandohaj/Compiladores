@@ -1,3 +1,5 @@
+# Describe continuaciones posibles sobre el árbol. Los saltos se consultan junto con los
+# tipos: una expresión tipada puede terminar antes de entregar su valor.
 """Describe cómo puede terminar un nodo del árbol ANTLR.
 
 normal: continúa y puede producir un valor; return: termina la función;
@@ -9,6 +11,9 @@ from generated.RustiQParser import RustiQParser as P
 
 def secuencia(nodos):
     """Compone evaluaciones en orden; un salto impide ejecutar las siguientes."""
+    # «normal» es una posibilidad de continuar, no una prueba de que el
+    # programa se ejecutará. Una secuencia deja de aportar pasos cuando
+    # todos sus caminos salieron mediante un salto.
     salidas = {'normal'}
     for nodo in nodos:
         if 'normal' not in salidas:
@@ -19,6 +24,9 @@ def secuencia(nodos):
 
 def salidas_control(nodo):
     """Calcula salidas posibles conservadoramente, sin deducir condiciones literales."""
+    # normal indica una continuación posible. return, break y continue describen salidas
+    # distintas; el generador consulta este flujo junto con el tipo para no pedir valores
+    # que nunca se producen.
     if nodo is None:
         return {'normal'}
     if isinstance(nodo, P.ReturnStmtContext):

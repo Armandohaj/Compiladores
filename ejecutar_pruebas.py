@@ -1,3 +1,5 @@
+# Ejecutor de suites pruebas_*.py. Cada archivo corre con el mismo Python; se comprueban el
+# código de salida y el resumen, no solo que exista texto en consola.
 """Ejecuta todas las suites pruebas_*.py con el mismo Python del proyecto.
 
 Uso: python ejecutar_pruebas.py

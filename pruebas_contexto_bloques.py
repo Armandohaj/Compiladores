@@ -1,9 +1,15 @@
+# Suite del frontend: propagación del tipo esperado a bloques y brazos de match. Se analiza
+# código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas
+# de integración.
 """Tipos esperados en bloques y match, incluidos arreglos vacíos anidados."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Propaga contexto donde corresponde y conserva incompatibilidades reales."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Let con bloque vacío tipado', 'fn main()->[i32;0]{let x:[i32;0]={[]};x}', None),
         ('Return explícito de bloque', 'fn main()->[i32;0]{return {[]};}', None),

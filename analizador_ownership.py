@@ -1,3 +1,5 @@
+# Análisis de propiedad por IDs resueltos. La disponibilidad se comprueba separadamente de
+# los tipos para detectar usos después de movimiento y combinaciones de caminos.
 """Comprueba disponibilidad y transferencias de valores sobre el árbol ANTLR.
 
 Se ejecuta después de tipos y resolución de nombres. Los IDs existentes
@@ -14,6 +16,9 @@ class AnalizadorOwnership:
     """Estados posibles por símbolo: disponible, movido o sin inicializar."""
 
     def __init__(self, resolucion, tipos, estructuras, enumeraciones):
+        # estados relaciona IDs con conjuntos de estados posibles. vivo indica si continúa
+        # el camino analizado, no la duración de una variable. ciclos acumula destinos de
+        # break y continue.
         self.simbolos = resolucion.simbolos
         self.declaraciones = resolucion.declaraciones
         self.referencias = resolucion.referencias
@@ -22,7 +27,12 @@ class AnalizadorOwnership:
         self.enumeraciones = enumeraciones
         self.errores = []
         self.reportados = set()
+        # ID -> conjunto de estados posibles. Después de un if, x puede
+        # estar disponible por una rama y movido por otra. No basta guardar
+        # un único booleano: cualquier posibilidad de movimiento impide usarlo.
         self.estados = {}
+        # vivo describe una continuación del análisis, no si una variable vive.
+        # return/break/continue cortan ese camino; no ejecutamos el programa.
         self.vivo = True
         self.ciclos = []
 
@@ -53,6 +63,9 @@ class AnalizadorOwnership:
 
     def usar(self, identificador, token, transferir=False):
         """Leer requiere disponibilidad; transferir un Move consume su origen."""
+        # Leer y transferir no son lo mismo. Transferir un Move invalida el origen; Copy
+        # conserva su disponibilidad. Una constante materializa su valor por uso en lugar de
+        # consumirse como binding.
         simbolo = self.simbolos[identificador]
         # Una constante representa un valor calculado que se materializa por uso;
         # no es una variable local cuyo almacenamiento se invalida al transferirlo.
@@ -65,6 +78,9 @@ class AnalizadorOwnership:
         if 'sin inicializar' in estado:
             self.reportar(token, f"La variable '{simbolo['nombre']}' no tiene un valor disponible.")
             return
+        # transferir distingue leer de consumir. Comparar un String no tiene
+        # el mismo efecto que entregarlo por valor a un parámetro. En Copy,
+        # la transferencia no invalida la identidad del origen.
         if transferir and self.clase(simbolo['tipo']) == 'Move':
             self.estados[identificador] = {'movido'}
 
@@ -82,6 +98,10 @@ class AnalizadorOwnership:
 
     def evaluar_ramas(self, ramas):
         """Aísla alternativas y conserva solo los caminos que continúan."""
+        # Se unen únicamente alternativas que llegan a continuar. Una rama que retorna no
+        # debe convertir en movido un valor usado solo después de otra rama.
+        # Cada rama empieza desde una copia: analizar la primera no debe
+        # contaminar la segunda. Se unen únicamente caminos que continúan.
         inicial = deepcopy(self.estados)
         continuaciones = []
         for patron, expresion in ramas:
@@ -110,8 +130,14 @@ class AnalizadorOwnership:
         El retorno termina la función; break y continue se guardan en el ciclo
         más cercano. El while también puede salir al evaluar su condición.
         """
+        # Punto fijo significa repetir el análisis hasta estabilizar los estados posibles,
+        # no ejecutar el ciclo. Así se detectan movimientos que impedirían una segunda
+        # iteración.
         entrada = deepcopy(self.estados)
         cabecera = deepcopy(entrada)
+        # Punto fijo: repetimos el análisis hasta que otra vuelta no agregue
+        # estados posibles. Así detectamos un Move que fallaría en la segunda
+        # iteración aunque la primera parezca correcta. No ejecutamos el ciclo.
         while True:
             self.estados = deepcopy(cabecera)
             self.vivo = True

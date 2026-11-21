@@ -1,9 +1,15 @@
+# Suite del frontend: constructores que no se completan por return, break o continue. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Regresión del frontend para saltos dentro de constructores compuestos."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Distingue elementos que entregan valores de los que transfieren control."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Arreglo con return', 'fn main()->i32{let a=[1,{return 7;}];}', None),
         ('Arreglo que empieza con return', 'fn main()->i32{let a=[{return 7;},1];}', None),

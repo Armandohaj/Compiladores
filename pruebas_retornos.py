@@ -1,3 +1,6 @@
+# Suite del frontend: presencia de valor, tipo y caminos que terminan la función. Se analiza
+# código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas
+# de integración.
 """Pruebas de tipos devueltos y ausencia de retornos.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos

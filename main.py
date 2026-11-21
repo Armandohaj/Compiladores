@@ -1,3 +1,6 @@
+# Entrada del frontend. analizar_programa devuelve datos sin imprimir; analizar es la
+# envoltura para terminal. Los errores impiden entregar árbol y mapas utilizables como un
+# análisis válido.
 """Punto de entrada del frontend RustiQ y API reutilizable por el servidor.
 
 El flujo es texto -> tokens -> árbol de ANTLR -> análisis semántico ->
@@ -23,14 +26,21 @@ class RecolectorErrores(ErrorListener):
     """Guarda los errores de ANTLR sin imprimirlos."""
 
     def __init__(self, fase):
+        # Cada listener conserva la fase que lo creó (léxico o sintáctico) y su propia lista
+        # de diagnósticos; no mezcla errores entre análisis.
         super().__init__()
         self.fase = fase
         self.errores = []
 
+    # Recoge el error de ANTLR y convierte su columna de base cero a la ubicación mostrada
+    # al usuario.
     def syntaxError(
         self, recognizer, offendingSymbol,
         line, column, msg, e
     ):
+        # ANTLR entrega columnas desde cero. Este callback las convierte a base uno y
+        # conserva el mensaje; acumular errores permite mostrarlos sin imprimir desde el
+        # analizador.
         self.errores.append({
             "fase": self.fase,
             "mensaje": msg,
@@ -62,6 +72,9 @@ def analizar_programa(codigo):
     Si hay errores, el árbol será None y los diccionarios
     destinados al backend estarán vacíos.
     """
+    # Contrato: recibe texto y devuelve datos estructurados. Las fases solo avanzan si la
+    # anterior es válida; los mapas no se publican parcialmente como información confiable
+    # para el generador.
 
     errores_lexicos = RecolectorErrores("lexico")
     errores_sintacticos = RecolectorErrores("sintactico")
@@ -99,6 +112,8 @@ def analizar_programa(codigo):
     # C. Análisis semántico.
     # -------------------------------------------------
 
+    # DEFENSA: las fases no se ejecutan a ciegas. Un error léxico o
+    # sintáctico impide analizar tipos sobre un árbol recuperado por ANTLR.
     semantico = None
 
     if not errores:
@@ -144,11 +159,17 @@ def analizar_programa(codigo):
 
         # La propiedad usa los mismos nodos e identidades ya resueltos.
         # No se ejecuta sobre programas con errores de tipos o nombres.
+        # Tipos responde «¿qué valor es compatible aquí?». Ownership responde
+        # «¿sigue disponible ese valor?». Separarlos facilita explicar y probar
+        # las reglas sin volver a resolver nombres ni crear otro árbol.
         propiedad = AnalizadorOwnership(
             resolucion, tipos_expresiones, estructuras, semantico.enumeraciones
         )
         propiedad.analizar(arbol)
         errores.extend(propiedad.errores)
+        # Los préstamos se revisan después de movimientos: &x no puede
+        # rescatar un x que ya se transfirió. El backend recibe los mapas solo
+        # cuando todas estas comprobaciones terminaron sin errores.
         if not errores:
             borrowing = AnalizadorPrestamos(
                 resolucion, tipos_expresiones, estructuras, semantico.enumeraciones

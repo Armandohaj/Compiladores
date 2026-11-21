@@ -1,9 +1,15 @@
+# Suite del frontend: operandos aritméticos o unarios que salen mediante un salto. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Regresión de saltos en operandos aritméticos y unarios del frontend."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Un salto no produce un valor numérico; un bloque unit normal sí es error."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Return a la derecha de suma', 'fn main()->i32{return 1+{return 7;};}', None),
         ('Return a la izquierda de suma', 'fn main()->i32{{return 7;}+1}', None),

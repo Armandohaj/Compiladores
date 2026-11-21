@@ -1,6 +1,9 @@
+# Suite de integración: compilación y ejecución desde procesos de terminal. Los casos usan
+# archivos o instancias de prueba para aislar resultados.
 from ejecutar_escritorio import ejecutar_archivo, main
 
 
+# Escribe un fuente temporal de prueba sin modificar los ejemplos del repositorio.
 def crear_programa(tmp_path, nombre, codigo):
     archivo = tmp_path / nombre
     archivo.write_text(codigo, encoding="utf-8")
@@ -8,6 +11,8 @@ def crear_programa(tmp_path, nombre, codigo):
 
 
 def test_ejecutor_escritorio_compila_guarda_y_ejecuta(tmp_path, capsys):
+    # Objetivo: ejecutor escritorio compila guarda y ejecuta. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_programa(
         tmp_path,
         "valido.rustiq",
@@ -22,6 +27,8 @@ def test_ejecutor_escritorio_compila_guarda_y_ejecuta(tmp_path, capsys):
 
 
 def test_ejecutor_escritorio_muestra_errores_de_compilacion(tmp_path, capsys):
+    # Objetivo: ejecutor escritorio muestra errores de compilacion. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_programa(
         tmp_path,
         "invalido.rustiq",
@@ -36,6 +43,8 @@ def test_ejecutor_escritorio_muestra_errores_de_compilacion(tmp_path, capsys):
 
 
 def test_ejecutor_escritorio_rechaza_firma_main_incompatible(tmp_path, capsys):
+    # Objetivo: ejecutor escritorio rechaza firma main incompatible. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_programa(
         tmp_path,
         "bool.rustiq",
@@ -50,6 +59,8 @@ def test_ejecutor_escritorio_rechaza_firma_main_incompatible(tmp_path, capsys):
 
 
 def test_ejecutor_escritorio_termina_ciclo_infinito(tmp_path, capsys):
+    # Objetivo: ejecutor escritorio termina ciclo infinito. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_programa(
         tmp_path,
         "infinito.rustiq",
@@ -64,6 +75,8 @@ def test_ejecutor_escritorio_termina_ciclo_infinito(tmp_path, capsys):
 
 
 def test_ejecutor_escritorio_entrega_entradas_y_muestra_salidas(tmp_path, capsys):
+    # Objetivo: ejecutor escritorio entrega entradas y muestra salidas. Las aserciones fijan
+    # el comportamiento esperado; un rechazo previsto también es un resultado correcto.
     archivo = crear_programa(
         tmp_path,
         "entrada_salida.rustiq",
@@ -89,6 +102,8 @@ def test_ejecutor_escritorio_entrega_entradas_y_muestra_salidas(tmp_path, capsys
 
 
 def test_ejecutor_escritorio_informa_entradas_insuficientes(tmp_path, capsys):
+    # Objetivo: ejecutor escritorio informa entradas insuficientes. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     archivo = crear_programa(
         tmp_path,
         "faltan_entradas.rustiq",

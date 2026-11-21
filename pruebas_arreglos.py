@@ -1,3 +1,6 @@
+# Suite del frontend: tipo de elemento, tamaño fijo, accesos y diagnóstico de índices. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Regresión de arreglos e índices; no ejecuta el backend Wasm.
 
 Ejecutar con: python pruebas_arreglos.py
@@ -109,6 +112,7 @@ INVALIDAS = [
 ]
 
 
+# Recorre los hijos del árbol original para comprobar tipos o vínculos en nodos interiores.
 def recorrer(nodo):
     yield nodo
     for hijo in nodo.getChildren():
@@ -138,7 +142,11 @@ def comprobar_referencias():
     assert vistos == {"A", "i"}
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
     for nombre, codigo, esperados in VALIDAS:
         print(f"\n--- {nombre} ---")

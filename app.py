@@ -1,3 +1,5 @@
+# Capa HTTP: recibe código, llama al frontend o generador y devuelve JSON. Los nodos ANTLR
+# permanecen en Python; el binario se transporta en Base64.
 import base64
 
 from flask import Flask, jsonify, render_template, request
@@ -10,12 +12,16 @@ app = Flask(__name__)
 
 
 @app.get("/")
+# Entrega la plantilla del editor; la compilación se solicita en endpoints separados.
 def index():
     return render_template("index.html")
 
 
 @app.post("/api/analizar")
+# Valida el cuerpo de la petición y devuelve el diagnóstico del frontend como JSON.
 def analizar():
+    # El endpoint de análisis responde con validez y diagnósticos; no entrega el árbol ni
+    # los diccionarios con nodos como claves mediante JSON.
     datos = request.get_json(silent=True)
     if not isinstance(datos, dict) or not isinstance(datos.get("codigo"), str):
         return jsonify({"error": "Se requiere un campo 'codigo' de texto."}), 400
@@ -30,6 +36,8 @@ def analizar():
 @app.post("/api/compilar")
 def compilar():
     """Compila RustiQ a Wasm y entrega el binario codificado para JSON."""
+    # Base64 es transporte del binario, no una traducción a JavaScript. Flask compila y
+    # devuelve bytes codificados; el navegador ejecuta el módulo con WebAssembly.
     datos = request.get_json(silent=True)
     if not isinstance(datos, dict) or not isinstance(datos.get("codigo"), str):
         return jsonify({"error": "Se requiere un campo 'codigo' de texto."}), 400

@@ -1,9 +1,15 @@
+# Suite del frontend: pureza del inicializador, ámbito y sombreado de const locales. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Constantes locales evaluadas al compilar: ámbitos, pureza y contrato."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Incluye casos negativos: aceptar una constante no equivale a ejecutar WASM."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Entero', 'fn main()->i32{const N:i32=10;N}', True),
         ('Dependencia local', 'fn main()->i32{const A:i32=2;const B:i32=A+3;B}', True),

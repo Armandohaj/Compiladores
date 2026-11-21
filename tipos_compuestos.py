@@ -1,3 +1,5 @@
+# Utilidades comunes de tipos y accesos. Conservar forma canónica y orden de campos e
+# índices evita discrepancias entre recorridos del árbol.
 """Utilidades compartidas para mantener iguales los tipos del semántico y backend."""
 from generated.RustiQParser import RustiQParser
 

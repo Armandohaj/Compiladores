@@ -1,3 +1,6 @@
+# Suite del frontend: identidades de parámetros, variables, sombreado y referencias para el
+# generador. Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM
+# corresponde a las pruebas de integración.
 """Pruebas de identidad de variables y referencias al mismo árbol.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
@@ -17,11 +20,13 @@ def recorrer(nodo):
             yield from recorrer(hijo)
 
 
+# Registra una condición esperada del contrato y permite identificar qué comprobación falló.
 def comprobar(condicion, mensaje):
     if not condicion:
         raise AssertionError(mensaje)
 
 
+# Exige análisis válido antes de inspeccionar los mapas de símbolos de la prueba.
 def analizar_valido(codigo):
     resultado = analizar_programa(codigo)
     comprobar(
@@ -281,7 +286,11 @@ PRUEBAS = [
 ]
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
 
     for nombre, prueba in PRUEBAS:

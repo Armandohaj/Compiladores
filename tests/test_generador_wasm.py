@@ -1,3 +1,5 @@
+# Suite de integración: generación y ejecución del módulo con Wasmtime. Los casos usan
+# archivos o instancias de prueba para aislar resultados.
 import hashlib
 import math
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +19,8 @@ from main import analizar_programa
 
 
 def test_compila_y_ejecuta_la_prueba_obligatoria(tmp_path):
+    # Objetivo: compila y ejecuta la prueba obligatoria. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return 10 + 20;
 }""")
@@ -31,6 +35,9 @@ def test_compila_y_ejecuta_la_prueba_obligatoria(tmp_path):
 
 
 def test_read_y_print_generan_imports_y_ejecutan_el_programa_obligatorio(tmp_path, capsys):
+    # Objetivo: read y print generan imports y ejecutan el programa obligatorio. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let primero: i32 = read();
     let segundo: i32 = read();
@@ -55,6 +62,9 @@ def test_read_y_print_generan_imports_y_ejecutan_el_programa_obligatorio(tmp_pat
 
 
 def test_read_y_print_funcionan_en_funciones_condiciones_y_ciclos():
+    # Objetivo: read y print funcionan en funciones condiciones y ciclos. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""fn doble_entrada() -> i32 {
     return read() * 2;
 }
@@ -76,6 +86,8 @@ fn main() -> i32 {
 
 
 def test_tupla_local_obligatoria_lectura_y_asignacion_compuesta():
+    # Objetivo: tupla local obligatoria lectura y asignacion compuesta. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut datos = (10, true);
     datos.0 += 5;
@@ -87,6 +99,8 @@ def test_tupla_local_obligatoria_lectura_y_asignacion_compuesta():
 
 
 def test_tuplas_locales_explicitas_e_inferidas_con_f64():
+    # Objetivo: tuplas locales explicitas e inferidas con f64. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     explicita = compilar_programa("""fn main() -> f64 {
     let mut datos: (i32, f64, char) = (10 + 2, 2.5 * 2.0, 'x');
     datos.1 /= 2.0;
@@ -108,6 +122,8 @@ def test_tuplas_locales_explicitas_e_inferidas_con_f64():
 
 
 def test_asignaciones_simples_y_compuestas_a_campos_de_tupla():
+    # Objetivo: asignaciones simples y compuestas a campos de tupla. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut datos = (20, 2, true, 'a');
     datos.1 = 5;
@@ -127,6 +143,8 @@ def test_asignaciones_simples_y_compuestas_a_campos_de_tupla():
 
 
 def test_dos_tuplas_locales_tienen_almacenamiento_independiente():
+    # Objetivo: dos tuplas locales tienen almacenamiento independiente. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut izquierda = (1, 2);
     let mut derecha = (10, 20);
@@ -149,6 +167,8 @@ def test_dos_tuplas_locales_tienen_almacenamiento_independiente():
     ],
 )
 def test_tuplas_no_admitidas_no_generan_wasm(codigo):
+    # Objetivo: tuplas no admitidas no generan wasm. Comprueba la respuesta del compilador;
+    # la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -156,6 +176,9 @@ def test_tuplas_no_admitidas_no_generan_wasm(codigo):
 
 
 def test_estructura_local_obligatoria_lectura_y_asignacion_compuesta():
+    # Objetivo: estructura local obligatoria lectura y asignacion compuesta. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""struct Persona {
     edad: i32,
     activo: bool
@@ -172,6 +195,9 @@ fn main() -> i32 {
 
 
 def test_estructuras_explicitas_inferidas_y_orden_de_constructor():
+    # Objetivo: estructuras explicitas inferidas y orden de constructor. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""struct Medida {
     activo: bool,
     valor: f64,
@@ -201,6 +227,9 @@ fn main() -> i32 {
 
 
 def test_asignaciones_simples_y_compuestas_a_campos_de_estructura():
+    # Objetivo: asignaciones simples y compuestas a campos de estructura. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""struct Datos {
     entero: i32,
     decimal: f64,
@@ -227,6 +256,8 @@ fn main() -> i32 {
 
 
 def test_estructuras_independientes_en_condicionales_y_ciclos():
+    # Objetivo: estructuras independientes en condicionales y ciclos. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""struct Contador { valor: i32, activo: bool }
 fn main() -> i32 {
     let mut primero = Contador { valor: 0, activo: true };
@@ -253,6 +284,8 @@ fn main() -> i32 {
     ],
 )
 def test_estructuras_no_admitidas_no_generan_wasm(codigo):
+    # Objetivo: estructuras no admitidas no generan wasm. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -260,6 +293,8 @@ def test_estructuras_no_admitidas_no_generan_wasm(codigo):
 
 
 def test_retornos_implicitos_obligatorios_y_bloques_con_valor():
+    # Objetivo: retornos implicitos obligatorios y bloques con valor. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     directo = compilar_programa("""fn main() -> i32 {
     let numero = 10;
     numero + 20
@@ -288,6 +323,8 @@ fn main() -> i32 {
 
 
 def test_bloques_con_valor_en_argumentos_y_tipos_primitivos():
+    # Objetivo: bloques con valor en argumentos y tipos primitivos. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     argumentos = compilar_programa("""fn sumar(valor: i32) -> i32 {
     valor + 1
 }
@@ -318,6 +355,8 @@ fn main() -> i32 {
 
 
 def test_bloques_sin_valor_sombreado_y_return_anticipado():
+    # Objetivo: bloques sin valor sombreado y return anticipado. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let valor = 1;
     {
@@ -336,6 +375,8 @@ def test_bloques_sin_valor_sombreado_y_return_anticipado():
 
 
 def test_match_obligatorio_patrones_basicos_negativos_y_comodin():
+    # Objetivo: match obligatorio patrones basicos negativos y comodin. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     enteros = compilar_programa("""fn main() -> i32 {
     let numero = 2;
     return match numero {
@@ -375,6 +416,8 @@ def test_match_obligatorio_patrones_basicos_negativos_y_comodin():
 
 
 def test_match_receptores_sombreado_bloques_y_anidamiento():
+    # Objetivo: match receptores sombreado bloques y anidamiento. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     receptores = compilar_programa("""fn main() -> i32 {
     let numero = 5;
     let resultado = match numero {
@@ -400,6 +443,8 @@ def test_match_receptores_sombreado_bloques_y_anidamiento():
 
 
 def test_match_evalua_una_vez_y_ejecuta_solo_el_brazo_elegido():
+    # Objetivo: match evalua una vez y ejecuta solo el brazo elegido. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return match read() {
         1 => { print(10); 10 },
@@ -414,6 +459,8 @@ def test_match_evalua_una_vez_y_ejecuta_solo_el_brazo_elegido():
 
 
 def test_match_con_return_anticipado_y_patrones_de_tupla():
+    # Objetivo: match con return anticipado y patrones de tupla. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     retorno = compilar_programa("""fn main() -> i32 {
     let valor = match 1 {
         1 => { return 9; },
@@ -435,6 +482,9 @@ def test_match_con_return_anticipado_y_patrones_de_tupla():
 
 
 def test_match_tuplas_literales_receptores_y_rechazos_controlados():
+    # Objetivo: match tuplas literales receptores y rechazos controlados. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     booleanos = compilar_programa("""fn main() -> i32 {
     return match (true, false) {
         (true, _) => 1,
@@ -494,6 +544,9 @@ def test_match_tuplas_literales_receptores_y_rechazos_controlados():
 
 
 def test_enumeraciones_sin_datos_obligatorias_variables_y_comparaciones():
+    # Objetivo: enumeraciones sin datos obligatorias variables y comparaciones. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     obligatorio = compilar_programa("""enum Estado {
     Pendiente,
     Completado
@@ -524,6 +577,9 @@ fn main() -> i32 {
 
 
 def test_match_enumeraciones_anidadas_y_nombres_de_variantes_independientes():
+    # Objetivo: match enumeraciones anidadas y nombres de variantes independientes.
+    # Comprueba resultados o errores de ejecución mediante las funciones o procesos
+    # invocados en esta prueba.
     resultado = compilar_programa("""enum A { Activo, Inactivo }
 enum B { Activo, Inactivo }
 fn main() -> i32 {
@@ -540,6 +596,8 @@ fn main() -> i32 {
 
 
 def test_match_enum_ejecuta_un_solo_brazo_y_respeta_el_comodin():
+    # Objetivo: match enum ejecuta un solo brazo y respeta el comodin. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""enum Estado { Pendiente, Completado, Cancelado }
 fn main() -> i32 {
     return match Estado::Completado {
@@ -554,6 +612,8 @@ fn main() -> i32 {
 
 
 def test_enumeraciones_con_datos_obligatoria_y_receptores():
+    # Objetivo: enumeraciones con datos obligatoria y receptores. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""enum Resultado {
     Vacio,
     Correcto(i32),
@@ -586,6 +646,8 @@ fn main() -> i32 {
 
 
 def test_enumeraciones_con_datos_copia_efectos_y_match_anidado():
+    # Objetivo: enumeraciones con datos copia efectos y match anidado. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     copia = compilar_programa("""enum Dato { Numero(i32), Vacio }
 fn main() -> i32 {
     let primero = Dato::Numero(3);
@@ -609,6 +671,9 @@ fn main() -> i32 {
 
 
 def test_enumeraciones_con_datos_string_mueven_y_conservan_contenido():
+    # Objetivo: enumeraciones con datos string mueven y conservan contenido. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     principal = compilar_programa("""enum Resultado {
     Correcto(i32),
     Error(String),
@@ -659,6 +724,8 @@ fn main() -> i32 {
 
 
 def test_patrones_de_enum_f64_negativos_y_string_utf8():
+    # Objetivo: patrones de enum f64 negativos y string utf8. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     decimal = compilar_programa("""enum Dato {
     Valor(f64),
     Error(String)
@@ -688,6 +755,8 @@ fn main() -> i32 {
 
 
 def test_funciones_con_parametros_y_retornos_de_enumeraciones():
+    # Objetivo: funciones con parametros y retornos de enumeraciones. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     con_datos = compilar_programa("""enum Resultado { Correcto(i32), Vacio }
 fn identidad(valor: Resultado) -> Resultado { return valor; }
 fn main() -> i32 {
@@ -726,6 +795,9 @@ fn main() -> i32 {
 
 
 def test_copias_completas_de_tuplas_y_asignaciones_independientes():
+    # Objetivo: copias completas de tuplas y asignaciones independientes. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     obligatorio = compilar_programa("""fn main() -> i32 {
     let original = (10, true);
     let mut copia = original;
@@ -751,6 +823,8 @@ def test_copias_completas_de_tuplas_y_asignaciones_independientes():
 
 
 def test_copias_completas_de_estructuras_y_bloques_con_valor():
+    # Objetivo: copias completas de estructuras y bloques con valor. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     obligatorio = compilar_programa("""struct Punto { x: i32, y: f64 }
 fn main() -> i32 {
     let original = Punto { x: 10, y: 2.5 };
@@ -774,6 +848,9 @@ fn main() -> i32 {
 
 
 def test_copias_completas_de_arreglos_y_asignaciones_independientes():
+    # Objetivo: copias completas de arreglos y asignaciones independientes. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     obligatorio = compilar_programa("""fn main() -> i32 {
     let original = [10, 20];
     let mut copia = original;
@@ -810,6 +887,8 @@ def test_copias_completas_de_arreglos_y_asignaciones_independientes():
 
 
 def test_copias_completas_de_matrices_y_rechazos_de_move():
+    # Objetivo: copias completas de matrices y rechazos de move. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     obligatorio = compilar_programa("""fn main() -> i32 {
     let original = [[1, 2], [3, 4]];
     let mut copia = original;
@@ -845,6 +924,8 @@ def test_copias_completas_de_matrices_y_rechazos_de_move():
 
 
 def test_borrowing_escalar_obligatorio_lecturas_y_escrituras():
+    # Objetivo: borrowing escalar obligatorio lecturas y escrituras. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     local = compilar_programa("""fn main() -> i32 {
     let mut numero = 10;
     { let referencia = &mut numero; *referencia = 25; }
@@ -889,6 +970,8 @@ fn main() -> i32 {
 
 
 def test_borrowing_escalar_f64_bool_char_y_rechazos_controlados():
+    # Objetivo: borrowing escalar f64 bool char y rechazos controlados. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     decimales = compilar_programa("""fn aumentar(r: &mut f64) { *r += 2.0; }
 fn main() -> f64 {
     let mut valor = 1.5;
@@ -935,6 +1018,8 @@ fn main() -> f64 {
 
 
 def test_prestamos_de_receptores_match_tipos_sombreado_y_enum():
+    # Objetivo: prestamos de receptores match tipos sombreado y enum. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     booleano = compilar_programa("""fn main() -> bool {
     match true { x => { let r = &x; *r } }
 }""")
@@ -965,6 +1050,9 @@ fn main() -> i32 {
 
 
 def test_prestamos_de_receptores_match_rechazan_escape_mutable_y_f64():
+    # Objetivo: prestamos de receptores match rechazan escape mutable y f64. Comprueba la
+    # respuesta del compilador; la presencia de un binario y los errores se validan en las
+    # aserciones.
     mutable = compilar_programa("""fn main() -> i32 {
     match 1 { x => { let r = &mut x; *r = 2; *r } }
 }""")
@@ -985,6 +1073,8 @@ def test_prestamos_de_receptores_match_rechazan_escape_mutable_y_f64():
 
 
 def test_constantes_locales_materializadas_por_id_y_sombreado():
+    # Objetivo: constantes locales materializadas por id y sombreado. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""const BASE: i32 = 10;
 fn main() -> i32 {
     const LIMITE: i32 = BASE + 2;
@@ -1016,6 +1106,9 @@ fn main() -> i32 {
 
 
 def test_expresiones_como_sentencias_descartan_valores_y_prestamos_temporales():
+    # Objetivo: expresiones como sentencias descartan valores y prestamos temporales.
+    # Comprueba resultados o errores de ejecución mediante las funciones o procesos
+    # invocados en esta prueba.
     basica = compilar_programa("""fn main() -> i32 {
     10 + 20;
     5
@@ -1042,6 +1135,9 @@ def test_expresiones_como_sentencias_descartan_valores_y_prestamos_temporales():
 
 
 def test_borrowing_estructuras_ejemplo_oficial_y_lecturas_compartidas():
+    # Objetivo: borrowing estructuras ejemplo oficial y lecturas compartidas. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     oficial = compilar_programa("""struct Punto { x: f64, y: f64 }
 fn mover_x(p: &mut Punto, dx: f64) { p.x = p.x + dx; }
 fn main() -> f64 {
@@ -1068,6 +1164,9 @@ fn main() -> i32 {
 
 
 def test_borrowing_estructuras_escrituras_compuestas_y_aislamiento():
+    # Objetivo: borrowing estructuras escrituras compuestas y aislamiento. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     mutacion = compilar_programa("""struct Punto { x: i32, y: f64 }
 fn cambiar(p: &mut Punto) { p.x += 2; p.y *= 2.0; }
 fn main() -> i32 {
@@ -1122,6 +1221,8 @@ fn main() -> i32 {
 
 
 def test_borrowing_tuplas_arreglos_y_matrices_obligatorios():
+    # Objetivo: borrowing tuplas arreglos y matrices obligatorios. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     tupla = compilar_programa("""fn main() -> i32 {
     let mut datos = (10, true);
     { let r = &mut datos; r.0 += 5; }
@@ -1159,6 +1260,8 @@ def test_borrowing_tuplas_arreglos_y_matrices_obligatorios():
 
 
 def test_borrowing_compuestos_parametros_f64_e_indices():
+    # Objetivo: borrowing compuestos parametros f64 e indices. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     parametros = compilar_programa("""fn cambiar_t(t: &mut (i32, bool)) { t.0 += 2; }
 fn cambiar_a(a: &mut [i32; 2]) { a[1] = 9; }
 fn cambiar_m(m: &mut [[i32; 2]; 2]) { m[1][0] += 10; }
@@ -1203,6 +1306,9 @@ fn main() -> f64 {
 
 
 def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
+    # Objetivo: borrowing compuestos rechaza escrituras y desreferenciacion completa.
+    # Comprueba la respuesta del compilador; la presencia de un binario y los errores se
+    # validan en las aserciones.
     compartida = compilar_programa("""fn main() -> i32 {
     let datos = [1, 2]; let r = &datos; r[0] = 3; 0
 }""")
@@ -1232,6 +1338,9 @@ def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
     ],
 )
 def test_enumeraciones_no_admitidas_o_invalidas_no_generan_wasm(codigo):
+    # Objetivo: enumeraciones no admitidas o invalidas no generan wasm. Comprueba la
+    # respuesta del compilador; la presencia de un binario y los errores se validan en las
+    # aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -1248,6 +1357,8 @@ def test_enumeraciones_no_admitidas_o_invalidas_no_generan_wasm(codigo):
     ],
 )
 def test_errores_semanticos_de_read_y_print_no_generan_wasm(codigo):
+    # Objetivo: errores semanticos de read y print no generan wasm. Comprueba la respuesta
+    # del compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -1255,6 +1366,8 @@ def test_errores_semanticos_de_read_y_print_no_generan_wasm(codigo):
 
 
 def test_respeta_parentesis_y_precedencia():
+    # Objetivo: respeta parentesis y precedencia. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return (2 + 3) * 4 - 6;
 }""")
@@ -1264,6 +1377,8 @@ def test_respeta_parentesis_y_precedencia():
 
 
 def test_puede_generar_varias_funciones_sin_parametros():
+    # Objetivo: puede generar varias funciones sin parametros. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return 1 + 2;
 }
@@ -1278,6 +1393,8 @@ fn producto() -> i32 {
 
 
 def test_programa_invalido_no_genera_wasm():
+    # Objetivo: programa invalido no genera wasm. Comprueba la respuesta del compilador; la
+    # presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa("""fn main() -> i32 {
     return @;
 }""")
@@ -1289,6 +1406,8 @@ def test_programa_invalido_no_genera_wasm():
 
 
 def test_compila_y_ejecuta_el_arreglo_i32_principal():
+    # Objetivo: compila y ejecuta el arreglo i32 principal. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let numeros: [i32; 3] = [10, 20, 30];
     return numeros[1];
@@ -1299,6 +1418,9 @@ def test_compila_y_ejecuta_el_arreglo_i32_principal():
 
 
 def test_constantes_globales_i32_dependencias_y_referencias_adelantadas():
+    # Objetivo: constantes globales i32 dependencias y referencias adelantadas. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""const LIMITE: i32 = 10;
 const DOBLE: i32 = LIMITE * 2;
 
@@ -1319,6 +1441,8 @@ fn main() -> i32 {
 
 
 def test_constantes_globales_f64_bool_char_y_string():
+    # Objetivo: constantes globales f64 bool char y string. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""const PI: f64 = 1.5 + 1.5;
 const ACTIVO: bool = 10 > 2 && !false;
 const LETRA: char = 'ñ';
@@ -1342,6 +1466,8 @@ fn main() -> i32 {
 
 
 def test_variable_local_sombrea_constante_global():
+    # Objetivo: variable local sombrea constante global. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""const VALOR: i32 = 10;
 
 fn main() -> i32 {
@@ -1354,6 +1480,9 @@ fn main() -> i32 {
 
 
 def test_constante_global_no_soportada_genera_error_controlado():
+    # Objetivo: constante global no soportada genera error controlado. Comprueba la
+    # respuesta del compilador; la presencia de un binario y los errores se validan en las
+    # aserciones.
     resultado = compilar_programa("""const DATOS: [i32; 2] = [1, 2];
 
 fn main() -> i32 { return 0; }""")
@@ -1368,6 +1497,8 @@ fn main() -> i32 { return 0; }""")
     [("/", 3), ("%", 1)],
 )
 def test_division_y_residuo_generan_y_ejecutan_wasm(operador, esperado):
+    # Objetivo: division y residuo generan y ejecutan wasm. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     return 10 {operador} 3;
 }}""")
@@ -1377,6 +1508,8 @@ def test_division_y_residuo_generan_y_ejecutan_wasm(operador, esperado):
 
 
 def test_operaciones_con_signo_y_negacion_unaria():
+    # Objetivo: operaciones con signo y negacion unaria. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return -(2 + 3) * 4 + (-7 / 2) + (-7 % 2);
 }""")
@@ -1386,6 +1519,8 @@ def test_operaciones_con_signo_y_negacion_unaria():
 
 
 def test_el_minimo_i32_es_un_literal_negativo_valido():
+    # Objetivo: el minimo i32 es un literal negativo valido. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return -2147483648;
 }""")
@@ -1406,6 +1541,8 @@ def test_el_minimo_i32_es_un_literal_negativo_valido():
     ],
 )
 def test_divisiones_que_trapan_en_wasm(codigo):
+    # Objetivo: divisiones que trapan en wasm. Comprueba resultados o errores de ejecución
+    # mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(codigo)
 
     assert resultado["valido"]
@@ -1415,6 +1552,8 @@ def test_divisiones_que_trapan_en_wasm(codigo):
 
 @pytest.mark.parametrize("literal", ["2147483648", "-2147483649"])
 def test_literales_fuera_del_rango_i32_no_generan_wasm(literal):
+    # Objetivo: literales fuera del rango i32 no generan wasm. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     return {literal};
 }}""")
@@ -1425,6 +1564,8 @@ def test_literales_fuera_del_rango_i32_no_generan_wasm(literal):
 
 
 def test_error_generacion_acepta_nodo_terminal_antlr():
+    # Objetivo: error generacion acepta nodo terminal antlr. Usa el cliente de pruebas HTTP;
+    # no equivale a una demostración manual en un navegador.
     analisis = analizar_programa("""fn main() -> i32 {
     return 10 / 2;
 }""")
@@ -1443,6 +1584,9 @@ def test_error_generacion_acepta_nodo_terminal_antlr():
 
 
 def test_declaracion_y_asignacion_obligatoria_generan_locales_wasm():
+    # Objetivo: declaracion y asignacion obligatoria generan locales wasm. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut numero: i32 = 10;
     numero = numero + 5;
@@ -1457,6 +1601,9 @@ def test_declaracion_y_asignacion_obligatoria_generan_locales_wasm():
 
 
 def test_declaraciones_explicitas_e_inferidas_y_varias_operaciones():
+    # Objetivo: declaraciones explicitas e inferidas y varias operaciones. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let base: i32 = 8;
     let factor = 3;
@@ -1473,6 +1620,8 @@ def test_declaraciones_explicitas_e_inferidas_y_varias_operaciones():
 
 
 def test_inicializacion_posterior_y_asignaciones_compuestas():
+    # Objetivo: inicializacion posterior y asignaciones compuestas. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut valor: i32;
     valor = 20;
@@ -1486,6 +1635,8 @@ def test_inicializacion_posterior_y_asignaciones_compuestas():
 
 
 def test_sombras_usando_identidades_distintas_de_resolucion():
+    # Objetivo: sombras usando identidades distintas de resolucion. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let valor = 10;
     {
@@ -1521,6 +1672,8 @@ def test_sombras_usando_identidades_distintas_de_resolucion():
     ],
 )
 def test_errores_de_kevin_no_generan_wasm(codigo):
+    # Objetivo: errores de kevin no generan wasm. Comprueba la respuesta del compilador; la
+    # presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -1540,6 +1693,8 @@ def test_errores_de_kevin_no_generan_wasm(codigo):
     ],
 )
 def test_booleanos_y_comparaciones_basicas(expresion, esperado):
+    # Objetivo: booleanos y comparaciones basicas. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> bool {{
     return {expresion};
 }}""")
@@ -1549,6 +1704,8 @@ def test_booleanos_y_comparaciones_basicas(expresion, esperado):
 
 
 def test_comparaciones_de_variables_i32_y_variables_bool():
+    # Objetivo: comparaciones de variables i32 y variables bool. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> bool {
     let limite: i32 = 10;
     let actual = 7;
@@ -1562,6 +1719,8 @@ def test_comparaciones_de_variables_i32_y_variables_bool():
 
 
 def test_precedencia_y_expresiones_booleanas_anidadas():
+    # Objetivo: precedencia y expresiones booleanas anidadas. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> bool {
     return !false && ((2 + 3 * 2) == 8 || false);
 }""")
@@ -1578,6 +1737,8 @@ def test_precedencia_y_expresiones_booleanas_anidadas():
     ],
 )
 def test_operadores_logicos_hacen_cortocircuito_real(expresion, esperado):
+    # Objetivo: operadores logicos hacen cortocircuito real. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> bool {{
     return {expresion};
 }}""")
@@ -1587,6 +1748,8 @@ def test_operadores_logicos_hacen_cortocircuito_real(expresion, esperado):
 
 
 def test_tipo_incompatible_rechazado_por_kevin_no_genera_wasm():
+    # Objetivo: tipo incompatible rechazado por kevin no genera wasm. Comprueba la respuesta
+    # del compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa("""fn main() -> bool {
     return true + false;
 }""")
@@ -1597,6 +1760,8 @@ def test_tipo_incompatible_rechazado_por_kevin_no_genera_wasm():
 
 
 def test_llamada_principal_a_funcion_con_parametros():
+    # Objetivo: llamada principal a funcion con parametros. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn sumar(a: i32, b: i32) -> i32 {
     return a + b;
 }
@@ -1610,6 +1775,8 @@ fn main() -> i32 {
 
 
 def test_funcion_declarada_despues_y_exportada_con_argumentos():
+    # Objetivo: funcion declarada despues y exportada con argumentos. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     return doble(9);
 }
@@ -1624,6 +1791,8 @@ fn doble(numero: i32) -> i32 {
 
 
 def test_llamadas_anidadas_y_resultados_en_variables():
+    # Objetivo: llamadas anidadas y resultados en variables. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn sumar(a: i32, b: i32) -> i32 {
     return a + b;
 }
@@ -1638,6 +1807,8 @@ fn main() -> i32 {
 
 
 def test_parametro_mutable_y_parametros_booleanos():
+    # Objetivo: parametro mutable y parametros booleanos. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn incrementar(mut numero: i32) -> i32 {
     numero += 1;
     return numero;
@@ -1658,6 +1829,8 @@ fn main() -> bool {
 
 
 def test_funciones_unit_y_llamadas_como_sentencias():
+    # Objetivo: funciones unit y llamadas como sentencias. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn registrar(valor: i32) {
     return;
 }
@@ -1699,6 +1872,8 @@ fn main() -> i32 {
     ],
 )
 def test_errores_de_llamadas_rechazados_por_kevin(codigo):
+    # Objetivo: errores de llamadas rechazados por kevin. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -1708,6 +1883,8 @@ def test_errores_de_llamadas_rechazados_por_kevin(codigo):
 
 
 def test_if_else_principal_con_funcion_y_parametros():
+    # Objetivo: if else principal con funcion y parametros. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn mayor(a: i32, b: i32) -> i32 {
     if a > b {
         return a;
@@ -1726,6 +1903,8 @@ fn main() -> i32 {
 
 
 def test_if_sin_else_y_else_if():
+    # Objetivo: if sin else y else if. Comprueba resultados o errores de ejecución mediante
+    # las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn clasificar(numero: i32) -> i32 {
     let mut resultado = 0;
     if numero > 0 {
@@ -1751,6 +1930,8 @@ fn main() -> i32 {
 
 
 def test_condicionales_anidados_ambitos_y_modificacion_externa():
+    # Objetivo: condicionales anidados ambitos y modificacion externa. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn ajustar(mut valor: i32, activo: bool) -> i32 {
     if activo {
         let mut valor = 50;
@@ -1773,6 +1954,8 @@ fn main() -> i32 {
 
 
 def test_bool_unit_y_retorno_anticipado_en_condicionales():
+    # Objetivo: bool unit y retorno anticipado en condicionales. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn es_positivo(numero: i32) -> bool {
     if numero > 0 {
         return true;
@@ -1799,6 +1982,8 @@ fn main() -> bool {
 
 
 def test_rama_no_ejecutada_no_divide_entre_cero():
+    # Objetivo: rama no ejecutada no divide entre cero. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     if false {
         return 10 / 0;
@@ -1812,6 +1997,8 @@ def test_rama_no_ejecutada_no_divide_entre_cero():
 
 
 def test_recursion_factorial_con_if_else():
+    # Objetivo: recursion factorial con if else. Comprueba resultados o errores de ejecución
+    # mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn factorial(numero: i32) -> i32 {
     if numero <= 1 {
         return 1;
@@ -1829,6 +2016,8 @@ fn main() -> i32 {
 
 
 def test_condicion_no_booleana_rechazada_por_kevin():
+    # Objetivo: condicion no booleana rechazada por kevin. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa("""fn main() -> i32 {
     if 10 {
         return 1;
@@ -1842,6 +2031,8 @@ def test_condicion_no_booleana_rechazada_por_kevin():
 
 
 def test_while_principal_y_condicion_inicialmente_falsa():
+    # Objetivo: while principal y condicion inicialmente falsa. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn contar(limite: i32) -> i32 {
     let mut contador = 0;
     while contador < limite {
@@ -1860,6 +2051,8 @@ fn main() -> i32 {
 
 
 def test_loop_break_y_continue_en_while_y_loop():
+    # Objetivo: loop break y continue en while y loop. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut contador = 0;
     let mut suma = 0;
@@ -1885,6 +2078,9 @@ def test_loop_break_y_continue_en_while_y_loop():
 
 
 def test_ciclos_anidados_break_y_continue_afectan_el_mas_cercano():
+    # Objetivo: ciclos anidados break y continue afectan el mas cercano. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut externo = 0;
     let mut total = 0;
@@ -1908,6 +2104,8 @@ def test_ciclos_anidados_break_y_continue_afectan_el_mas_cercano():
 
 
 def test_variables_llamadas_y_return_dentro_de_ciclos():
+    # Objetivo: variables llamadas y return dentro de ciclos. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn doble(valor: i32) -> i32 {
     return valor * 2;
 }
@@ -1942,6 +2140,8 @@ fn main() -> i32 {
 
 
 def test_camino_no_ejecutado_en_ciclo_no_provoca_trap():
+    # Objetivo: camino no ejecutado en ciclo no provoca trap. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     while false {
         let valor = 10 / 0;
@@ -1955,6 +2155,8 @@ def test_camino_no_ejecutado_en_ciclo_no_provoca_trap():
 
 
 def test_errores_de_ciclos_de_kevin_no_generan_wasm():
+    # Objetivo: errores de ciclos de kevin no generan wasm. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa("""fn main() -> i32 {
     break;
     return 0;
@@ -1966,6 +2168,8 @@ def test_errores_de_ciclos_de_kevin_no_generan_wasm():
 
 
 def test_f64_prueba_obligatoria_con_parametros_y_retorno():
+    # Objetivo: f64 prueba obligatoria con parametros y retorno. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn calcular(a: f64, b: f64) -> f64 {
     return a + b;
 }
@@ -1980,6 +2184,8 @@ fn main() -> f64 {
 
 
 def test_aritmetica_negacion_y_precedencia_f64():
+    # Objetivo: aritmetica negacion y precedencia f64. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> f64 {
     return -(1.5 + 2.5) * 3.0 / 2.0 - 0.25;
 }""")
@@ -1989,6 +2195,8 @@ def test_aritmetica_negacion_y_precedencia_f64():
 
 
 def test_variables_f64_y_asignaciones_compuestas():
+    # Objetivo: variables f64 y asignaciones compuestas. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> f64 {
     let mut valor: f64 = 1.5;
     valor += 2.5;
@@ -2003,6 +2211,8 @@ def test_variables_f64_y_asignaciones_compuestas():
 
 
 def test_llamadas_anidadas_y_comparaciones_f64():
+    # Objetivo: llamadas anidadas y comparaciones f64. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn promedio(a: f64, b: f64) -> f64 {
     return (a + b) / 2.0;
 }
@@ -2017,6 +2227,8 @@ fn main() -> bool {
 
 
 def test_f64_en_condiciones_y_ciclos():
+    # Objetivo: f64 en condiciones y ciclos. Comprueba resultados o errores de ejecución
+    # mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> f64 {
     let mut valor = 0.0;
     while valor < 1.0 {
@@ -2033,6 +2245,8 @@ def test_f64_en_condiciones_y_ciclos():
 
 
 def test_division_f64_por_cero_sigue_ieee_754():
+    # Objetivo: division f64 por cero sigue ieee 754. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     infinito = compilar_programa("""fn main() -> f64 {
     return 1.0 / 0.0;
 }""")
@@ -2057,6 +2271,8 @@ def test_division_f64_por_cero_sigue_ieee_754():
     ],
 )
 def test_operaciones_f64_invalidas_rechazadas_por_kevin(codigo):
+    # Objetivo: operaciones f64 invalidas rechazadas por kevin. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -2065,6 +2281,8 @@ def test_operaciones_f64_invalidas_rechazadas_por_kevin(codigo):
 
 
 def test_char_prueba_principal_con_variable_y_llamada():
+    # Objetivo: char prueba principal con variable y llamada. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn obtener() -> char {
     let letra: char = 'A';
     return letra;
@@ -2094,6 +2312,8 @@ fn main() -> char {
     ],
 )
 def test_literales_char_unicode_y_escapes(literal, esperado):
+    # Objetivo: literales char unicode y escapes. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> char {{
     return {literal};
 }}""")
@@ -2103,6 +2323,8 @@ def test_literales_char_unicode_y_escapes(literal, esperado):
 
 
 def test_variables_asignacion_parametros_y_llamadas_char():
+    # Objetivo: variables asignacion parametros y llamadas char. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn identidad(letra: char) -> char {
     return letra;
 }
@@ -2123,6 +2345,8 @@ fn main() -> char {
 
 
 def test_igualdad_diferencia_y_condicion_char():
+    # Objetivo: igualdad diferencia y condicion char. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn coincide(a: char, b: char) -> bool {
     return a == b;
 }
@@ -2155,6 +2379,9 @@ fn main() -> i32 {
     ],
 )
 def test_chars_invalidos_o_con_operaciones_no_permitidas_no_generan_wasm(codigo):
+    # Objetivo: chars invalidos o con operaciones no permitidas no generan wasm. Comprueba
+    # la respuesta del compilador; la presencia de un binario y los errores se validan en
+    # las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -2162,6 +2389,8 @@ def test_chars_invalidos_o_con_operaciones_no_permitidas_no_generan_wasm(codigo)
 
 
 def test_string_prueba_principal_y_memoria_exportada():
+    # Objetivo: string prueba principal y memoria exportada. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn identidad(texto: String) -> String {
     return texto;
 }
@@ -2192,6 +2421,8 @@ fn main() -> String {
     ],
 )
 def test_strings_unicode_vacias_y_escapes(literal, esperado):
+    # Objetivo: strings unicode vacias y escapes. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> String {{
     return {literal};
 }}""")
@@ -2201,6 +2432,8 @@ def test_strings_unicode_vacias_y_escapes(literal, esperado):
 
 
 def test_variables_asignaciones_y_llamadas_anidadas_string():
+    # Objetivo: variables asignaciones y llamadas anidadas string. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn identidad(texto: String) -> String {
     return texto;
 }
@@ -2221,6 +2454,8 @@ fn main() -> String {
 
 
 def test_igualdad_string_por_contenido_y_condicionales():
+    # Objetivo: igualdad string por contenido y condicionales. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn iguales(a: String, b: String) -> bool {
     return a == b;
 }
@@ -2255,6 +2490,8 @@ fn main() -> i32 {
     ],
 )
 def test_operaciones_y_tipos_string_invalidos_no_generan_wasm(codigo):
+    # Objetivo: operaciones y tipos string invalidos no generan wasm. Comprueba la respuesta
+    # del compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -2262,6 +2499,9 @@ def test_operaciones_y_tipos_string_invalidos_no_generan_wasm(codigo):
 
 
 def test_datos_estaticos_string_mayores_a_64_kib_usando_dos_paginas():
+    # Objetivo: datos estaticos string mayores a 64 kib usando dos paginas. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     texto = "x" * 70000
     resultado = compilar_programa(f'''fn main() -> String {{
     return "{texto}";
@@ -2273,6 +2513,9 @@ def test_datos_estaticos_string_mayores_a_64_kib_usando_dos_paginas():
 
 
 def test_compilaciones_concurrentes_no_comparten_literales_string():
+    # Objetivo: compilaciones concurrentes no comparten literales string. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     entradas = [("uno", "uno"), ("dos", "dos"), ("中", "中"), ("ñ", "ñ")] * 4
 
     def compilar_y_leer(esperado):
@@ -2287,6 +2530,8 @@ def test_compilaciones_concurrentes_no_comparten_literales_string():
 
 
 def test_limite_de_memoria_estatica_genera_error_controlado(monkeypatch):
+    # Objetivo: limite de memoria estatica genera error controlado. Comprueba la respuesta
+    # del compilador; la presencia de un binario y los errores se validan en las aserciones.
     monkeypatch.setattr(generador_wasm, "MAX_PAGINAS_MEMORIA", 1)
     texto = "x" * 65529
     resultado = compilar_programa(f'''fn main() -> String {{
@@ -2299,6 +2544,8 @@ def test_limite_de_memoria_estatica_genera_error_controlado(monkeypatch):
 
 
 def test_arreglo_i32_inferido_indices_y_elementos_calculados():
+    # Objetivo: arreglo i32 inferido indices y elementos calculados. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let numeros = [2 + 3, 4 * 5, 30 - 1];
     return numeros[0] + numeros[2];
@@ -2309,6 +2556,8 @@ def test_arreglo_i32_inferido_indices_y_elementos_calculados():
 
 
 def test_arreglo_i32_acepta_indices_variables_y_expresiones():
+    # Objetivo: arreglo i32 acepta indices variables y expresiones. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let numeros: [i32; 4] = [10, 20, 30, 40];
     let indice = 1;
@@ -2320,6 +2569,8 @@ def test_arreglo_i32_acepta_indices_variables_y_expresiones():
 
 
 def test_arreglos_locales_diferentes_y_llamadas_repetidas():
+    # Objetivo: arreglos locales diferentes y llamadas repetidas. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn obtener(base: i32) -> i32 {
     let primero = [base, base + 1];
     let segundo = [base + 2, base + 3];
@@ -2335,6 +2586,8 @@ fn main() -> i32 {
 
 
 def test_arreglos_en_llamadas_recursivas_no_comparten_memoria():
+    # Objetivo: arreglos en llamadas recursivas no comparten memoria. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn sumar(n: i32) -> i32 {
     let valores = [n, n + 1];
     if n == 0 {
@@ -2353,6 +2606,8 @@ fn main() -> i32 {
 
 @pytest.mark.parametrize("indice", ["0 - 1", "1 + 2"])
 def test_indices_dinamicos_fuera_de_rango_producen_trap(indice):
+    # Objetivo: indices dinamicos fuera de rango producen trap. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     let numeros = [10, 20];
     let indice = {indice};
@@ -2386,6 +2641,8 @@ def test_indices_dinamicos_fuera_de_rango_producen_trap(indice):
     ],
 )
 def test_errores_semanticos_de_arreglos_no_generan_wasm(codigo):
+    # Objetivo: errores semanticos de arreglos no generan wasm. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -2393,6 +2650,8 @@ def test_errores_semanticos_de_arreglos_no_generan_wasm(codigo):
 
 
 def test_arreglos_bool_y_char_explicitos_e_inferidos():
+    # Objetivo: arreglos bool y char explicitos e inferidos. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     booleanos = compilar_programa("""fn main() -> bool {
     let valores: [bool; 3] = [true, false, true];
     return valores[0] == valores[2] && !valores[1];
@@ -2409,6 +2668,8 @@ def test_arreglos_bool_y_char_explicitos_e_inferidos():
 
 
 def test_arreglos_f64_usan_alineacion_y_operaciones_reales():
+    # Objetivo: arreglos f64 usan alineacion y operaciones reales. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> f64 {
     let mensaje = "dato";
     let primero: [f64; 2] = [1.5, 2.25];
@@ -2424,6 +2685,9 @@ def test_arreglos_f64_usan_alineacion_y_operaciones_reales():
 
 
 def test_arreglos_f64_en_llamadas_recursivas_no_comparten_memoria():
+    # Objetivo: arreglos f64 en llamadas recursivas no comparten memoria. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa("""fn sumar(n: i32) -> f64 {
     let valores = [1.0, 2.5];
     if n == 0 {
@@ -2442,6 +2706,8 @@ fn main() -> f64 {
 
 @pytest.mark.parametrize("indice", ["0 - 1", "1 + 2"])
 def test_indices_invalidos_en_arreglos_f64_producen_trap(indice):
+    # Objetivo: indices invalidos en arreglos f64 producen trap. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> f64 {{
     let valores = [1.0, 2.0];
     let indice = {indice};
@@ -2454,6 +2720,9 @@ def test_indices_invalidos_en_arreglos_f64_producen_trap(indice):
 
 
 def test_matrices_de_tres_dimensiones_y_asignaciones_se_rechazan_controladamente():
+    # Objetivo: matrices de tres dimensiones y asignaciones se rechazan controladamente.
+    # Comprueba la respuesta del compilador; la presencia de un binario y los errores se
+    # validan en las aserciones.
     casos = [
         """fn main() -> i32 {
     let valores: [[[i32; 1]; 1]; 1] = [[[1]]];
@@ -2474,6 +2743,8 @@ def test_matrices_de_tres_dimensiones_y_asignaciones_se_rechazan_controladamente
 
 
 def test_asignacion_simple_a_elemento_de_arreglo():
+    # Objetivo: asignacion simple a elemento de arreglo. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut numeros = [10, 20, 30];
     numeros[1] = 50;
@@ -2486,6 +2757,8 @@ def test_asignacion_simple_a_elemento_de_arreglo():
 
 
 def test_asignacion_a_matriz_y_arreglo_f64():
+    # Objetivo: asignacion a matriz y arreglo f64. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     matriz = compilar_programa("""fn main() -> i32 {
     let mut valores = [[1, 2], [3, 4]];
     valores[1][0] = 30;
@@ -2506,6 +2779,8 @@ def test_asignacion_a_matriz_y_arreglo_f64():
 
 @pytest.mark.parametrize("indice", ["0 - 1", "1 + 1"])
 def test_asignacion_fuera_de_rango_en_arreglo_produce_trap(indice):
+    # Objetivo: asignacion fuera de rango en arreglo produce trap. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     let mut valores = [1, 2];
     valores[{indice}] = 9;
@@ -2518,6 +2793,8 @@ def test_asignacion_fuera_de_rango_en_arreglo_produce_trap(indice):
 
 
 def test_arreglo_string_explicito_compara_el_elemento_principal():
+    # Objetivo: arreglo string explicito compara el elemento principal. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let mensajes: [String; 3] = ["Hola", "Adiós", "RustiQ"];
     if mensajes[1] == "Adiós" {
@@ -2540,6 +2817,8 @@ def test_arreglo_string_explicito_compara_el_elemento_principal():
     ],
 )
 def test_arreglos_string_inferidos_unicode_y_escapes(literal, indice):
+    # Objetivo: arreglos string inferidos unicode y escapes. Comprueba resultados o errores
+    # de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     let textos = {literal};
     if textos[{indice}] == textos[{indice}] {{
@@ -2553,6 +2832,8 @@ def test_arreglos_string_inferidos_unicode_y_escapes(literal, indice):
 
 
 def test_arreglos_string_indices_comparaciones_y_condicionales():
+    # Objetivo: arreglos string indices comparaciones y condicionales. Comprueba resultados
+    # o errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let primero = ["igual", "distinto"];
     let segundo = ["igual", "final"];
@@ -2569,6 +2850,8 @@ def test_arreglos_string_indices_comparaciones_y_condicionales():
 
 
 def test_arreglos_string_en_llamadas_y_arreglos_distintos():
+    # Objetivo: arreglos string en llamadas y arreglos distintos. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn coincide(texto: String) -> bool {
     return texto == "dos";
 }
@@ -2587,6 +2870,8 @@ fn main() -> i32 {
 
 
 def test_arreglos_string_en_llamadas_recursivas():
+    # Objetivo: arreglos string en llamadas recursivas. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn elegir(n: i32) -> i32 {
     let textos = ["base", "recursivo"];
     if n == 0 {
@@ -2611,6 +2896,8 @@ fn main() -> i32 {
 
 @pytest.mark.parametrize("indice", ["0 - 1", "1 + 2"])
 def test_indices_invalidos_en_arreglos_string_producen_trap(indice):
+    # Objetivo: indices invalidos en arreglos string producen trap. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     let textos = ["uno", "dos"];
     let indice = {indice};
@@ -2626,6 +2913,8 @@ def test_indices_invalidos_en_arreglos_string_producen_trap(indice):
 
 
 def test_matriz_i32_principal_explicita_e_inferida():
+    # Objetivo: matriz i32 principal explicita e inferida. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     explicita = compilar_programa("""fn main() -> i32 {
     let matriz: [[i32; 2]; 2] = [[10, 20], [30, 40]];
     return matriz[1][0];
@@ -2642,6 +2931,8 @@ def test_matriz_i32_principal_explicita_e_inferida():
 
 
 def test_matrices_indices_variables_y_expresiones():
+    # Objetivo: matrices indices variables y expresiones. Comprueba resultados o errores de
+    # ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let matriz = [[10, 20], [30, 40], [50, 60]];
     let fila = 1;
@@ -2654,6 +2945,8 @@ def test_matrices_indices_variables_y_expresiones():
 
 
 def test_matrices_bool_char_y_f64():
+    # Objetivo: matrices bool char y f64. Comprueba resultados o errores de ejecución
+    # mediante las funciones o procesos invocados en esta prueba.
     booleanos = compilar_programa("""fn main() -> bool {
     let matriz: [[bool; 2]; 2] = [[true, false], [false, true]];
     return matriz[0][0] && matriz[1][1] && !matriz[0][1];
@@ -2677,6 +2970,8 @@ def test_matrices_bool_char_y_f64():
 
 
 def test_matrices_string_comparaciones_y_condicionales():
+    # Objetivo: matrices string comparaciones y condicionales. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn main() -> i32 {
     let primera = [["igual", "uno"], ["dos", "final"]];
     let segunda = [["igual", "tres"], ["cuatro", "final"]];
@@ -2692,6 +2987,8 @@ def test_matrices_string_comparaciones_y_condicionales():
 
 
 def test_matrices_distintas_llamadas_repetidas_y_recursion():
+    # Objetivo: matrices distintas llamadas repetidas y recursion. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa("""fn sumar(n: i32) -> i32 {
     let primera = [[n, n + 1]];
     let segunda = [[n + 2, n + 3]];
@@ -2714,6 +3011,9 @@ fn main() -> i32 {
     [("0 - 1", "0"), ("2", "0"), ("0", "0 - 1"), ("0", "2")],
 )
 def test_indices_invalidos_en_cada_dimension_de_matriz_producen_trap(fila, columna):
+    # Objetivo: indices invalidos en cada dimension de matriz producen trap. Comprueba
+    # resultados o errores de ejecución mediante las funciones o procesos invocados en esta
+    # prueba.
     resultado = compilar_programa(f"""fn main() -> i32 {{
     let matriz = [[1, 2], [3, 4]];
     let fila = {fila};
@@ -2740,6 +3040,8 @@ def test_indices_invalidos_en_cada_dimension_de_matriz_producen_trap(fila, colum
     ],
 )
 def test_errores_semanticos_de_matrices_no_generan_wasm(codigo):
+    # Objetivo: errores semanticos de matrices no generan wasm. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa(codigo)
 
     assert not resultado["valido"]
@@ -2747,6 +3049,8 @@ def test_errores_semanticos_de_matrices_no_generan_wasm(codigo):
 
 
 def test_asignador_monotonico_crece_memoria_en_un_ciclo():
+    # Objetivo: asignador monotonico crece memoria en un ciclo. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa("""fn main() -> i32 {
     let mut indice = 0;
     let mut suma = 0;

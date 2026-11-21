@@ -1,3 +1,5 @@
+# Ejecutor independiente del compilador. Valida bytes, firma de main e imports, y ejecuta
+# con entradas, salidas y límite de tiempo.
 """Ejecuta directamente un módulo WebAssembly descargado de RustiQ."""
 
 import argparse
@@ -73,6 +75,9 @@ def entradas_desde_texto(texto):
 
 def _ejecutar_main_en_proceso(wasm, entradas, conexion):
     """Ejecuta main en el hijo con imports reales y comunica salidas ordenadas."""
+    # El módulo se instancia en un proceso hijo con imports concretos para read/print. El
+    # aislamiento permite terminar ejecuciones que excedan el tiempo sin bloquear la
+    # interfaz.
     try:
         motor = wasmtime.Engine()
         modulo = cargar_modulo(wasm, motor)
@@ -81,6 +86,8 @@ def _ejecutar_main_en_proceso(wasm, entradas, conexion):
         salidas = []
 
         def read_i32():
+            # Entrega el siguiente entero previamente validado; si faltan datos se informa
+            # el error en lugar de inventar una entrada para el programa.
             nonlocal posicion
             if posicion >= len(entradas):
                 raise RuntimeError("El programa solicitó más entradas i32 de las disponibles.")
@@ -89,6 +96,8 @@ def _ejecutar_main_en_proceso(wasm, entradas, conexion):
             return valor
 
         def print_i32(valor):
+            # Conserva el orden de las salidas emitidas por WASM para devolverlas al proceso
+            # que presenta el resultado.
             salidas.append(valor)
 
         enlazador = wasmtime.Linker(motor)
@@ -183,6 +192,8 @@ def ejecutar_archivo_wasm(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDO
     return 0
 
 
+# Prepara argumentos o interfaz y coordina la operación principal; los errores se presentan
+# al usuario.
 def main(argumentos=None):
     parser = argparse.ArgumentParser(description="Ejecuta un archivo WebAssembly existente.")
     parser.add_argument("archivo", help="Ruta del archivo .wasm a ejecutar.")

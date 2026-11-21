@@ -1,3 +1,6 @@
+# Suite del frontend: exclusividad, vida del origen y contrato del mapa prestamos. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Primera versión de borrowing léxico: no ejecuta memoria ni WebAssembly."""
 from main import analizar_programa
 from generated.RustiQParser import RustiQParser as P
@@ -6,6 +9,9 @@ from clasificacion_propiedad import clasificar_tipo
 
 def ejecutar_pruebas():
     """Comprueba préstamos, desreferenciación, vidas útiles y contrato de nodos."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     validos = [
         ('Préstamo compartido', 'fn main()->i32{let x=1;let r=&x;*r}'),
         ('Dos préstamos compartidos', 'fn main()->i32{let x=1;let r=&x;let s=&x;*r+*s}'),

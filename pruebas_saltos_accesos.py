@@ -1,9 +1,15 @@
+# Suite del frontend: evaluación interrumpida en índices y acceso a campos. Se analiza
+# código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas
+# de integración.
 """Pruebas del frontend para saltos en índices, bases y escrituras compuestas."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Conserva diagnósticos normales y no confunde un salto con un valor unit."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Lectura con return en índice', 'fn main()->i32{let a=[1,2];a[{return 7;}]}', None),
         ('Índice con retorno incorrecto', 'fn main()->i32{let a=[1,2];a[{return false;}]}', 'Retorno incompatible'),

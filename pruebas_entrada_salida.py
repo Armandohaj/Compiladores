@@ -1,3 +1,6 @@
+# Suite del frontend: firmas de read/print, nombres protegidos y mapa de llamadas
+# incorporadas. Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM
+# corresponde a las pruebas de integración.
 """Valida el contrato del frontend; no ejecuta E/S ni WebAssembly."""
 from contextlib import redirect_stdout
 from io import StringIO
@@ -6,6 +9,9 @@ from main import analizar_programa
 
 def ejecutar_pruebas():
     """Comprueba aceptación, diagnósticos y nodos entregados al backend."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     validos = [
         'fn main()->i32 { return read(); }',
         'fn main()->i32 { return read()+2; }',

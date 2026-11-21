@@ -1,3 +1,5 @@
+# Validación de patrones y exhaustividad. Las estructuras temporales de cobertura no
+# reemplazan el árbol ANTLR y no son un AST público del compilador.
 """Patrones y exhaustividad sobre el árbol ANTLR, sin construir otro AST.
 
 Las descripciones temporales de cobertura solo sirven para comprobar casos;
@@ -29,10 +31,16 @@ def cubre_todo(filas, tipos, enumeraciones):
     columnas se comprueban también combinaciones de tuplas y datos de enums;
     mencionar una variante con un patrón restrictivo no la cubre por completo.
     """
+    # La matriz contiene una fila por patrón y columnas por componentes. Se descompone
+    # recursivamente para comprobar datos anidados: mencionar E::Dato(true) no cubre
+    # E::Dato(false).
     if not tipos:
         return bool(filas)
     if not filas:
         return False
+    # Una fila representa un brazo y cada columna un componente a cubrir.
+    # Para bool comprobamos true/false; para enums cada variante y sus datos.
+    # E::Dato(true) no cubre E::Dato(false), aunque mencione la variante.
     formas = constructores(tipos[0], enumeraciones)
     if formas is None:
         # Un conjunto finito de literales no cubre un dominio abierto.
@@ -110,6 +118,9 @@ def comprobar_patron(sem, ctx, esperado, nombres):
 
 def analizar_match(sem, ctx):
     """Analiza cada brazo desde el mismo estado y une su inicialización."""
+    # Se tipan todos los brazos, pero en ejecución se elige el primero compatible. Los
+    # brazos sin continuación normal no aportan un valor al tipo del match ni a la
+    # inicialización posterior.
     inicio = len(sem.errores)
     tipo = sem.visit(ctx.expression())
     if isinstance(tipo, str) and tipo.startswith('&'):
@@ -138,6 +149,9 @@ def analizar_match(sem, ctx):
                     brazo.expression(), sem.tipos_esperados.get(ctx)
                 )
                 sem.guardar_tipo(brazo, recibido)
+                # Un brazo que hace return no entrega un valor al match ni
+                # llega a la instrucción siguiente. No exigirle el mismo tipo
+                # de resultado que a un brazo que sí continúa.
                 continua = 'normal' in salidas_control(brazo.expression())
                 if continua and resultado is None:
                     resultado = recibido
@@ -166,7 +180,8 @@ def analizar_match(sem, ctx):
 
     # Solo un match válido permite establecer garantías posteriores.
     # Conservadoramente se consideran todos los brazos, aunque alguno
-    # pueda ser redundante. El análisis de saltos se completará aparte.
+    # pueda ser redundante. salidas_control determina qué brazos continúan;
+    # esta fase no diagnostica brazos redundantes ni deduce todos los valores.
     if len(sem.errores) == inicio and estados:
         for indice, ambito in enumerate(sem.ambitos):
             for nombre, variable in ambito.items():

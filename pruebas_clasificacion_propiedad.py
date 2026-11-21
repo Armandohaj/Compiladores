@@ -1,3 +1,6 @@
+# Suite del frontend: clasificación recursiva Copy/Move; esta suite no sustituye las pruebas
+# de movimientos. Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM
+# corresponde a las pruebas de integración.
 """Pruebas de clasificación: todavía no comprueban movimientos de variables."""
 from clasificacion_propiedad import clasificar_tipo
 from main import analizar_programa
@@ -5,6 +8,9 @@ from main import analizar_programa
 
 def ejecutar_pruebas():
     """Verifica tipos básicos, composición y registros reales del analizador."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     estructuras = {
         'Punto': {'x':'i32', 'y':'f64'},
         'Persona': {'nombre':'String', 'edad':'i32'},

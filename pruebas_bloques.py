@@ -1,9 +1,15 @@
+# Suite del frontend: valor de la expresión final y retornos implícitos. Se analiza código y
+# se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas de
+# integración.
 """Pruebas del frontend para bloques con valor y retornos implícitos."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Comprueba aceptación, diagnósticos y referencias de la expresión final."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Retorno implícito entero', 'fn main()->i32{10}', None),
         ('Parámetro en retorno implícito', 'fn sumar(x:i32)->i32{x+1}', None),

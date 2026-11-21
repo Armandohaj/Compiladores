@@ -1,3 +1,5 @@
+# Evaluación restringida durante compilación. Produce valores para constantes ya tipadas,
+# sin ejecutar funciones RustiQ ni sustituir la ejecución WASM del programa.
 """Evaluación durante la compilación de expresiones constantes ya tipadas.
 
 Cada visit devuelve un valor de Python: int, float, bool, str, list, tuple
@@ -17,7 +19,9 @@ class ErrorConstante(Exception):
     """Representa un error al calcular una expresión constante."""
 
     def __init__(self, token, mensaje):
-        """Recibe los tipos del semántico y una función para resolver valores de otras constantes."""
+        """Guarda el token de origen y el mensaje de un error de evaluación constante."""
+        # Inicializa el cálculo con tipos ya comprobados, resolución de nombres y etiquetas
+        # de enums; los ámbitos temporales se crean al visitar bloques o patrones.
         super().__init__(mensaje)
         self.token = token
         self.mensaje = mensaje
@@ -39,6 +43,8 @@ class EvaluadorConstantes(RustiQVisitor):
         resolver_nombre,
         enumeraciones=None,
     ):
+        # Inicializa el cálculo con tipos ya comprobados, resolución de nombres y etiquetas
+        # de enums; los ámbitos temporales se crean al visitar bloques o patrones.
         super().__init__()
 
         # Tipos que ya comprobó el semántico.
@@ -226,6 +232,8 @@ class EvaluadorConstantes(RustiQVisitor):
         # La gramática aplica los unarios al resultado de postfix,
         # que también puede contener uno o varios accesos a arreglos.
         """Evalúa postfix y aplica - o !. Después comprueba el rango del resultado."""
+        # Evalúa la estructura actual de la regla unary; no presupone que su operando siga
+        # siendo primary después de cambios de gramática.
         valor = self.visit(ctx.postfix())
 
         if ctx.MINUS() is not None:
@@ -419,6 +427,8 @@ class EvaluadorConstantes(RustiQVisitor):
 
     def visitBlock(self, ctx):
         """Calcula un bloque puro, con variables locales limitadas a su ámbito."""
+        # El ámbito temporal de esta evaluación contiene valores de compilación, no locales
+        # WASM. Se retira con finally incluso cuando el cálculo falla.
         self.ambitos_locales.append({})
         try:
             for sentencia in ctx.statement():

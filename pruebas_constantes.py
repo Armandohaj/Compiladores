@@ -1,3 +1,6 @@
+# Suite del frontend: dependencias globales, ciclos y evaluación durante la compilación. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Pruebas de valores calculados, dependencias y errores constantes.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
@@ -259,6 +262,7 @@ const NUMERO: i32;
 ]
 
 
+# Muestra diagnósticos para facilitar la depuración de un caso que no cumple su expectativa.
 def mostrar_errores(resultado):
     for error in resultado["errores"]:
         print(
@@ -269,7 +273,11 @@ def mostrar_errores(resultado):
         )
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
 
     for nombre, codigo, esperados in VALIDAS:

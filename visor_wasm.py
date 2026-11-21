@@ -1,3 +1,5 @@
+# Interfaz Tkinter para binarios ya compilados. La carga valida el módulo; la ejecución se
+# coordina sin bloquear el hilo de la ventana.
 """Interfaz de escritorio para ejecutar módulos WebAssembly ya compilados."""
 
 import threading
@@ -17,6 +19,8 @@ from ejecutar_wasm import (
 
 def cargar_archivo_wasm(ruta_archivo):
     """Lee y valida un .wasm sin modificarlo ni depender del compilador RustiQ."""
+    # Carga el binario ya existente y comprueba firma e importaciones. No recompila RustiQ
+    # ni altera el archivo seleccionado.
     ruta = Path(ruta_archivo)
     try:
         wasm = ruta.read_bytes()
@@ -41,6 +45,8 @@ class VisorWasm:
     """Ventana mínima que conserva en memoria el módulo seleccionado."""
 
     def __init__(self, ventana):
+        # Guarda la ventana y el binario seleccionado; el estado de interfaz se actualiza
+        # sin ejecutar WASM en el hilo principal.
         self.ventana = ventana
         self.wasm = None
         self.ruta = tk.StringVar(value="No se ha seleccionado un archivo .wasm")
@@ -120,6 +126,8 @@ class VisorWasm:
             daemon=True,
         ).start()
 
+    # Ejecuta el módulo fuera del hilo de la ventana y entrega el resultado para actualizar
+    # la interfaz.
     def _ejecutar_en_segundo_plano(self, wasm, entradas):
         try:
             valor, salidas = ejecutar_main_con_entradas(wasm, entradas)
@@ -133,6 +141,7 @@ class VisorWasm:
         # Tkinter solo se actualiza desde su hilo principal.
         self.ventana.after(0, self._terminar_ejecucion, mensaje)
 
+    # Finaliza el estado de ejecución y presenta el resultado o el error en la ventana.
     def _terminar_ejecucion(self, mensaje):
         self.mostrar_mensaje(mensaje)
         self.boton_abrir.configure(state="normal")
@@ -141,6 +150,8 @@ class VisorWasm:
             self.boton_ejecutar.configure(state="normal")
 
 
+# Prepara argumentos o interfaz y coordina la operación principal; los errores se presentan
+# al usuario.
 def main():
     ventana = tk.Tk()
     VisorWasm(ventana)

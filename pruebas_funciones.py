@@ -1,3 +1,6 @@
+# Suite del frontend: firmas, parámetros, llamadas y tipos de retorno. Se analiza código y
+# se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas de
+# integración.
 """Pruebas de firmas, argumentos, llamadas y recursión.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
@@ -326,7 +329,11 @@ PRUEBAS = [
 ]
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
 
     for nombre, codigo, error_esperado in PRUEBAS:

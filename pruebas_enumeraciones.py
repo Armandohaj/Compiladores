@@ -1,3 +1,6 @@
+# Suite del frontend: variantes unitarias, tipos nominales y etiquetas. Se analiza código y
+# se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas de
+# integración.
 """
 Pruebas de enumeraciones sin datos.
 
@@ -366,6 +369,9 @@ def ejecutar_pruebas():
     Si alguna prueba falla, termina con código de salida 1.
     Eso permite que ejecutar_pruebas.py detecte el fallo.
     """
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
 
     # -------------------------------------------------

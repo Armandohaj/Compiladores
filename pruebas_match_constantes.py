@@ -1,9 +1,15 @@
+# Suite del frontend: selección de patrones y cálculo puro de match durante la compilación.
+# Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a
+# las pruebas de integración.
 """Prueba valores calculados de match constante, ámbitos y errores controlados."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Comprueba valores reales, no solo que el código sea aceptado."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     validos = [
         ('Literal entero', 'const R:i32=match 1{1=>10,_=>20};', 10),
         ('Booleano', 'const R:i32=match false{true=>10,false=>20};', 20),

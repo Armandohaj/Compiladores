@@ -1,4 +1,6 @@
-"""Backend WebAssembly mínimo para el subconjunto aritmético de RustiQ."""
+# Backend: traduce el árbol validado a WAT, produce bytes WASM y los valida. Memoria, pila e
+# instrucciones son responsabilidad de esta fase; no se sustituyen por un intérprete.
+"""Generación WebAssembly de las construcciones RustiQ admitidas por este backend."""
 
 from __future__ import annotations
 
@@ -20,6 +22,8 @@ MAX_DIRECCION_I32 = 2**32 - 1
 class MemoriaStrings:
     """Guarda los textos estáticos que se copiarán al módulo como segmentos data."""
     def __init__(self):
+        # Inicializa cursor y segmentos de texto para un solo módulo; compilar otro programa
+        # no debe reutilizar por accidente los literales del anterior.
         self.cursor = 0
         self.segmentos = []
 
@@ -83,6 +87,7 @@ class ErrorGeneracion(Exception):
     mensaje: str
     contexto: object
 
+    # Convierte la excepción interna en fase, mensaje y ubicación para el editor o la terminal.
     def como_error(self):
         inicio = getattr(self.contexto, "start", None)
         if inicio is None:
@@ -95,18 +100,22 @@ class ErrorGeneracion(Exception):
         }
 
 
+# Interrumpe la generación con un diagnóstico controlado que conserva el nodo de origen.
 def _error(mensaje, contexto):
     raise ErrorGeneracion(mensaje, contexto)
 
 
 def _tipo_wasm(tipo, estructuras=None, enumeraciones=None):
     """Relaciona los tipos RustiQ con los pocos tipos que maneja WebAssembly."""
+    # Varios tipos fuente comparten i32 en WASM: bool, char, direcciones o etiquetas no se
+    # vuelven por eso el mismo tipo RustiQ. La semántica se comprobó antes de traducir.
     referencia = separar_referencia(tipo)
     if referencia is not None:
         return "i32"
     return "i32" if tipo in {"bool", "char", "String"} or _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, estructuras) is not None or _info_enum(tipo, enumeraciones) is not None else tipo
 
 
+# Decide qué tipos escalares pueden materializarse en una celda de memoria al prestarse.
 def _escalar_prestable(tipo):
     return tipo in {"i32", "f64", "bool", "char"}
 
@@ -142,10 +151,13 @@ def _compuesto_prestable(tipo, estructuras):
     return matriz is not None and _escalar_prestable(matriz[0])
 
 
+# Construye la lectura desde la celda de un escalar prestado, según su tipo fuente.
 def _carga_escalar_memoria(tipo):
     return _instruccion_carga_arreglo(tipo)
 
 
+# Construye la escritura en la celda del origen; no sustituye la referencia que contiene su
+# dirección.
 def _almacenamiento_escalar_memoria(tipo):
     return _instruccion_almacenamiento_arreglo(tipo, 0)
 
@@ -180,6 +192,7 @@ def _info_matriz(tipo):
     return tipo_elemento, int(filas), columnas
 
 
+# Consulta los componentes de un tipo tupla para decidir si existe una representación soportada.
 def _info_tupla(tipo):
     campos = separar_tipo_tupla(tipo)
     if campos is None or len(campos) < 2 or any(campo not in {"i32", "f64", "bool", "char"} for campo in campos):
@@ -202,6 +215,7 @@ def _distribucion_tupla(tipo):
     return distribucion, desplazamiento, max(8 if campo == "f64" else 4 for campo in campos)
 
 
+# Consulta los campos del tipo nominal en el registro de estructuras.
 def _info_estructura(tipo, estructuras):
     campos = (estructuras or {}).get(tipo)
     if campos is None or any(campo not in {"i32", "f64", "bool", "char"} for campo in campos.values()):
@@ -209,10 +223,12 @@ def _info_estructura(tipo, estructuras):
     return campos
 
 
+# Consulta el registro de variantes del tipo de enumeración.
 def _info_enum(tipo, enumeraciones):
     return (enumeraciones or {}).get(tipo)
 
 
+# Distingue enums representables solo por etiqueta de los que necesitan espacio para datos.
 def _enum_tiene_datos(tipo, enumeraciones):
     enumeracion = _info_enum(tipo, enumeraciones)
     return enumeracion is not None and bool(enumeracion.get("datos_variantes"))
@@ -220,6 +236,8 @@ def _enum_tiene_datos(tipo, enumeraciones):
 
 def _distribucion_enum(tipo, enumeraciones):
     """Construye el layout común de las variantes con datos de una enumeración."""
+    # Cada variante ocupa etiqueta y datos con alineación. El tamaño total contempla la
+    # variante de mayor tamaño, para que todas compartan una representación compatible.
     enumeracion = _info_enum(tipo, enumeraciones)
     if enumeracion is None:
         return None
@@ -302,6 +320,7 @@ def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
     return None
 
 
+# Determina los bytes por elemento para calcular desplazamientos y reservar memoria.
 def _tamano_elemento_arreglo(tipo):
     return 8 if tipo == "f64" else 4
 
@@ -320,6 +339,7 @@ def _instruccion_almacenamiento_arreglo(tipo, desplazamiento):
     return f"{tipo if tipo == 'f64' else 'i32'}.store offset={desplazamiento}{alineacion}"
 
 
+# Decodifica un literal de texto y valida sus escapes antes de reservar el contenido UTF-8.
 def _valor_string(literal, contexto):
     contenido = literal[1:-1]
     escapes = {"n": "\n", "r": "\r", "t": "\t", "0": "\0", '"': '"', "'": "'", "\\": "\\"}
@@ -338,6 +358,7 @@ def _valor_string(literal, contexto):
     return "".join(resultado)
 
 
+# Obtiene el valor escalar del carácter para su representación numérica en WASM.
 def _valor_char(literal, contexto):
     contenido = literal[1:-1]
     escapes = {"n": "\n", "r": "\r", "t": "\t", "0": "\0", "'": "'", '"': '"', "\\": "\\"}
@@ -378,7 +399,10 @@ def _compilar_expresion(expresion, referencias, locales, funciones, nombres_func
     )
 
 
+# Emite control de flujo para omitir la derecha cuando la izquierda ya hace verdadera la disyunción.
 def _compilar_logical_or(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    # El cortocircuito se genera con control de flujo: no basta combinar dos valores si la
+    # derecha tiene llamadas, errores o efectos que deben omitirse.
     operandos = contexto.logicalAnd()
     instrucciones = _compilar_logical_and(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
@@ -391,7 +415,10 @@ def _compilar_logical_or(contexto, referencias, locales, funciones, nombres_func
     return instrucciones
 
 
+# Emite control de flujo para omitir la derecha cuando la izquierda ya hace falsa la conjunción.
 def _compilar_logical_and(contexto, referencias, locales, funciones, nombres_funcion, tipos):
+    # La derecha solo debe ejecutarse si la izquierda es verdadera. El análisis revisa ambos
+    # operandos, pero el módulo generado respeta esa ejecución condicional.
     operandos = contexto.comparison()
     instrucciones = _compilar_comparacion(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
@@ -543,6 +570,8 @@ def _wat_arreglos(inicio_heap):
     falta. $array_addr revisa los límites antes de calcular una posición, por
     eso arreglos, matrices, tuplas y estructuras comparten estas protecciones.
     """
+    # El asignador es monotónico: avanza y puede crecer la memoria, sin liberar cada bloque.
+    # Las guardas de índices producen un trap ante accesos fuera de rango.
     return f"""  (global $heap (mut i32) (i32.const {inicio_heap}))
   (func $array_alloc (param $tamano i32) (param $alineacion i32) (result i32)
     (local $base i32)
@@ -840,6 +869,7 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     return instrucciones
 
 
+# Obtiene la representación de un patrón literal compatible con el tipo examinado.
 def _literal_patron(contexto, tipo, enumeraciones):
     if contexto.DOUBLE_COLON() is not None:
         enumeracion = _info_enum(tipo, enumeraciones)
@@ -881,6 +911,7 @@ def _enlazar_receptor_patron(identificador, valor, tipo, nombres_funcion, contex
     ]
 
 
+# Genera comprobaciones y enlaces para el dato de una variante; String se compara por contenido.
 def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, locales,
                             nombres_funcion):
     if patron.UNDERSCORE() is not None:
@@ -952,6 +983,8 @@ def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, no
     return condiciones, enlaces
 
 
+# Genera condiciones y receptores por posición; los receptores se enlazan únicamente en el
+# brazo elegido.
 def _compilar_patron_tupla(patron, temporal, tipo_valor, referencias, locales,
                            nombres_funcion):
     distribucion = _distribucion_tupla(tipo_valor)
@@ -1069,6 +1102,8 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
 
 def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     """Evalúa el valor una sola vez y lo conserva en un local temporal del match."""
+    # Se guarda el valor examinado una sola vez. Cada brazo comprueba patrones sobre ese
+    # mismo valor y solo el brazo seleccionado ejecuta su expresión.
     tipo_valor = tipos.get(contexto.expression())
     tipo_resultado = tipos.get(contexto)
     if (tipo_valor not in {"i32", "bool", "char"}
@@ -1231,6 +1266,7 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
     )
 
 
+# Busca un literal de arreglo atravesando envoltorios sintácticos compatibles.
 def _obtener_literal_arreglo(expresion):
     or_logico = expresion.logicalOr()
     if len(or_logico.logicalAnd()) != 1:
@@ -1256,6 +1292,7 @@ def _obtener_literal_arreglo(expresion):
     return postfija.primary().arrayLiteral()
 
 
+# Busca un literal de tupla sin confundirlo con una operación o una llamada.
 def _obtener_literal_tupla(expresion):
     or_logico = expresion.logicalOr()
     if len(or_logico.logicalAnd()) != 1:
@@ -1281,6 +1318,7 @@ def _obtener_literal_tupla(expresion):
     return postfija.primary().tupleLiteral()
 
 
+# Identifica un constructor de estructura cuando la generación necesita materializar sus campos.
 def _obtener_literal_estructura(expresion):
     or_logico = expresion.logicalOr()
     if len(or_logico.logicalAnd()) != 1:
@@ -1306,6 +1344,7 @@ def _obtener_literal_estructura(expresion):
     return postfija.primary().structLiteral()
 
 
+# Reconoce la base primaria directa sin asumir que cualquier expresión es un identificador.
 def _obtener_primaria_directa(expresion):
     or_logico = expresion.logicalOr()
     if len(or_logico.logicalAnd()) != 1:
@@ -1558,6 +1597,8 @@ def _compilar_declaracion(
 def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, funciones,
                                nombres_funcion, tipos):
     """Copia compuestos Copy a un bloque nuevo antes de asignarlos a otro local."""
+    # Cuando el tipo compuesto es Copy se requiere almacenamiento independiente; copiar solo
+    # el puntero crearía alias y cambios inesperados en el origen.
     layout = _layout_copia_compuesta(
         tipo_destino, nombres_funcion.estructuras, nombres_funcion.enumeraciones
     )
@@ -1585,6 +1626,8 @@ def _compilar_asignacion(
     asignacion, referencias, simbolos, locales, funciones, nombres_funcion, tipos
 ):
     """Traduce = y operadores compuestos sin evaluar destinos con índice dos veces."""
+    # La dirección de un destino indexado se calcula una vez. Repetir un índice con llamadas
+    # o efectos podría escribir en otro elemento o ejecutar el efecto dos veces.
     identificador = referencias[asignacion]
     if identificador not in locales:
         _error("La asignación no corresponde a una variable local i32.", asignacion)
@@ -1933,6 +1976,9 @@ def _compilar_bloque(
     producir_valor=False,
 ):
     """Ejecuta sentencias en orden y sólo deja la expresión final cuando se necesita."""
+    # Este método genera instrucciones; no ejecuta ahora las sentencias RustiQ. La expresión
+    # final conserva su valor solo cuando el contexto lo necesita; si se descarta y produce
+    # valor, se emite drop.
     instrucciones = []
     for sentencia in bloque.statement():
         instrucciones.extend(
@@ -2109,6 +2155,9 @@ def _compilar_sentencia(
 
 def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     """Prepara locales, parámetros y cuerpo de una función antes de exportarla."""
+    # Los IDs semánticos determinan los locales. Los parámetros referencia transportan
+    # direcciones y los escalares prestados necesitan una celda compartida por accesos
+    # directos e indirectos.
     nombre = funcion.IDENT().getText()
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
     if (
@@ -2273,6 +2322,7 @@ def _validar_constantes_globales(arbol, declaraciones, constantes):
             )
 
 
+# Rechaza layouts de enum que el backend todavía no pueda generar de forma segura.
 def _validar_enumeraciones(arbol, enumeraciones):
     for declaracion in arbol.enumDecl():
         tipo = declaracion.IDENT().getText()
@@ -2298,6 +2348,9 @@ def compilar_programa(codigo):
     Sólo con ese resultado válido se genera WAT, se valida con Wasmtime y se
     entrega el binario real al editor o al ejecutor de escritorio.
     """
+    # Separa análisis, generación y validación binaria. Una compilación rechazada debe
+    # devolver errores sin presentar un módulo como válido; generar WAT por sí solo no
+    # cumple la ejecución WASM.
     analisis = analizar_programa(codigo)
     if not analisis["valido"]:
         return {"valido": False, "errores": analisis["errores"], "wat": None, "wasm": None}

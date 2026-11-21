@@ -1,3 +1,6 @@
+# Suite del frontend: cantidad y tipos de datos asociados a variantes de enum. Se analiza
+# código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas
+# de integración.
 """
 Pruebas de enumeraciones con datos asociados.
 
@@ -456,6 +459,9 @@ def ejecutar_pruebas():
 
     Si alguna prueba falla, termina con código de salida 1.
     """
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     correctas = 0
 
     for nombre, codigo, esperados in VALIDAS:

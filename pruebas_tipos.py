@@ -1,3 +1,6 @@
+# Suite del frontend: inferencia y compatibilidad de i32, f64 y bool. Se analiza código y se
+# comprueban diagnósticos o mapas; la ejecución WASM corresponde a las pruebas de
+# integración.
 """Pruebas de compatibilidad entre los tipos básicos.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
@@ -137,7 +140,11 @@ PRUEBAS = [
 ]
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     aprobadas = 0
 
     for nombre, codigo, mensaje_esperado in PRUEBAS:

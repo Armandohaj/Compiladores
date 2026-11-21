@@ -1,3 +1,5 @@
+# Herramienta de terminal: compila el fuente, guarda el binario y delega su ejecución
+# aislada. Los fallos de compilación no se presentan como ejecución exitosa.
 """Compila y ejecuta un archivo RustiQ desde la terminal."""
 
 import argparse
@@ -78,6 +80,8 @@ def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS, en
     return 0
 
 
+# Prepara argumentos o interfaz y coordina la operación principal; los errores se presentan
+# al usuario.
 def main(argumentos=None):
     parser = argparse.ArgumentParser(description="Compila y ejecuta un archivo RustiQ.")
     parser.add_argument("archivo", help="Ruta del archivo RustiQ a ejecutar.")

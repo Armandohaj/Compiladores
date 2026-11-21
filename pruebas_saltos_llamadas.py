@@ -1,9 +1,15 @@
+# Suite del frontend: argumentos e inicializadores interrumpidos antes de producir un valor.
+# Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a
+# las pruebas de integración.
 """Regresión del frontend: saltos en argumentos e inicializadores let."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Verifica tipos, firmas, errores y ausencia de declaraciones no alcanzadas."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     prefijo = 'fn identidad(x:i32)->i32{x} '
     casos = [
         ('Return en argumento', prefijo+'fn main()->i32{identidad({return 7;})}', None),

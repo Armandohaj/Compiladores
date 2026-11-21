@@ -1,9 +1,15 @@
+# Suite del frontend: vida e identidad de receptores prestados dentro de cada brazo. Se
+# analiza código y se comprueban diagnósticos o mapas; la ejecución WASM corresponde a las
+# pruebas de integración.
 """Préstamos de receptores de match: ámbitos e identidades del frontend."""
 from main import analizar_programa
 
 
 def ejecutar_pruebas():
     """Acepta préstamos locales y rechaza referencias que sobreviven al receptor."""
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     casos = [
         ('Receptor entero', 'fn main()->i32{match 1{x=>{let r=&x;*r}}}', True),
         ('Receptor bool', 'fn main()->bool{match true{x=>{let r=&x;*r}}}', True),

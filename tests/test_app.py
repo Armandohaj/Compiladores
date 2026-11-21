@@ -1,3 +1,5 @@
+# Suite de integración: API del editor y transporte de binarios. Los casos usan archivos o
+# instancias de prueba para aislar resultados.
 import base64
 import hashlib
 from pathlib import Path
@@ -12,6 +14,8 @@ from ejecutar_wasm import ejecutar_archivo_wasm
 
 
 def test_editor_y_analizar_conservan_su_comportamiento():
+    # Objetivo: editor y analizar conservan su comportamiento. Usa el cliente de pruebas
+    # HTTP; no equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     inicio = cliente.get("/")
     analisis = cliente.post(
@@ -28,6 +32,8 @@ def test_editor_y_analizar_conservan_su_comportamiento():
 
 
 def test_compilar_devuelve_wasm_base64_valido():
+    # Objetivo: compilar devuelve wasm base64 valido. Usa el cliente de pruebas HTTP; no
+    # equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -45,6 +51,8 @@ def test_compilar_devuelve_wasm_base64_valido():
 
 
 def test_compilar_informa_programa_invalido_sin_wasm():
+    # Objetivo: compilar informa programa invalido sin wasm. Usa el cliente de pruebas HTTP;
+    # no equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -60,6 +68,8 @@ def test_compilar_informa_programa_invalido_sin_wasm():
 
 
 def test_compilar_admite_asignacion_a_elemento_de_arreglo():
+    # Objetivo: compilar admite asignacion a elemento de arreglo. Usa el cliente de pruebas
+    # HTTP; no equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -81,6 +91,8 @@ def test_compilar_admite_asignacion_a_elemento_de_arreglo():
 
 
 def test_compilar_admite_constantes_globales():
+    # Objetivo: compilar admite constantes globales. Usa el cliente de pruebas HTTP; no
+    # equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -99,6 +111,8 @@ fn main() -> i32 { return DOBLE + 5; }"""
 
 
 def test_compilar_read_y_print_entrega_importaciones_wasm(tmp_path, capsys):
+    # Objetivo: compilar read y print entrega importaciones wasm. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -122,6 +136,8 @@ def test_compilar_read_y_print_entrega_importaciones_wasm(tmp_path, capsys):
 
 
 def test_compilar_informa_firma_main_no_ejecutable_en_el_editor():
+    # Objetivo: compilar informa firma main no ejecutable en el editor. Usa el cliente de
+    # pruebas HTTP; no equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     respuesta = cliente.post(
         "/api/compilar",
@@ -135,6 +151,8 @@ def test_compilar_informa_firma_main_no_ejecutable_en_el_editor():
 
 
 def test_compilar_requiere_codigo_de_texto():
+    # Objetivo: compilar requiere codigo de texto. Usa el cliente de pruebas HTTP; no
+    # equivale a una demostración manual en un navegador.
     cliente = app.test_client()
     respuesta = cliente.post("/api/compilar", json={})
 
@@ -144,6 +162,9 @@ def test_compilar_requiere_codigo_de_texto():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
 def test_editor_descarta_analisis_obsoletos_e_invalida_al_cambiar_o_cargar():
+    # Objetivo: editor descarta analisis obsoletos e invalida al cambiar o cargar. Lanza el
+    # comando como proceso externo y comprueba su respuesta; necesita las herramientas de su
+    # plataforma.
     script = r'''
 const fs = require("fs");
 const vm = require("vm");

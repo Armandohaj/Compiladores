@@ -1,3 +1,5 @@
+# Suite de integración: carga del visor y validación de archivos, sin interacción gráfica
+# manual. Los casos usan archivos o instancias de prueba para aislar resultados.
 import hashlib
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from generador_wasm import compilar_programa
 from visor_wasm import cargar_archivo_wasm
 
 
+# Prepara un binario de prueba a partir de WAT para aislar la ejecución de la compilación RustiQ.
 def crear_wasm(tmp_path, nombre, wat):
     archivo = tmp_path / nombre
     archivo.write_bytes(wasmtime.wat2wasm(wat))
@@ -16,6 +19,8 @@ def crear_wasm(tmp_path, nombre, wat):
 
 
 def test_visor_carga_modulo_valido_sin_modificarlo(tmp_path):
+    # Objetivo: visor carga modulo valido sin modificarlo. Las aserciones fijan el
+    # comportamiento esperado; un rechazo previsto también es un resultado correcto.
     archivo = crear_wasm(
         tmp_path,
         "treinta.wasm",
@@ -30,6 +35,8 @@ def test_visor_carga_modulo_valido_sin_modificarlo(tmp_path):
 
 
 def test_visor_carga_un_binario_generado_por_rustiq(tmp_path):
+    # Objetivo: visor carga un binario generado por rustiq. Comprueba la respuesta del
+    # compilador; la presencia de un binario y los errores se validan en las aserciones.
     resultado = compilar_programa("fn main() -> i32 { return 10 + 20; }")
     archivo = tmp_path / "editor.wasm"
     archivo.write_bytes(resultado["wasm"])
@@ -38,6 +45,8 @@ def test_visor_carga_un_binario_generado_por_rustiq(tmp_path):
 
 
 def test_visor_carga_y_ejecuta_binario_con_read_y_print(tmp_path):
+    # Objetivo: visor carga y ejecuta binario con read y print. Comprueba resultados o
+    # errores de ejecución mediante las funciones o procesos invocados en esta prueba.
     resultado = compilar_programa(
         "fn main() -> i32 { let valor = read(); print(valor); return valor; }"
     )
@@ -77,6 +86,8 @@ def test_visor_carga_y_ejecuta_binario_con_read_y_print(tmp_path):
     ],
 )
 def test_visor_rechaza_archivos_no_ejecutables(tmp_path, nombre, contenido, mensaje):
+    # Objetivo: visor rechaza archivos no ejecutables. Las aserciones fijan el
+    # comportamiento esperado; un rechazo previsto también es un resultado correcto.
     archivo = tmp_path / nombre
     archivo.write_bytes(contenido)
 
@@ -85,6 +96,8 @@ def test_visor_rechaza_archivos_no_ejecutables(tmp_path, nombre, contenido, mens
 
 
 def test_visor_no_importa_el_compilador():
+    # Objetivo: visor no importa el compilador. Las aserciones fijan el comportamiento
+    # esperado; un rechazo previsto también es un resultado correcto.
     codigo = Path("visor_wasm.py").read_text(encoding="utf-8")
 
     assert "generador_wasm" not in codigo

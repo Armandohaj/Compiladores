@@ -1,3 +1,5 @@
+# Registro nominal de structs. Valida nombres, campos y ciclos de dependencia por valor
+# antes de analizar los cuerpos.
 """Registro de tipos nominales y validación de sus declaraciones.
 
 Se ejecuta antes de analizar constantes y funciones para permitir que
@@ -10,6 +12,8 @@ class GestorEstructuras:
     """Comprueba campos, tipos conocidos y ciclos de tipos por valor."""
 
     def __init__(self, semantico):
+        # Prepara declaraciones y campos por nombre para comprobar tipos nominales y
+        # dependencias antes de analizar cuerpos.
         self.semantico = semantico
         self.declaraciones = {}
         self.estructuras = {}

@@ -1,3 +1,5 @@
+# Resolución de identidades posterior a tipos. declaraciones y referencias vinculan nodos
+# con IDs únicos; el sombreado no se resuelve mediante nombres en el backend.
 """Prepara identidades de símbolos para el backend después del semántico.
 
 Dos declaraciones llamadas igual reciben identificadores diferentes.
@@ -72,7 +74,13 @@ class ResolucionVariables(RustiQVisitor):
         self, ctx, tipo, es_parametro=False, es_constante=False
     ):
         """Crea un ID único y registra nombre, tipo y ubicación; las constantes también guardan su valor calculado."""
+        # nombre sirve para buscar en el ámbito; identificador distingue la declaración
+        # exacta. El backend usa ese ID para no asignar dos variables sombreadas al mismo
+        # almacenamiento.
         token = ctx.IDENT().getSymbol()
+        # Ejemplo: dos bloques con let x reciben IDs diferentes. El generador
+        # usa esos IDs para elegir el almacenamiento correcto, sin depender
+        # del texto del nombre ni repetir la búsqueda de ámbitos.
         identificador = self.siguiente_id
         self.siguiente_id += 1
 
@@ -188,6 +196,11 @@ class ResolucionVariables(RustiQVisitor):
 
     def visitConstLocalDecl(self, ctx):
         """Vincula el inicializador antes de introducir la constante de este ámbito."""
+        # Se resuelven las lecturas del inicializador con los nombres anteriores antes de
+        # registrar la nueva constante. El símbolo conserva es_constante y el valor ya
+        # calculado.
+        # El inicializador aún ve el ámbito anterior. Registrar primero el
+        # nombre haría que un sombreado apuntara por error a sí mismo.
         self.visit(ctx.expression())
         self.registrar(ctx, self.obtener_tipo_declarado(ctx), es_constante=True)
 

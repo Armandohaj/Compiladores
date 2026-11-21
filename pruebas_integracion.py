@@ -1,3 +1,6 @@
+# Suite del frontend: contrato de mapas entre frontend y backend, sin demostrar por sí solo
+# ejecución WASM. Se analiza código y se comprueban diagnósticos o mapas; la ejecución WASM
+# corresponde a las pruebas de integración.
 """Pruebas de contrato de analizar_programa y datos para backend.
 
 Cada caso compara aceptación o diagnóstico esperado. Los casos inválidos
@@ -7,8 +10,12 @@ no ejecutan el programa RustiQ ni reemplazan las pruebas del backend Wasm.
 from main import analizar_programa
 
 
+# Ejecuta casos válidos e inválidos y compara sus resultados con las expectativas de esta suite.
 def ejecutar_pruebas():
     # Programa válido con parámetros y una llamada.
+    # Reúne los casos de esta suite y comprueba las expectativas. El total de aprobadas
+    # incluye programas inválidos rechazados correctamente; no significa que todos los
+    # programas hayan compilado.
     codigo = """
 fn sumar(a: i32, b: i32) -> i32 {
     return a + b;
@@ -48,6 +55,7 @@ fn main() -> i32 {
     # Recorremos el árbol devuelto para encontrar llamadas.
     # Así verificamos que las claves del mapa de tipos
     # pertenecen a ese mismo árbol.
+    # Localiza llamadas en el árbol para comprobar su identificación por el contrato de integración.
     def buscar_llamadas(nodo):
         llamadas = []
 
