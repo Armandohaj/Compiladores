@@ -30,9 +30,15 @@ Para recuperar el resultado de una función `String`, usa el decodificador
 explícito que lee la memoria exportada:
 
 ```python
-from generador_wasm import ejecutar_string_wasm
+from generador_wasm import compilar_programa, ejecutar_string_wasm
 
-texto = ejecutar_string_wasm(resultado["wasm"])
+resultado_texto = compilar_programa('''fn main() -> String {
+    return "Hola RustiQ";
+}''')
+
+if resultado_texto["valido"]:
+    texto = ejecutar_string_wasm(resultado_texto["wasm"])
+    assert texto == "Hola RustiQ"
 ```
 
 `compilar_programa` devuelve `valido`, `errores`, `wat` y `wasm`. Cuando el
@@ -42,7 +48,16 @@ características no implementadas tienen fase `generacion` y posición fuente.
 exportación con argumentos, por ejemplo:
 
 ```python
-ejecutar_modulo_wasm(resultado["wasm"], "doble", 21)
+resultado_funcion = compilar_programa('''fn doble(numero: i32) -> i32 {
+    return numero * 2;
+}
+
+fn main() -> i32 {
+    return doble(21);
+}''')
+
+if resultado_funcion["valido"]:
+    assert ejecutar_modulo_wasm(resultado_funcion["wasm"], "doble", 21) == 42
 ```
 
 ## Ejecución desde PowerShell
