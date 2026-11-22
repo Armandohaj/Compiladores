@@ -48,6 +48,69 @@ def test_ejecutor_wasm_ejecuta_binario_generado_por_rustiq(tmp_path, capsys):
     assert "Resultado de main(): 30" in capsys.readouterr().out
 
 
+def test_ejecutor_wasm_ejecuta_main_unit_con_entradas_y_salidas(tmp_path, capsys):
+    resultado = compilar_programa("""fn main() {
+    let valor = read();
+    print(valor);
+}""")
+    archivo = tmp_path / "unit.wasm"
+    archivo.write_bytes(resultado["wasm"])
+
+    codigo_salida = ejecutar_archivo_wasm(archivo, entradas=[37])
+    salida = capsys.readouterr().out
+
+    assert resultado["valido"]
+    assert codigo_salida == 0
+    assert "Salida: 37" in salida
+    assert "main() finalizó correctamente." in salida
+    assert "Resultado de main()" not in salida
+
+
+@pytest.mark.parametrize(
+    ("codigo", "esperado"),
+    [
+        ("fn main() -> i32 { 30 }", "Resultado de main(): 30"),
+        ("fn main() -> f64 { 1.5 }", "Resultado de main(): 1.5"),
+        ("fn main() -> bool { true }", "Resultado de main(): true"),
+        ("fn main() -> char { 'ñ' }", "Resultado de main(): 'ñ'"),
+        (r"fn main() -> char { '\n' }", r"Resultado de main(): '\n'"),
+        (r"fn main() -> char { '\t' }", r"Resultado de main(): '\t'"),
+        (r"fn main() -> char { '\r' }", r"Resultado de main(): '\r'"),
+        (r'''fn main() -> char { '\'' }''', r"Resultado de main(): '\''"),
+        (r"fn main() -> char { '\\' }", r"Resultado de main(): '\\'"),
+        ('fn main() -> String { "hola" }', 'Resultado de main(): "hola"'),
+        ("fn main() -> (i32, bool) { (7, true) }", "Resultado de main(): [7, true]"),
+        (
+            "struct Punto { x: i32 } fn main() -> Punto { Punto { x: 7 } }",
+            'Resultado de main(): {"x": 7}',
+        ),
+        (
+            "enum Estado { Valor(i32), Vacio } fn main() -> Estado { Estado::Valor(7) }",
+            'Resultado de main(): {"enum": "Estado", "variante": "Valor", "datos": [7]}',
+        ),
+        (
+            "enum Estado { Pendiente, Listo } fn main() -> Estado { Estado::Listo }",
+            'Resultado de main(): {"enum": "Estado", "variante": "Listo", "datos": []}',
+        ),
+        ("fn main() -> [i32; 2] { [7, 8] }", "Resultado de main(): [7, 8]"),
+        (
+            "fn main() -> [[i32; 2]; 2] { [[1, 2], [3, 4]] }",
+            "Resultado de main(): [[1, 2], [3, 4]]",
+        ),
+    ],
+)
+def test_ejecutor_wasm_muestra_todos_los_retornos_rustiq(tmp_path, capsys, codigo, esperado):
+    resultado = compilar_programa(codigo)
+    archivo = tmp_path / "retorno.wasm"
+    archivo.write_bytes(resultado["wasm"])
+
+    codigo_salida = ejecutar_archivo_wasm(archivo)
+
+    assert resultado["valido"]
+    assert codigo_salida == 0
+    assert esperado in capsys.readouterr().out
+
+
 def test_ejecutor_wasm_entrega_entradas_y_captura_salidas_en_orden(tmp_path):
     archivo = crear_wasm(
         tmp_path,
@@ -125,6 +188,32 @@ def test_ejecutor_wasm_rechaza_archivo_corrupto(tmp_path, capsys):
     assert "no es un módulo WebAssembly válido" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("wat", "mensaje"),
+    [
+        (
+            '(module (global (export "__rustiq-main-metadata") i32 (i32.const 0)) '
+            '(func (export "main") (result i32) i32.const 1))',
+            "declara metadatos RustiQ pero no expone la memoria requerida",
+        ),
+        (
+            '(module (memory (export "memory") 1) '
+            '(global (export "__rustiq-main-metadata") i32 (i32.const 0)) '
+            '(data (i32.const 0) "\\08\\00\\00\\00\\01\\00\\00\\00x") '
+            '(func (export "main") (result i32) i32.const 1))',
+            "metadatos de retorno del módulo no son compatibles",
+        ),
+    ],
+)
+def test_ejecutor_wasm_rechaza_metadatos_declarados_invalidos(tmp_path, capsys, wat, mensaje):
+    archivo = crear_wasm(tmp_path, "metadatos-invalidos.wasm", wat)
+
+    codigo_salida = ejecutar_archivo_wasm(archivo)
+
+    assert codigo_salida == 1
+    assert mensaje in capsys.readouterr().out
+
+
 def test_ejecutor_wasm_rechaza_modulo_sin_main(tmp_path, capsys):
     archivo = crear_wasm(tmp_path, "sin-main.wasm", '(module (func (export "otra")))')
 
@@ -144,7 +233,7 @@ def test_ejecutor_wasm_rechaza_firma_incompatible(tmp_path, capsys):
     codigo_salida = ejecutar_archivo_wasm(archivo)
 
     assert codigo_salida == 1
-    assert "sin parámetros y retornar i32" in capsys.readouterr().out
+    assert "sin parámetros y retornar i32, f64 o no retornar valor" in capsys.readouterr().out
 
 
 def test_ejecutor_wasm_detiene_ciclo_infinito(tmp_path, capsys):

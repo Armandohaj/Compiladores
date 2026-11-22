@@ -1064,7 +1064,7 @@ fn main() -> i32 {
     assert ejecutar_modulo_wasm(enum["wasm"]) == 3
 
 
-def test_prestamos_de_receptores_match_rechazan_escape_mutable_y_f64():
+def test_prestamos_de_receptores_match_rechazan_escape_mutable_y_admiten_f64():
     mutable = compilar_programa("""fn main() -> i32 {
     match 1 { x => { let r = &mut x; *r = 2; *r } }
 }""")
@@ -1080,8 +1080,9 @@ def test_prestamos_de_receptores_match_rechazan_escape_mutable_y_f64():
     assert mutable["wasm"] is None
     assert not escape["valido"]
     assert escape["wasm"] is None
-    assert not decimal["valido"]
-    assert decimal["wasm"] is None
+    assert decimal["valido"]
+    wasmtime.Module(wasmtime.Engine(), decimal["wasm"])
+    assert ejecutar_modulo_wasm(decimal["wasm"]) == pytest.approx(1.0)
 
 
 def test_constantes_locales_materializadas_por_id_y_sombreado():
@@ -3478,3 +3479,49 @@ fn main() -> i32 {
         assert resultado["valido"]
         wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
         assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_ejemplo_oficial_con_main_unit_generan_y_ejecutan_wasm():
+    resultado = compilar_programa("""struct Punto {
+    x: f64,
+    y: f64,
+}
+
+enum Estado {
+    Pendiente,
+    Completado(i32),
+    Error(String),
+}
+
+fn mover_x(p: &mut Punto, dx: f64) {
+    p.x = p.x + dx;
+}
+
+fn describir(estado: Estado) -> i32 {
+    match estado {
+        Estado::Pendiente => 0,
+        Estado::Completado(codigo) => codigo,
+        Estado::Error(_) => -1,
+    }
+}
+
+fn main() {
+    let mut p = Punto { x: 1.0, y: 2.0 };
+    mover_x(&mut p, 3.0);
+
+    let estado = Estado::Completado(200);
+    let codigo = describir(estado);
+
+    let dimensiones: (f64, f64) = (p.x, p.y);
+    let muestras: [i32; 3] = [10, 20, 30];
+    let correcto: bool = codigo == 200;
+    let inicial: char = 'R';
+
+    if correcto {
+        p.y = p.y + 1.0;
+    }
+}""")
+
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) is None

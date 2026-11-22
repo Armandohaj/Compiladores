@@ -54,9 +54,9 @@ ejecutar `main()` con Wasmtime en un proceso separado:
 python .\ejecutar_escritorio.py .\programa.rustiq
 ```
 
-Por ahora el ejecutor admite `main()` sin parámetros con retorno `i32`. La
-ejecución tiene un límite de tres segundos; si no termina, el proceso Wasm se
-detiene y se informa el límite superado.
+El ejecutor admite `main()` sin parámetros con cualquier retorno que genere
+RustiQ, incluido `unit`. La ejecución tiene un límite de tres segundos; si no
+termina, el proceso Wasm se detiene y se informa el límite superado.
 
 Para ejecutar directamente un archivo `.wasm` descargado desde el editor, sin
 leer ni recompilar código RustiQ, instala Wasmtime y ejecuta:
@@ -67,8 +67,13 @@ python .\ejecutar_wasm.py .\programa.wasm
 ```
 
 Este ejecutor valida el módulo con Wasmtime y requiere que exporte `main()` sin
-parámetros con retorno `i32`. No modifica el archivo recibido y aplica el mismo
-límite de tres segundos a la ejecución.
+parámetros con retorno `i32`, `f64` o sin retorno a nivel Wasm. Los módulos
+generados por RustiQ exportan además `__rustiq-main-metadata`, un descriptor
+UTF-8 del tipo de retorno y su layout. Ese contrato permite reconstruir `bool`,
+`char`, `String` y valores compuestos sin mostrar direcciones de memoria como
+si fueran resultados. Un Wasm externo sin ese descriptor conserva el contrato
+genérico de `i32`, `f64` o `unit`. No modifica el archivo recibido y aplica el
+mismo límite de tres segundos a la ejecución.
 
 Los módulos pueden importar `env.read_i32` y `env.print_i32`. Para entregar
 valores a `read_i32` desde PowerShell, repite `--entrada`; las llamadas se
@@ -91,17 +96,18 @@ python .\visor_wasm.py
 ```
 
 Selecciona el archivo `.wasm` con **Abrir archivo** y después pulsa
-**Ejecutar**. La ventana valida `main() -> i32`, conserva el binario solo en
-memoria, ejecuta en segundo plano y muestra el resultado o el error sin
+**Ejecutar**. La ventana valida `main()` sin parámetros, conserva el binario
+solo en memoria, ejecuta en segundo plano y muestra el resultado o el error sin
 modificar el archivo seleccionado. Las entradas i32 se escriben antes de
 ejecutar, separadas por espacios o comas; las salidas `print_i32` se muestran
 en el área de resultados en el orden producido.
 
 ## Alcance actual
 
-Se admiten funciones que retornan `i32`, `f64`, `char`, `bool` o `String`
-(`bool` se representa como `i32` 0/1 en WebAssembly), con declaraciones `let`
-y `let mut`, y asignaciones
+Se admiten funciones que retornan `i32`, `f64`, `char`, `bool`, `String` o
+los tipos compuestos admitidos (`arreglos`, `matrices`, tuplas, estructuras y
+enumeraciones). `bool` se representa como `i32` 0/1 en WebAssembly. Se admiten
+declaraciones `let` y `let mut`, y asignaciones
 simples o compuestas. Las variables locales usan los identificadores resueltos
 por el analizador para mantener correctamente los ámbitos. Las expresiones
 permiten literales `i32`, `f64` y booleanos, variables, paréntesis,
@@ -178,9 +184,11 @@ no admiten copias automáticas.
 Con el análisis de ownership actual, `String` y los arreglos o matrices que lo
 contienen son valores `Move`. Por ello, comparar un elemento `String` es válido,
 pero retornarlo, asignarlo o pasarlo por valor intentaría hacer un movimiento
-parcial y el frontend lo rechaza antes de generar WASM. El backend ya admite
-préstamos de contenedores con elementos básicos, pero no de `String`; esta
-restricción se mantiene para evitar transferencias parciales incorrectas.
+parcial y el frontend lo rechaza antes de generar WASM. El backend admite
+préstamos compartidos y mutables de contenedores con `String`: la referencia
+reutiliza el bloque original y las lecturas o reemplazos mediante `&mut` operan
+sobre ese bloque. Extraer un `String` o un elemento Move por valor continúa
+rechazado para no permitir movimientos parciales incorrectos.
 
 También se admiten tuplas locales de dos o más campos `i32`, `f64`, `bool`,
 `char`, `String`, otras tuplas y estructuras, declaradas con tipo explícito o
@@ -256,10 +264,10 @@ patrones `String` comparan contenido mediante `$string_eq`. Los arreglos y
 matrices de enums, y los campos enum dentro de estructuras o tuplas, reutilizan
 la misma representación `i32`.
 
-También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
-parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
-sentencia descartan resultados con `drop`; las funciones `unit` se generan sin
-resultado WebAssembly.
+También se admiten parámetros `i32`, `f64`, `bool`, `char`, `String` y los
+tipos compuestos admitidos, incluidos parámetros mutables, llamadas anidadas y
+declaraciones posteriores. Las llamadas usadas como sentencia descartan
+resultados con `drop`; las funciones `unit` se generan sin resultado WebAssembly.
 
 Los préstamos locales `&T` y `&mut T` de `i32`, `f64`, `bool` y `char` se
 representan como direcciones `i32`. Cuando una variable escalar aparece como
@@ -275,13 +283,13 @@ comprobaciones de límites de `$array_addr`; las escrituras por `&mut` actualiza
 el bloque de origen. Los parámetros referencia de esos mismos tipos también se
 admiten. Las enumeraciones prestadas se materializan en una celda que guarda su
 etiqueta o puntero, por lo que `*r` sirve para leerlas en `match` y `&mut Enum`
-puede reemplazar la variante del origen. Los receptores `i32`, `bool` y `char` de patrones `match` también
+puede reemplazar la variante del origen. Los receptores `i32`, `f64`, `bool` y `char` de patrones `match` también
 pueden prestarse de forma compartida. Al entrar únicamente en el brazo elegido,
 su valor se materializa en una celda propia y el receptor y `*r` usan esa misma
 dirección; esto conserva el sombreado resuelto por ID. Los receptores básicos de
 variantes de enum siguen el mismo mecanismo. La exclusividad, las vidas y la
 mutabilidad siguen siendo responsabilidad del frontend. Aún se rechazan
-receptores `f64`, préstamos de parámetros normales, retornos o reasignaciones
+préstamos de parámetros normales, retornos o reasignaciones
 de referencias. Los `String` prestados también usan una celda de descriptor y
 pueden leerse y reemplazarse mediante `&mut`; extraerlos por valor sigue siendo
 un movimiento rechazado por el frontend. La desreferenciación completa `*r` de

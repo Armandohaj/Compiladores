@@ -24,8 +24,8 @@ Cada brazo tiene su propio ámbito y los receptores son inmutables.
 Los nombres read y print continúan protegidos también en los patrones.
 
 El generador reutiliza estos nodos y los mapas existentes. Implementa `match`
-para escalares, tuplas planas admitidas y enums del subconjunto de `WASM.md`;
-no se agregan claves al contrato público.
+para escalares, `String`, tuplas anidadas y enums con datos admitidos por el
+layout recursivo de `WASM.md`; no se agregan claves al contrato público.
 
 ## Bloques con valor y retornos implícitos
 
@@ -65,8 +65,8 @@ No se detectan brazos redundantes. El tratamiento de saltos dentro de
 expresiones requiere una revisión adicional.
 
 Ownership y borrowing se validan antes de generar código. El backend conserva
-sus propias limitaciones: por ejemplo, no implementa patrones de tuplas
-anidadas ni préstamos de todos los valores compuestos.
+las limitaciones documentadas de préstamos, pero implementa patrones de tuplas
+anidadas y préstamos de los valores compuestos compatibles con su layout.
 ## Ejemplos
 
 ```rust

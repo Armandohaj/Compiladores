@@ -105,9 +105,9 @@ fn main() -> i32 {
 Explicar: BASE se calcula como 10 durante la compilación. Estado::Listo lleva
 una tupla como dato asociado. El receptor numero existe solo en su brazo.
 La exhaustividad comprueba que no queden variantes ni combinaciones de datos
-sin cubrir. El backend recibe BASE ya calculada. El análisis de propiedad ya
-clasifica transferencias y movimientos; este ejemplo sigue siendo solo de
-frontend porque el backend no admite enums con tuplas como datos asociados.
+sin cubrir. El backend recibe BASE ya calculada y genera Wasm para enums con
+tuplas como datos asociados. El análisis de propiedad clasifica transferencias
+y movimientos antes de esa generación.
 
 ## Ejemplo válido 4 Entrada y salida reconocidas
 

@@ -229,11 +229,11 @@ class VisorWasm:
 
     def _ejecutar_en_segundo_plano(self, wasm, entradas):
         try:
-            valor, salidas = ejecutar_main_con_entradas(wasm, entradas)
+            valor, salidas, resultado = ejecutar_main_con_entradas(wasm, entradas, detalles=True)
             lineas = [
                 *(f"Salida: {salida}" for salida in salidas),
-                f"Resultado de main(): {valor}",
             ]
+            lineas.append(resultado)
             mensaje = "\n".join(lineas)
         except (RuntimeError, TimeoutError) as error:
             mensaje = f"Error de ejecución: {error}"

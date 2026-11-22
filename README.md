@@ -43,7 +43,11 @@ archivo, analizarlo, compilarlo, ejecutar el módulo y descargar `programa.wasm`
 Los errores léxicos, sintácticos, semánticos o de generación aparecen con línea
 y columna; al seleccionar un error, el editor lo ubica en el código.
 
-La ejecución web admite por ahora `main()` sin parámetros que retorne `i32`.
+La ejecución web admite `main()` sin parámetros con retorno `i32`, `f64`,
+`bool`, `char`, `String`, arreglos, tuplas, estructuras, enums o sin retorno.
+Los módulos generados por RustiQ incluyen metadatos de retorno para que el
+editor muestre textos y valores compuestos sin confundir sus punteros Wasm con
+resultados del programa.
 Los valores para `read()` se indican antes de ejecutar, como enteros `i32`
 separados por espacios o comas. Las llamadas a `print()` se muestran antes del
 resultado. Cada ejecución tiene un límite de tres segundos.
@@ -55,8 +59,9 @@ python .\ejecutar_escritorio.py .\ejemplos\01_aritmetica_funciones.rustiq
 python .\ejecutar_escritorio.py .\ejemplo.rustiq --entrada 15 --entrada 22
 ```
 
-El comando genera el archivo `.wasm` junto al fuente, ejecuta `main() -> i32`
-en un proceso separado y muestra las salidas de `print()` y el resultado final.
+El comando genera el archivo `.wasm` junto al fuente y ejecuta `main()` sin
+parámetros en un proceso separado. Muestra las salidas de `print()` y decodifica
+el resultado según los metadatos incluidos por RustiQ.
 
 ## Ejecutar un WASM existente
 

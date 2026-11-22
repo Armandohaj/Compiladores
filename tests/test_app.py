@@ -8,7 +8,9 @@ import pytest
 import wasmtime
 
 from app import app
-from ejecutar_wasm import ejecutar_archivo_wasm
+from ejecutar_wasm import ejecutar_archivo_wasm, ejecutar_main_con_entradas
+from generador_wasm import compilar_programa
+from visor_wasm import cargar_archivo_wasm
 
 
 def test_editor_y_analizar_conservan_su_comportamiento():
@@ -43,6 +45,46 @@ def test_compilar_devuelve_wasm_base64_valido():
     wasm = base64.b64decode(datos["wasm_base64"], validate=True)
     assert wasm.startswith(b"\x00asm")
     wasmtime.Module(wasmtime.Engine(), wasm)
+
+
+def test_compilar_admite_main_unit():
+    cliente = app.test_client()
+    respuesta = cliente.post(
+        "/api/compilar",
+        json={"codigo": "fn main() { print(10); }"},
+    )
+
+    datos = respuesta.get_json()
+    wasm = base64.b64decode(datos["wasm_base64"], validate=True)
+
+    assert respuesta.status_code == 200
+    assert datos["valido"]
+    assert datos["main"] == {"parametros": [], "retorno": "unit"}
+    wasmtime.Module(wasmtime.Engine(), wasm)
+
+
+def test_main_unit_del_editor_se_ejecuta_en_terminal_y_visor(tmp_path, capsys):
+    cliente = app.test_client()
+    respuesta = cliente.post(
+        "/api/compilar",
+        json={"codigo": "fn main() { let valor = read(); print(valor); }"},
+    )
+    datos = respuesta.get_json()
+    wasm = base64.b64decode(datos["wasm_base64"], validate=True)
+    archivo = tmp_path / "editor-unit.wasm"
+    archivo.write_bytes(wasm)
+    antes = hashlib.sha256(wasm).hexdigest()
+
+    codigo_salida = ejecutar_archivo_wasm(archivo, entradas=[40])
+    salida = capsys.readouterr().out
+    wasm_visor = cargar_archivo_wasm(archivo)
+
+    assert datos["valido"]
+    assert codigo_salida == 0
+    assert "Salida: 40" in salida
+    assert "main() finalizó correctamente." in salida
+    assert ejecutar_main_con_entradas(wasm_visor, [40]) == (None, [40])
+    assert hashlib.sha256(archivo.read_bytes()).hexdigest() == antes
 
 
 def test_compilar_informa_programa_invalido_sin_wasm():
@@ -395,6 +437,180 @@ const invalida = () => ({
     throw new Error("La ejecución antigua reemplazó la compilación reciente.");
   }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+def test_editor_ejecuta_main_unit_sin_mostrar_valor_inexistente():
+    script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const elementos = {};
+function crearElemento(valor = "") {
+  return {
+    value: valor, textContent: "", className: "", hidden: false, disabled: false,
+    children: [], listeners: {}, files: [], scrollTop: 0,
+    addEventListener(nombre, funcion) { this.listeners[nombre] = funcion; },
+    replaceChildren() { this.children = []; },
+    append(item) { this.children.push(item); },
+  };
+}
+for (const id of ["codigo", "lineas", "analizar", "compilar", "ejecutar", "descargar-wasm", "entradas", "archivo", "estado", "errores"]) {
+  elementos[id] = crearElemento(id === "codigo" ? "fn main() {}" : "");
+}
+const workers = [];
+class WorkerFalso {
+  constructor() { workers.push(this); }
+  postMessage() { this.onmessage({ data: { salidas: [37], resultado: "main() finalizó correctamente." } }); }
+  terminate() {}
+}
+const contexto = {
+  document: {
+    querySelector(selector) { return elementos[selector.slice(1)]; },
+    createElement() { return crearElemento(); },
+  },
+  fetch: async () => ({
+    ok: true,
+    json: async () => ({
+      valido: true, errores: [], wasm_base64: "x",
+      main: { parametros: [], retorno: "unit" },
+    }),
+  }),
+  window: { setTimeout() { return 0; }, clearTimeout() {} },
+  FileReader: class {}, atob() { return "\x01"; }, Blob: class {}, URL: {}, Worker: WorkerFalso, console,
+};
+vm.createContext(contexto);
+const fuente = fs.readFileSync("static/js/editor.js", "utf8");
+vm.runInContext(`${fuente}\nglobalThis.probar = { ejecutar };`, contexto);
+(async () => {
+  await contexto.probar.ejecutar();
+  if (elementos.estado.textContent !== "Salida: 37\nmain() finalizó correctamente."
+      || elementos.estado.textContent.includes("undefined") || workers.length !== 1) {
+    throw new Error("No informó correctamente la ejecución unit.");
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+@pytest.mark.parametrize(
+    ("codigo", "esperado"),
+    [
+        ("fn main() -> f64 { 1.5 }", "Resultado de main(): 1.5"),
+        ("fn main() -> bool { true }", "Resultado de main(): true"),
+        ("fn main() -> char { 'ñ' }", "Resultado de main(): 'ñ'"),
+        (r"fn main() -> char { '\n' }", r"Resultado de main(): '\n'"),
+        (r"fn main() -> char { '\t' }", r"Resultado de main(): '\t'"),
+        (r"fn main() -> char { '\r' }", r"Resultado de main(): '\r'"),
+        (r'''fn main() -> char { '\'' }''', r"Resultado de main(): '\''"),
+        (r"fn main() -> char { '\\' }", r"Resultado de main(): '\\'"),
+        ('fn main() -> String { "hola" }', 'Resultado de main(): "hola"'),
+        ("fn main() -> (i32, bool) { (7, true) }", "Resultado de main(): [7,true]"),
+        (
+            "struct Punto { x: i32 } fn main() -> Punto { Punto { x: 7 } }",
+            'Resultado de main(): {"x":7}',
+        ),
+        (
+            "enum Estado { Valor(i32), Vacio } fn main() -> Estado { Estado::Valor(7) }",
+            'Resultado de main(): {"enum":"Estado","variante":"Valor","datos":[7]}',
+        ),
+        (
+            "fn main() -> [[i32; 2]; 2] { [[1, 2], [3, 4]] }",
+            "Resultado de main(): [[1,2],[3,4]]",
+        ),
+    ],
+)
+def test_worker_web_decodifica_retornos_rustiq(codigo, esperado):
+    resultado_compilacion = compilar_programa(codigo)
+    wasm_base64 = base64.b64encode(resultado_compilacion["wasm"]).decode("ascii")
+    script = f'''
+const fs = require("fs");
+const vm = require("vm");
+let salida = null;
+const contexto = {{
+  self: {{ postMessage(datos) {{ salida = datos; }} }},
+  WebAssembly, Uint8Array, DataView, TextDecoder, JSON, Error, Number, Array, Object, String,
+}};
+vm.createContext(contexto);
+vm.runInContext(fs.readFileSync("static/js/ejecutor-wasm.js", "utf8"), contexto);
+(async () => {{
+  const bytes = Uint8Array.from(Buffer.from("{wasm_base64}", "base64"));
+  await contexto.self.onmessage({{ data: {{ wasm: bytes.buffer, entradas: [] }} }});
+  if (!salida || salida.error || salida.resultado !== {esperado!r}) {{
+    throw new Error(JSON.stringify(salida));
+  }}
+}})().catch((error) => {{ console.error(error); process.exitCode = 1; }});
+'''
+
+    resultado = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado_compilacion["valido"]
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js no está disponible.")
+def test_worker_web_distingue_metadatos_ausentes_de_metadatos_invalidos():
+    sin_metadatos = base64.b64encode(wasmtime.wat2wasm(
+        '(module (func (export "main") (result i32) i32.const 30))'
+    )).decode("ascii")
+    sin_memoria = base64.b64encode(wasmtime.wat2wasm(
+        '(module (global (export "__rustiq-main-metadata") i32 (i32.const 0)) '
+        '(func (export "main") (result i32) i32.const 1))'
+    )).decode("ascii")
+    metadatos_invalidos = base64.b64encode(wasmtime.wat2wasm(
+        '(module (memory (export "memory") 1) '
+        '(global (export "__rustiq-main-metadata") i32 (i32.const 0)) '
+        '(data (i32.const 0) "\\08\\00\\00\\00\\01\\00\\00\\00x") '
+        '(func (export "main") (result i32) i32.const 1))'
+    )).decode("ascii")
+    script = f'''
+const fs = require("fs");
+const vm = require("vm");
+let salida = null;
+const contexto = {{
+  self: {{ postMessage(datos) {{ salida = datos; }} }},
+  WebAssembly, Uint8Array, DataView, TextDecoder, JSON, Error, Number, Array, Object, String,
+}};
+vm.createContext(contexto);
+vm.runInContext(fs.readFileSync("static/js/ejecutor-wasm.js", "utf8"), contexto);
+(async () => {{
+  await contexto.self.onmessage({{ data: {{ wasm: Uint8Array.from(Buffer.from("{sin_metadatos}", "base64")).buffer, entradas: [] }} }});
+  if (!salida || salida.error || salida.resultado !== "Resultado de main(): 30") throw new Error(JSON.stringify(salida));
+  await contexto.self.onmessage({{ data: {{ wasm: Uint8Array.from(Buffer.from("{sin_memoria}", "base64")).buffer, entradas: [] }} }});
+  if (!salida || !salida.error || !salida.error.includes("declara metadatos RustiQ pero no expone la memoria requerida")) {{
+    throw new Error(JSON.stringify(salida));
+  }}
+  await contexto.self.onmessage({{ data: {{ wasm: Uint8Array.from(Buffer.from("{metadatos_invalidos}", "base64")).buffer, entradas: [] }} }});
+  if (!salida || !salida.error || !salida.error.includes("metadatos de retorno del módulo no son compatibles")) {{
+    throw new Error(JSON.stringify(salida));
+  }}
+}})().catch((error) => {{ console.error(error); process.exitCode = 1; }});
 '''
 
     resultado = subprocess.run(

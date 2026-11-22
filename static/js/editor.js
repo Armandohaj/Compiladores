@@ -285,8 +285,8 @@ async function ejecutar() {
     wasmCompilado = wasm;
     botonDescargarWasm.disabled = false;
     // La firma llega del análisis semántico; no se infiere desde el texto fuente.
-    if (!resultado.main || resultado.main.parametros.length !== 0 || resultado.main.retorno !== "i32") {
-      mostrarMensaje("Por ahora solo se puede ejecutar main() sin parámetros que retorne i32.", "error");
+    if (!resultado.main || resultado.main.parametros.length !== 0) {
+      mostrarMensaje("Por ahora solo se puede ejecutar main() sin parámetros.", "error");
       return;
     }
     mostrarMensaje("Ejecutando main()…");
@@ -300,7 +300,12 @@ async function ejecutar() {
       return;
     }
     const salidas = ejecucion.salidas.map((salida) => `Salida: ${salida}`);
-    mostrarMensaje([...salidas, `Resultado de main(): ${ejecucion.valor}`].join("\n"), "correcto");
+    const resultadoMain = ejecucion.resultado ?? (
+      resultado.main.retorno === "unit"
+        ? "main() finalizó correctamente."
+        : `Resultado de main(): ${ejecucion.valor}`
+    );
+    mostrarMensaje([...salidas, resultadoMain].join("\n"), "correcto");
   } catch (error) {
     if (accion !== ultimaAccion
       || revisionEnviada !== revisionCodigo

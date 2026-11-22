@@ -242,7 +242,7 @@ admite accesos por referencia a tuplas, arreglos, matrices, estructuras,
 enums y `String` dentro de los layouts recursivos admitidos. La
 desreferenciación de un compuesto Copy materializa una copia profunda
 independiente; la de un compuesto Move continúa rechazada para no extraer su
-propiedad desde una referencia. Se mantienen rechazados los receptores `f64`,
-los préstamos de parámetros normales, los retornos y las reasignaciones de
+propiedad desde una referencia. Se mantienen rechazados los préstamos de
+parámetros normales, los retornos y las reasignaciones de
 referencias, además de représtamos y referencias anidadas definidos como
 límites del frontend.

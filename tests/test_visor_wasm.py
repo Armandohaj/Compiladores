@@ -50,6 +50,55 @@ def test_visor_carga_y_ejecuta_binario_con_read_y_print(tmp_path):
     assert ejecutar_main_con_entradas(wasm, [37]) == (37, [37])
 
 
+def test_visor_carga_y_ejecuta_main_unit_con_read_y_print(tmp_path):
+    resultado = compilar_programa(
+        "fn main() { let valor = read(); print(valor); }"
+    )
+    archivo = tmp_path / "unit.wasm"
+    archivo.write_bytes(resultado["wasm"])
+
+    wasm = cargar_archivo_wasm(archivo)
+
+    assert resultado["valido"]
+    assert ejecutar_main_con_entradas(wasm, [37]) == (None, [37])
+
+
+@pytest.mark.parametrize(
+    ("codigo", "esperado"),
+    [
+        ("fn main() -> i32 { 7 }", "Resultado de main(): 7"),
+        ("fn main() -> f64 { 1.5 }", "Resultado de main(): 1.5"),
+        ("fn main() -> bool { true }", "Resultado de main(): true"),
+        ("fn main() -> char { 'ñ' }", "Resultado de main(): 'ñ'"),
+        (r"fn main() -> char { '\n' }", r"Resultado de main(): '\n'"),
+        ('fn main() -> String { "hola" }', 'Resultado de main(): "hola"'),
+        ("fn main() -> (i32, bool) { (7, true) }", "Resultado de main(): [7, true]"),
+        (
+            "struct Punto { x: i32 } fn main() -> Punto { Punto { x: 7 } }",
+            'Resultado de main(): {"x": 7}',
+        ),
+        (
+            "enum Estado { Valor(i32), Vacio } fn main() -> Estado { Estado::Valor(7) }",
+            'Resultado de main(): {"enum": "Estado", "variante": "Valor", "datos": [7]}',
+        ),
+        (
+            "fn main() -> [[i32; 2]; 2] { [[1, 2], [3, 4]] }",
+            "Resultado de main(): [[1, 2], [3, 4]]",
+        ),
+    ],
+)
+def test_visor_acepta_y_decodifica_retornos_rustiq(tmp_path, codigo, esperado):
+    resultado = compilar_programa(codigo)
+    archivo = tmp_path / "retorno.wasm"
+    archivo.write_bytes(resultado["wasm"])
+
+    wasm = cargar_archivo_wasm(archivo)
+    _, _, mostrado = ejecutar_main_con_entradas(wasm, detalles=True)
+
+    assert resultado["valido"]
+    assert mostrado == esperado
+
+
 @pytest.mark.parametrize(
     ("nombre", "contenido", "mensaje"),
     [
@@ -64,7 +113,7 @@ def test_visor_carga_y_ejecuta_binario_con_read_y_print(tmp_path):
             wasmtime.wat2wasm(
                 '(module (func (export "main") (param i32) (result i32) local.get 0))'
             ),
-            "sin parámetros y retornar i32",
+            "sin parámetros y retornar i32, f64 o no retornar valor",
         ),
         (
             "importacion.wasm",

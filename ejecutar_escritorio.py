@@ -26,8 +26,8 @@ def firma_main_ejecutable(codigo):
     firma = analisis["funciones"].get("main")
     if firma is None:
         return False, "El programa debe declarar una función main()."
-    if firma["parametros"] or firma["retorno"] != "i32":
-        return False, "Por ahora solo se puede ejecutar main() sin parámetros que retorne i32."
+    if firma["parametros"]:
+        return False, "Por ahora solo se puede ejecutar main() sin parámetros."
     return True, None
 
 
@@ -64,8 +64,8 @@ def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS, en
         return 2
 
     try:
-        valor, salidas = ejecutar_main_con_entradas(
-            resultado["wasm"], entradas, limite_segundos
+        valor, salidas, resultado_mostrable = ejecutar_main_con_entradas(
+            resultado["wasm"], entradas, limite_segundos, detalles=True
         )
     except (RuntimeError, TimeoutError, ValueError) as error:
         print(f"Error de ejecución: {error}")
@@ -74,7 +74,7 @@ def ejecutar_archivo(ruta_archivo, limite_segundos=LIMITE_EJECUCION_SEGUNDOS, en
     print(f"Wasm generado: {ruta_wasm}")
     for salida in salidas:
         print(f"Salida: {salida}")
-    print(f"Resultado de main(): {valor}")
+    print(resultado_mostrable)
     return 0
 
 

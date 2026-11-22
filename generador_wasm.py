@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 
 import wasmtime
 
@@ -400,6 +401,76 @@ def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
         _, tamano, alineacion = distribucion
         return tamano, alineacion
     return None
+
+
+def _metadatos_layout(tipo, estructuras, enumeraciones, pila=()):
+    if tipo in {"i32", "f64", "bool", "char", "String"}:
+        return {"clase": tipo}
+    if tipo in pila:
+        return None
+    arreglo = _partes_arreglo_recursivo(tipo)
+    if arreglo is not None:
+        elemento, cantidad = arreglo
+        interno = _metadatos_layout(elemento, estructuras, enumeraciones, pila)
+        if interno is None:
+            return None
+        layout = _layout_recursivo(elemento, estructuras, enumeraciones)
+        if layout is None:
+            return None
+        paso = 4 if (layout.get("elemento") is not None
+                     or _distribucion_tupla(elemento, estructuras, enumeraciones) is not None
+                     or _distribucion_estructura(elemento, estructuras, enumeraciones) is not None
+                     or _enum_tiene_datos(elemento, enumeraciones)) else layout["tamano"]
+        return {"clase": "arreglo", "cantidad": cantidad, "paso": paso, "elemento": interno}
+    tupla = _distribucion_tupla(tipo, estructuras, enumeraciones)
+    if tupla is not None:
+        campos, _, _ = tupla
+        resultado = []
+        for campo, desplazamiento in campos:
+            interno = _metadatos_layout(campo, estructuras, enumeraciones, (*pila, tipo))
+            if interno is None:
+                return None
+            resultado.append({"desplazamiento": desplazamiento, "valor": interno})
+        return {"clase": "tupla", "campos": resultado}
+    estructura = _distribucion_estructura(tipo, estructuras, enumeraciones)
+    if estructura is not None:
+        resultado = []
+        for nombre, (campo, desplazamiento) in estructura[0].items():
+            interno = _metadatos_layout(campo, estructuras, enumeraciones, (*pila, tipo))
+            if interno is None:
+                return None
+            resultado.append({"nombre": nombre, "desplazamiento": desplazamiento, "valor": interno})
+        return {"clase": "estructura", "nombre": tipo, "campos": resultado}
+    enumeracion = _info_enum(tipo, enumeraciones)
+    if enumeracion is None:
+        return None
+    distribucion = _distribucion_enum(tipo, enumeraciones, estructuras)
+    variantes = []
+    for nombre, etiqueta in enumeracion["variantes"].items():
+        campos = []
+        if distribucion is not None:
+            _, distribucion_campos = distribucion[0][nombre]
+            for campo, desplazamiento in distribucion_campos:
+                interno = _metadatos_layout(campo, estructuras, enumeraciones, (*pila, tipo))
+                if interno is None:
+                    return None
+                campos.append({"desplazamiento": desplazamiento, "valor": interno})
+        variantes.append({"nombre": nombre, "etiqueta": etiqueta, "campos": campos})
+    return {"clase": "enum", "nombre": tipo, "con_datos": distribucion is not None, "variantes": variantes}
+
+
+def _metadatos_main(analisis, estructuras, enumeraciones):
+    firma = analisis["funciones"].get("main")
+    if firma is None:
+        return None
+    if firma["parametros"]:
+        return None
+    if firma["retorno"] == "unit":
+        return {"version": 1, "retorno": {"clase": "unit"}}
+    layout = _metadatos_layout(firma["retorno"], estructuras, enumeraciones)
+    if layout is None:
+        return None
+    return {"version": 1, "retorno": layout}
 
 
 def _tamano_elemento_arreglo(tipo):
@@ -2929,8 +3000,8 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         tipo = analisis["simbolos"][identificador]["tipo"]
         declaracion = declaraciones_por_id.get(identificador)
         if type(declaracion).__name__ == "PatternContext":
-            if tipo not in {"i32", "bool", "char"}:
-                _error("Solo se admiten préstamos de receptores i32, bool y char.", funcion)
+            if tipo not in {"i32", "f64", "bool", "char"}:
+                _error("Solo se admiten préstamos de receptores escalares.", funcion)
             escalares_en_memoria.add(identificador)
             continue
         if identificador in parametros:
@@ -3100,6 +3171,14 @@ def compilar_programa(codigo):
             _compilar_funcion(funcion, analisis, indice, estado)
             for indice, funcion in enumerate(funciones)
         ]
+        metadatos_main = _metadatos_main(
+            analisis, analisis["estructuras"], analisis["enumeraciones"]
+        )
+        descriptor_metadatos = None
+        if metadatos_main is not None:
+            descriptor_metadatos = estado.memoria.agregar(
+                json.dumps(metadatos_main, ensure_ascii=False, separators=(",", ":")), arbol
+            )
         # El módulo reúne memoria, helpers internos, funciones del programa y datos UTF-8.
         datos = estado.memoria.wat()
         imports = _imports_incorporados(estado.incorporadas_usadas)
@@ -3107,6 +3186,10 @@ def compilar_programa(codigo):
             "(module\n"
             + (imports + "\n" if imports else "")
             + f"  (memory (export \"memory\") {estado.memoria.paginas_necesarias()})\n"
+            + (
+                f"  (global $rustiq_main_metadata (export \"__rustiq-main-metadata\") i32 (i32.const {descriptor_metadatos}))\n"
+                if descriptor_metadatos is not None else ""
+            )
             + _wat_string_eq() + "\n"
             + _wat_arreglos((estado.memoria.cursor + 3) & ~3) + "\n"
             + "\n".join(wat_funciones)
