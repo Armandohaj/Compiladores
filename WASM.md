@@ -153,24 +153,27 @@ bloque. En esta etapa se admiten literales, lectura e índices `i32` para
 arreglos locales. También se admite la asignación de elementos con `=` y, para
 elementos `i32` y `f64`, con `+=`, `-=`, `*=` y `/=`; las direcciones conservan
 las mismas comprobaciones de límites antes de cargar o almacenar. No hay
-parámetros, retornos ni comparación de arreglos. Los arreglos Copy con
-elementos `i32`, `f64`, `bool` o `char` admiten copia y asignación completas:
-se reserva un bloque independiente y `memory.copy` conserva los bytes y la
-alineación del layout original. Los arreglos con `String` continúan sin copia
-ni asignación completa.
+comparación general de arreglos. Los arreglos Copy, incluidos los que contienen
+tuplas, estructuras, enums u otros arreglos Copy, admiten copia y asignación
+completas: se reserva un bloque independiente y se clonan recursivamente los
+punteros internos. Admiten parámetros y retornos por valor. Los arreglos Move
+con `String` transfieren su bloque completo cuando ownership lo permite, sin
+copiar automáticamente sus descriptores.
 
 También se admiten matrices locales de dos dimensiones `[[T; columnas];
-filas]` para `i32`, `bool`, `char`, `f64` y `String`. Sus elementos se guardan
+filas]` y arreglos anidados de más dimensiones con layout recursivo válido.
+Sus elementos se guardan
 contiguamente por filas en el mismo bloque; `matriz[fila][columna]` usa
 `$array_addr` para comprobar y calcular cada dimensión antes de cargar el
 elemento. Las matrices conservan los tamaños y alineaciones de los arreglos,
 incluida la alineación de ocho bytes para `f64` y los punteros a descriptores
 para `String`. Sus elementos admiten las mismas asignaciones indexadas que los
-arreglos. Las matrices Copy de esos cuatro tipos básicos también admiten copia
-y asignación completas en un bloque independiente mediante `memory.copy`,
-incluido `f64` alineado a ocho bytes. No se admiten más de dos dimensiones,
-ni parámetros, retornos o comparaciones de matrices; las matrices con
-`String` no admiten copia ni asignación completa.
+arreglos. Las matrices Copy admitidas, incluso con elementos compuestos Copy,
+también admiten copia y asignación completas en un bloque independiente mediante
+`memory.copy` y clonación recursiva de punteros, incluido `f64` alineado a ocho
+bytes, parámetros y retornos por valor. Las
+matrices no admiten comparación general; las que contienen `String` son Move y
+no admiten copias automáticas.
 
 Con el análisis de ownership actual, `String` y los arreglos o matrices que lo
 contienen son valores `Move`. Por ello, comparar un elemento `String` es válido,
@@ -179,25 +182,28 @@ parcial y el frontend lo rechaza antes de generar WASM. El backend ya admite
 préstamos de contenedores con elementos básicos, pero no de `String`; esta
 restricción se mantiene para evitar transferencias parciales incorrectas.
 
-También se admiten tuplas locales de dos o más campos `i32`, `f64`, `bool` y
-`char`, declaradas con tipo explícito o inferido. Cada tupla reserva un bloque
+También se admiten tuplas locales de dos o más campos `i32`, `f64`, `bool`,
+`char`, `String`, otras tuplas y estructuras, declaradas con tipo explícito o
+inferido. Cada tupla reserva un bloque
 propio en la memoria lineal: los campos `i32`, `bool` y `char` ocupan cuatro
 bytes; los campos `f64` se alinean y cargan/almacenan a ocho bytes. Se pueden
 leer campos `.0`, `.1`, etc., y asignar campos de una tupla `mut`, incluidas
-las operaciones `+=`, `-=`, `*=` y `/=` para `i32` y `f64`. Todavía no se
-admiten tuplas con `String`, tuplas anidadas, parámetros ni retornos de
-tuplas. Las copias y asignaciones completas de tuplas Copy admitidas reservan
+las operaciones `+=`, `-=`, `*=` y `/=` para `i32` y `f64`. Los arreglos y
+matrices admitidos también pueden ser elementos de tuplas. Las copias y
+asignaciones completas de tuplas Copy admitidas reservan
 un bloque independiente y usan `memory.copy`, incluso si el valor proviene de
 un bloque con valor; origen y destino no comparten almacenamiento.
 
-Las estructuras locales con campos `i32`, `f64`, `bool` y `char` usan la misma
+Las estructuras locales con campos `i32`, `f64`, `bool`, `char`, `String`,
+tuplas y otras estructuras usan la misma
 memoria lineal y alineación que las tuplas. El layout sigue el orden de
 declaración registrado por el frontend, incluso si el constructor escribe sus
 campos en otro orden; las expresiones de ese constructor sí se evalúan y se
 almacenan en el orden en que fueron escritas. Se admiten lecturas por nombre,
 asignaciones simples y operaciones compuestas numéricas sobre campos de una
-estructura `mut`. No se admiten todavía campos `String`, arreglos, tuplas o
-estructuras, parámetros o retornos de estructuras. Las copias y asignaciones
+estructura `mut`. Se admiten parámetros y retornos por valor de estructuras.
+Los arreglos y matrices admitidos también pueden ser campos de estructuras.
+Las copias y asignaciones
 completas de estructuras Copy admitidas usan un bloque independiente en la
 memoria lineal, por lo que sus campos pueden modificarse sin alterar el origen.
 
@@ -211,38 +217,44 @@ termina mediante `return`, no se genera el resto de ese bloque ni la operación
 que habría consumido su valor. Los valores de enums se generan con la
 representación descrita más adelante.
 
-Se admiten expresiones `match` sobre `i32`, `bool`, `char` y tuplas locales
-planas de campos `i32`, `f64`, `bool` o `char`. Los patrones de tupla admiten
-literales compatibles, comodín `_` y receptores; un literal usado directamente
-como valor del `match` se materializa con el mismo layout de memoria de las
-tuplas locales. El valor se evalúa una sola vez en un local Wasm y los brazos
-se prueban en el orden escrito, por lo que sólo se ejecuta el primer brazo
-compatible. Los receptores reutilizan su identificador resuelto por el frontend
-y los brazos pueden usar bloques con valor, `return`, `read()` y `print()`. No
-se admiten `match` directos sobre `f64` o `String`, ni tuplas anidadas. Los
-campos `f64` y `String` de patrones de enum se describen en la sección de
-enumeraciones; las demás combinaciones se rechazan controladamente.
+Se admiten expresiones `match` sobre `i32`, `bool`, `char`, `f64`, `String` y
+tuplas locales, incluidas tuplas anidadas. Los patrones de tupla admiten
+literales compatibles, comodín `_`, receptores y patrones de tupla internos;
+los patrones `String` usan `$string_eq` y comparan el UTF-8, no la dirección
+del descriptor. Un literal usado directamente como valor del `match` se
+materializa con el mismo layout de memoria de las tuplas locales. El valor se
+evalúa una sola vez en un local Wasm y los brazos se prueban en el orden
+escrito, por lo que sólo se ejecuta el primer brazo compatible. Los receptores
+reutilizan su identificador resuelto por el frontend y los brazos pueden usar
+bloques con valor, `return`, `read()` y `print()`.
 
 Las enumeraciones sin datos se representan como `i32` usando exactamente las
 etiquetas entregadas por el frontend. Si una enumeración contiene alguna
 variante con datos, todos sus valores se almacenan independientemente en la
 memoria lineal: la etiqueta ocupa los primeros 4 bytes y los datos `i32`,
 `bool`, `char`, `f64` y `String` siguen con sus alineaciones naturales. Los
-campos `String` guardan el puntero a su descriptor UTF-8 existente. Se admiten
+campos `String` guardan el puntero a su descriptor UTF-8 existente. Los datos
+asociados también pueden ser tuplas, estructuras, arreglos y otras
+enumeraciones admitidas; los valores compuestos se guardan como punteros a sus
+bloques propios. Se admiten
 variables locales inferidas o anotadas y reasignación de variables `mut`.
 Las enumeraciones con sólo datos Copy mantienen sus copias locales independientes;
 las que contienen `String` son Move y transfieren su puntero sin usar `memory.copy`.
 `match` compara primero la
 etiqueta y después los patrones literales compatibles; los receptores usan los
 identificadores resueltos por el frontend y sólo se cargan en el brazo elegido.
-Las comparaciones `==` y `!=` de enums con datos se rechazan por ahora, porque
-no hay igualdad estructural implementada. Las enumeraciones admitidas pueden
+Los patrones de tupla y de variantes enum pueden anidarse cuando sus tipos son
+compatibles. Los enums Copy clonan recursivamente los bloques internos al
+copiarse, mientras que los enums Move transfieren sus punteros.
+Las comparaciones `==` y `!=` de enums con datos comparan etiqueta y datos de
+forma estructural, incluidos `String`, tuplas, estructuras, arreglos y enums
+anidados admitidos. Las enumeraciones admitidas pueden
 usarse como parámetros y retornos: las variantes sin datos viajan como su
 etiqueta `i32` y las variantes con datos Copy se copian a un bloque independiente
 antes de una llamada; las variantes Move con `String` se transfieren. Los
-patrones `String` comparan contenido mediante `$string_eq`. No se admiten
-arreglos, tuplas, estructuras u otros enums como datos asociados, ni constantes
-globales de enum.
+patrones `String` comparan contenido mediante `$string_eq`. Los arreglos y
+matrices de enums, y los campos enum dentro de estructuras o tuplas, reutilizan
+la misma representación `i32`.
 
 También se admiten parámetros `i32`, `f64`, `bool`, `char` y `String`, incluidos
 parámetros mutables, llamadas anidadas y declaraciones posteriores. Las llamadas usadas como
@@ -255,23 +267,26 @@ origen en el mapa `prestamos` del frontend, el generador la reserva en memoria
 lineal y sus lecturas y escrituras directas usan esa misma celda. Se admiten
 lecturas `*r`, escrituras `*r = valor`, asignaciones compuestas numéricas y
 parámetros referencia escalares. También se admiten préstamos de estructuras,
-tuplas, arreglos unidimensionales y matrices locales con campos o elementos
-`i32`, `f64`, `bool` y `char`. Estos compuestos ya viven en memoria, de modo que
+tuplas, arreglos y matrices locales con layouts recursivos admitidos. Estos
+compuestos ya viven en memoria, de modo que
 la referencia reutiliza su puntero original: `p.campo`, `r.0`, `r[i]` y
 `r[i][j]` calculan sus desplazamientos con los layouts existentes y las
 comprobaciones de límites de `$array_addr`; las escrituras por `&mut` actualizan
 el bloque de origen. Los parámetros referencia de esos mismos tipos también se
-admiten. Los receptores `i32`, `bool` y `char` de patrones `match` también
+admiten. Las enumeraciones prestadas se materializan en una celda que guarda su
+etiqueta o puntero, por lo que `*r` sirve para leerlas en `match` y `&mut Enum`
+puede reemplazar la variante del origen. Los receptores `i32`, `bool` y `char` de patrones `match` también
 pueden prestarse de forma compartida. Al entrar únicamente en el brazo elegido,
 su valor se materializa en una celda propia y el receptor y `*r` usan esa misma
 dirección; esto conserva el sombreado resuelto por ID. Los receptores básicos de
 variantes de enum siguen el mismo mecanismo. La exclusividad, las vidas y la
 mutabilidad siguen siendo responsabilidad del frontend. Aún se rechazan
-préstamos de `String`, enums completos, compuestos anidados, estructuras con
-campos no admitidos, receptores `f64`, préstamos de parámetros normales,
-retornos o reasignaciones de referencias. La desreferenciación completa de un
-compuesto (`*r`) sigue rechazada para no crear copias que compartan
-accidentalmente el mismo bloque de memoria.
+receptores `f64`, préstamos de parámetros normales, retornos o reasignaciones
+de referencias. Los `String` prestados también usan una celda de descriptor y
+pueden leerse y reemplazarse mediante `&mut`; extraerlos por valor sigue siendo
+un movimiento rechazado por el frontend. La desreferenciación completa `*r` de
+un compuesto Copy materializa una copia profunda independiente; los compuestos
+Move siguen rechazados para no permitir extraerlos mediante una referencia.
 
 Las sentencias `if`, `if/else` y `else if` se traducen a bloques WAT `if`,
 `then` y `else`. Sus ramas conservan las variables locales identificadas por
@@ -289,16 +304,18 @@ operaciones no declaran imports adicionales. La validación de firmas y usos
 incorrectos corresponde al frontend; el generador solo consulta
 `llamadas_incorporadas` para emitir las llamadas WebAssembly.
 
-Las constantes globales `i32`, `f64`, `bool`, `char` y `String` se incorporan
-como literales Wasm a partir del valor ya calculado por el análisis semántico;
-por ello admiten dependencias y referencias adelantadas sin reevaluarse en el
-generador. Las constantes `String` reutilizan los descriptores UTF-8 y la
-memoria exportada existentes. Una variable local con el mismo nombre conserva
-prioridad mediante los identificadores de la resolución de referencias.
+Las constantes globales de tipos básicos, `String`, arreglos, tuplas,
+estructuras y enums se materializan a partir del valor ya calculado por el
+análisis semántico; por ello admiten dependencias y referencias adelantadas sin
+reevaluarse en el generador. Los valores compuestos se reservan al usarse con
+su layout recursivo y sin compartir un bloque mutable entre usos. Las
+constantes `String` reutilizan los descriptores UTF-8 y la memoria exportada
+existentes. Una variable local con el mismo nombre conserva prioridad mediante
+los identificadores de la resolución de referencias.
 Las constantes locales usan el mismo valor precomputado de su símbolo y no
 emiten código para su inicializador; los ámbitos y el sombreado se resuelven
-por ID. Las constantes de arreglos y matrices se rechazan controladamente, al
-igual que las demás formas de arreglos no admitidas y tipos pendientes.
+por ID. Las constantes compuestas reutilizan el layout de su tipo al
+materializarse en una función.
 
 Una expresión seguida de punto y coma se ejecuta como sentencia y descarta su
 resultado con `drop` cuando produce un valor. Las expresiones `unit` no dejan

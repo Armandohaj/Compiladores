@@ -101,7 +101,7 @@ def test_tuplas_locales_explicitas_e_inferidas_con_f64():
 }""")
 
     assert explicita["valido"]
-    assert "f64.load offset=8 align=8" in explicita["wat"]
+    assert "f64.load align=8" in explicita["wat"]
     assert ejecutar_modulo_wasm(explicita["wasm"]) == pytest.approx(2.5)
     assert inferida["valido"]
     assert ejecutar_modulo_wasm(inferida["wasm"]) == 4
@@ -144,8 +144,6 @@ def test_dos_tuplas_locales_tienen_almacenamiento_independiente():
     [
         "fn main() -> i32 { let datos = (1, true); datos.0 = 2; return datos.0; }",
         "fn main() -> i32 { let datos = (1, true); datos.1 += true; return datos.0; }",
-        "fn main() -> i32 { let datos = (1, \"texto\"); return datos.0; }",
-        "fn main() -> i32 { let datos = (1, (2, true)); return datos.0; }",
     ],
 )
 def test_tuplas_no_admitidas_no_generan_wasm(codigo):
@@ -194,7 +192,7 @@ fn main() -> i32 {
 }""")
 
     assert resultado["valido"]
-    assert "f64.load offset=8 align=8" in resultado["wat"]
+    assert "f64.load align=8" in resultado["wat"]
     assert ejecutar_modulo_wasm(resultado["wasm"]) == pytest.approx(9.0)
     assert orden["valido"]
     assert ejecutar_main_con_entradas(orden["wasm"], [2, 3]) == (32, [])
@@ -248,8 +246,6 @@ fn main() -> i32 {
     "codigo",
     [
         "struct P { x: i32 } fn main() -> i32 { let p = P { x: 1 }; p.x = 2; return p.x; }",
-        "struct P { x: String } fn main() -> i32 { let p = P { x: \"a\" }; return 0; }",
-        "struct P { x: i32 } struct Q { p: P } fn main() -> i32 { let q = Q { p: P { x: 1 } }; return 0; }",
     ],
 )
 def test_estructuras_no_admitidas_no_generan_wasm(codigo):
@@ -484,13 +480,115 @@ def test_match_tuplas_literales_receptores_y_rechazos_controlados():
 
     for resultado, esperado in [
         (booleanos, 1), (seleccion, 2), (sombreado, 10), (literales, 1),
-        (decimal_negativo, 1), (variable, 4),
+        (decimal_negativo, 1), (variable, 4), (anidada, 1),
     ]:
         assert resultado["valido"]
         wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
         assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
-    assert not anidada["valido"]
-    assert anidada["wasm"] is None
+
+
+def test_match_string_y_f64_generan_comparaciones_reales():
+    cadenas = compilar_programa('''fn main() -> i32 {
+    return match "hola\\n" {
+        "adios" => 0,
+        "hola\\n" => 10,
+        _ => 20,
+    };
+}''')
+    decimal = compilar_programa('''fn main() -> i32 {
+    return match -1.5 {
+        1.5 => 0,
+        -1.5 => 10,
+        _ => 20,
+    };
+}''')
+
+    for resultado in (cadenas, decimal):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == 10
+
+    for codigo in (
+        '''fn main() -> i32 { return match "hola" { 1 => 0, _ => 1, }; }''',
+        '''fn main() -> i32 { return match 1.5 { true => 0, _ => 1, }; }''',
+    ):
+        invalido = compilar_programa(codigo)
+        assert not invalido["valido"]
+        assert invalido["wasm"] is None
+
+
+def test_match_string_y_f64_enlazan_receptores_correctos():
+    cadenas = compilar_programa('''fn main() -> i32 {
+    let texto = "hola";
+    return match texto {
+        valor => match valor { "hola" => 10, _ => 0, },
+    };
+}''')
+    decimal = compilar_programa('''fn main() -> i32 {
+    let valor = 1.5;
+    return match valor {
+        numero => match numero { 1.5 => 10, _ => 0, },
+    };
+}''')
+
+    for resultado in (cadenas, decimal):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == 10
+
+
+def test_match_enum_con_datos_tupla_y_patron_anidado():
+    resultado = compilar_programa('''enum Dato {
+    Valor((i32, f64)),
+    Vacio,
+}
+
+fn identidad(dato: Dato) -> Dato {
+    return dato;
+}
+
+fn main() -> i32 {
+    let dato = identidad(Dato::Valor((3, 1.5)));
+    return match dato {
+        Dato::Valor((numero, 1.5)) => numero,
+        Dato::Valor(_) => 0,
+        Dato::Vacio => 0,
+    };
+}''')
+
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 3
+
+
+def test_enum_tupla_string_mueve_y_conserva_el_patron_por_contenido():
+    valido = compilar_programa('''enum Dato {
+    Valor((String, i32)),
+    Vacio,
+}
+
+fn identidad(dato: Dato) -> Dato { return dato; }
+
+fn main() -> i32 {
+    let dato = identidad(Dato::Valor(("Falló", 3)));
+    return match dato {
+        Dato::Valor(("Falló", numero)) => numero,
+        Dato::Valor(_) => 0,
+        Dato::Vacio => 0,
+    };
+}''')
+    invalido = compilar_programa('''enum Dato { Valor((String, i32)), Vacio }
+fn main() -> i32 {
+    let original = Dato::Valor(("hola", 3));
+    let copia = original;
+    return match original { Dato::Valor(_) => 1, Dato::Vacio => 0, };
+}''')
+
+    assert valido["valido"]
+    wasmtime.Module(wasmtime.Engine(), valido["wasm"])
+    assert ejecutar_modulo_wasm(valido["wasm"]) == 3
+    assert not invalido["valido"]
+    assert invalido["wasm"] is None
 
 
 def test_enumeraciones_sin_datos_obligatorias_variables_y_comparaciones():
@@ -840,8 +938,9 @@ def test_copias_completas_de_matrices_y_rechazos_de_move():
     assert ejecutar_modulo_wasm(obligatorio["wasm"]) == 33
     assert reasignacion["valido"]
     assert ejecutar_modulo_wasm(reasignacion["wasm"]) == 1
-    assert not move["valido"]
-    assert move["wasm"] is None
+    assert move["valido"]
+    wasmtime.Module(wasmtime.Engine(), move["wasm"])
+    assert ejecutar_modulo_wasm(move["wasm"]) == 0
 
 
 def test_borrowing_escalar_obligatorio_lecturas_y_escrituras():
@@ -928,8 +1027,9 @@ fn main() -> f64 {
     assert ejecutar_modulo_wasm(caracteres["wasm"]) == ord("ñ")
     assert not conflicto["valido"]
     assert conflicto["wasm"] is None
-    assert not compuesto["valido"]
-    assert compuesto["wasm"] is None
+    assert compuesto["valido"]
+    wasmtime.Module(wasmtime.Engine(), compuesto["wasm"])
+    assert ejecutar_modulo_wasm(compuesto["wasm"]) == 1
     assert receptor["valido"]
     assert ejecutar_modulo_wasm(receptor["wasm"]) == 1
 
@@ -1202,7 +1302,7 @@ fn main() -> f64 {
         ejecutar_modulo_wasm(fuera_de_rango["wasm"])
 
 
-def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
+def test_borrowing_compuestos_rechaza_escrituras_pero_copia_desreferenciacion():
     compartida = compilar_programa("""fn main() -> i32 {
     let datos = [1, 2]; let r = &datos; r[0] = 3; 0
 }""")
@@ -1220,15 +1320,15 @@ def test_borrowing_compuestos_rechaza_escrituras_y_desreferenciacion_completa():
     assert compartida["wasm"] is None
     assert not conflicto["valido"]
     assert conflicto["wasm"] is None
-    assert not desreferenciacion["valido"]
-    assert desreferenciacion["wasm"] is None
+    assert desreferenciacion["valido"]
+    wasmtime.Module(wasmtime.Engine(), desreferenciacion["wasm"])
+    assert ejecutar_modulo_wasm(desreferenciacion["wasm"]) == 1
 
 
 @pytest.mark.parametrize(
     "codigo",
     [
         "enum E { A } fn main() -> i32 { let valor = E::B; return 0; }",
-        "enum E { A(i32) } fn main() -> i32 { let uno = E::A(1); let dos = E::A(1); if uno == dos { return 1; } return 0; }",
     ],
 )
 def test_enumeraciones_no_admitidas_o_invalidas_no_generan_wasm(codigo):
@@ -1353,14 +1453,14 @@ fn main() -> i32 {
     assert ejecutar_modulo_wasm(resultado["wasm"]) == 20
 
 
-def test_constante_global_no_soportada_genera_error_controlado():
+def test_constante_global_compuesta_se_materializa_en_memoria():
     resultado = compilar_programa("""const DATOS: [i32; 2] = [1, 2];
 
 fn main() -> i32 { return 0; }""")
 
-    assert not resultado["valido"]
-    assert resultado["errores"][0]["fase"] == "generacion"
-    assert resultado["wasm"] is None
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 0
 
 
 @pytest.mark.parametrize(
@@ -2453,24 +2553,325 @@ def test_indices_invalidos_en_arreglos_f64_producen_trap(indice):
         ejecutar_modulo_wasm(resultado["wasm"])
 
 
-def test_matrices_de_tres_dimensiones_y_asignaciones_se_rechazan_controladamente():
-    casos = [
-        """fn main() -> i32 {
+def test_matrices_de_tres_dimensiones_generan_wasm():
+    resultado = compilar_programa("""fn main() -> i32 {
     let valores: [[[i32; 1]; 1]; 1] = [[[1]]];
     return valores[0][0][0];
-}""",
-        """fn main() -> i32 {
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 1
+
+
+def test_escrituras_compuestas_en_arreglos_tridimensionales():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut datos = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+    datos[1][0][1] = 9;
+    datos[0][1][0] += 5;
+    return datos[1][0][1] + datos[0][1][0];
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 17
+
+
+def test_matriz_de_estructuras_lee_y_modifica_campos():
+    resultado = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let mut datos = [[Punto { x: 1 }, Punto { x: 2 }], [Punto { x: 3 }, Punto { x: 4 }]];
+    datos[1][0].x += 6;
+    return datos[1][0].x;
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 9
+
+
+def test_matriz_de_tuplas_lee_y_modifica_componentes():
+    resultado = compilar_programa("""fn main() -> i32 {
+    let mut datos = [[(1, true), (2, false)], [(3, true), (4, false)]];
+    datos[1][0].0 += 6;
+    return datos[1][0].0;
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 9
+
+
+def test_accesos_profundos_comparten_ruta_de_lectura_y_escritura():
+    estructuras = compilar_programa("""struct Punto { x: i32 }
+struct Datos { puntos: [Punto; 2] }
+fn main() -> i32 {
+    let mut datos = Datos { puntos: [Punto { x: 1 }, Punto { x: 2 }] };
+    datos.puntos[1].x += 5;
+    return datos.puntos[1].x;
+}""")
+    arreglo = compilar_programa("""struct Punto { valores: [i32; 2] }
+fn main() -> i32 {
+    let mut puntos = [Punto { valores: [1, 2] }, Punto { valores: [3, 4] }];
+    puntos[1].valores[0] = 9;
+    return puntos[1].valores[0];
+}""")
+    tupla = compilar_programa("""fn main() -> i32 {
+    let mut datos = ([1, 2], [3, 4]);
+    datos.1[0] += 5;
+    return datos.1[0];
+}""")
+    decimales = compilar_programa("""struct Punto { valores: [f64; 2] }
+struct Datos { puntos: [Punto; 1] }
+fn main() -> f64 {
+    let mut datos = Datos { puntos: [Punto { valores: [1.5, 2.0] }] };
+    datos.puntos[0].valores[1] *= 3.0;
+    return datos.puntos[0].valores[1];
+}""")
+
+    for resultado, esperado in (
+        (estructuras, 7), (arreglo, 9), (tupla, 8), (decimales, pytest.approx(6.0)),
+    ):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_accesos_profundos_rechazan_mutabilidad_y_atrapan_indices_invalidos():
+    inmutable = compilar_programa("""struct Punto { valores: [i32; 2] }
+fn main() -> i32 {
+    let punto = Punto { valores: [1, 2] };
+    punto.valores[0] = 9;
+    return punto.valores[0];
+}""")
+    fuera_de_rango = compilar_programa("""struct Punto { valores: [i32; 2] }
+fn main() -> i32 {
+    let mut puntos = [Punto { valores: [1, 2] }];
+    let indice = 2;
+    puntos[0].valores[indice] = 9;
+    return 0;
+}""")
+
+    assert not inmutable["valido"]
+    assert inmutable["wasm"] is None
+    assert fuera_de_rango["valido"]
+    wasmtime.Module(wasmtime.Engine(), fuera_de_rango["wasm"])
+    with pytest.raises(wasmtime.Trap):
+        ejecutar_modulo_wasm(fuera_de_rango["wasm"])
+
+
+def test_copias_profundas_de_matrices_compuestas_no_comparten_punteros():
+    estructuras = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let original = [[Punto { x: 1 }, Punto { x: 2 }], [Punto { x: 3 }, Punto { x: 4 }]];
+    let mut copia = original;
+    copia[1][0].x = 30;
+    return original[1][0].x + copia[1][0].x;
+}""")
+    tuplas = compilar_programa("""fn main() -> i32 {
+    let original = [[(1, true), (2, false)], [(3, true), (4, false)]];
+    let mut copia = original;
+    copia[1][0].0 = 30;
+    return original[1][0].0 + copia[1][0].0;
+}""")
+    anidado = compilar_programa("""fn main() -> i32 {
+    let original = [[[1, 2]], [[3, 4]]];
+    let mut copia = original;
+    copia[1][0][0] = 30;
+    return original[1][0][0] + copia[1][0][0];
+}""")
+    asignacion = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let original = [[Punto { x: 1 }, Punto { x: 2 }], [Punto { x: 3 }, Punto { x: 4 }]];
+    let mut copia = [[Punto { x: 0 }, Punto { x: 0 }], [Punto { x: 0 }, Punto { x: 0 }]];
+    copia = original;
+    copia[1][0].x = 30;
+    return original[1][0].x + copia[1][0].x;
+}""")
+    decimales = compilar_programa("""fn main() -> f64 {
+    let original = [[(1, 1.5), (2, 2.5)], [(3, 3.5), (4, 4.5)]];
+    let mut copia = original;
+    copia[1][0].1 += 1.0;
+    return original[1][0].1 + copia[1][0].1;
+}""")
+
+    for resultado, esperado in (
+        (estructuras, 33), (tuplas, 33), (anidado, 33), (asignacion, 33),
+        (decimales, pytest.approx(8.0)),
+    ):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_compuestos_recursivos_copy_en_campos_parametros_y_retornos():
+    campos = compilar_programa("""struct Punto { x: i32 }
+struct Datos { matriz: [[Punto; 2]; 2] }
+fn main() -> i32 {
+    let original = Datos { matriz: [[Punto { x: 1 }, Punto { x: 2 }], [Punto { x: 3 }, Punto { x: 4 }]] };
+    let mut copia = original;
+    copia.matriz[1][0].x = 30;
+    return original.matriz[1][0].x + copia.matriz[1][0].x;
+}""")
+    llamada = compilar_programa("""struct Punto { x: i32 }
+fn cambiar(mut datos: [[Punto; 2]; 2]) -> [[Punto; 2]; 2] {
+    datos[1][0].x = 30;
+    return datos;
+}
+fn main() -> i32 {
+    let original = [[Punto { x: 1 }, Punto { x: 2 }], [Punto { x: 3 }, Punto { x: 4 }]];
+    let copia = cambiar(original);
+    return original[1][0].x + copia[1][0].x;
+}""")
+
+    for resultado, esperado in ((campos, 33), (llamada, 33)):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_arreglo_move_con_string_se_transfiere_sin_copia_automatica():
+    valido = compilar_programa("""struct Texto { valor: String }
+fn identidad(datos: [Texto; 2]) -> [Texto; 2] { return datos; }
+fn main() -> i32 {
+    let original = [Texto { valor: "uno" }, Texto { valor: "dos" }];
+    let movido = identidad(original);
+    if movido[1].valor == "dos" { return 1; }
+    return 0;
+}""")
+    invalido = compilar_programa("""struct Texto { valor: String }
+fn identidad(datos: [Texto; 2]) -> [Texto; 2] { return datos; }
+fn main() -> i32 {
+    let original = [Texto { valor: "uno" }, Texto { valor: "dos" }];
+    let movido = identidad(original);
+    if original[0].valor == "uno" { return 1; }
+    return 0;
+}""")
+    matriz = compilar_programa("""fn identidad(datos: [[String; 2]; 2]) -> [[String; 2]; 2] {
+    return datos;
+}
+fn main() -> i32 {
+    let original = [["a", "b"], ["c", "d"]];
+    let movido = identidad(original);
+    if movido[1][0] == "c" { return 1; }
+    return 0;
+}""")
+    matriz_invalida = compilar_programa("""fn identidad(datos: [[String; 2]; 2]) -> [[String; 2]; 2] {
+    return datos;
+}
+fn main() -> i32 {
+    let original = [["a", "b"], ["c", "d"]];
+    let movido = identidad(original);
+    if original[1][0] == "c" { return 1; }
+    return 0;
+}""")
+
+    assert valido["valido"]
+    wasmtime.Module(wasmtime.Engine(), valido["wasm"])
+    assert ejecutar_modulo_wasm(valido["wasm"]) == 1
+    assert not invalido["valido"]
+    assert invalido["wasm"] is None
+    assert matriz["valido"]
+    wasmtime.Module(wasmtime.Engine(), matriz["wasm"])
+    assert ejecutar_modulo_wasm(matriz["wasm"]) == 1
+    assert not matriz_invalida["valido"]
+    assert matriz_invalida["wasm"] is None
+
+
+def test_enums_admiten_structs_arreglos_y_enums_asociados():
+    estructura = compilar_programa("""struct Punto { x: i32 }
+enum Dato { Punto(Punto), Vacio }
+fn identidad(dato: Dato) -> Dato { return dato; }
+fn main() -> i32 {
+    let dato = identidad(Dato::Punto(Punto { x: 7 }));
+    return match dato { Dato::Punto(punto) => punto.x, Dato::Vacio => 0, };
+}""")
+    arreglo = compilar_programa("""enum Dato { Valores([i32; 2]), Vacio }
+fn identidad(dato: Dato) -> Dato { return dato; }
+fn main() -> i32 {
+    let dato = identidad(Dato::Valores([7, 2]));
+    return match dato { Dato::Valores(valores) => valores[0], Dato::Vacio => 0, };
+}""")
+    anidado = compilar_programa("""enum Interior { Numero(i32), Vacio }
+enum Exterior { Valor(Interior), Ninguno }
+fn identidad(valor: Exterior) -> Exterior { return valor; }
+fn main() -> i32 {
+    let valor = identidad(Exterior::Valor(Interior::Numero(7)));
+    return match valor {
+        Exterior::Valor(Interior::Numero(numero)) => numero,
+        Exterior::Valor(_) => 0,
+        Exterior::Ninguno => 0,
+    };
+}""")
+    copia = compilar_programa("""struct Punto { x: i32 }
+enum Dato { Punto(Punto), Vacio }
+fn main() -> i32 {
+    let mut punto = Punto { x: 1 };
+    let dato = Dato::Punto(punto);
+    punto.x = 2;
+    return match dato { Dato::Punto(valor) => valor.x, Dato::Vacio => 0, };
+}""")
+
+    for resultado in (estructura, arreglo, anidado, copia):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) in {1, 7}
+
+
+def test_contenedores_de_enums_y_enum_move_con_string():
+    contenedores = compilar_programa("""enum Estado { Codigo(i32), Vacio }
+struct Datos { estado: Estado }
+fn main() -> i32 {
+    let datos = [Datos { estado: Estado::Codigo(7) }, Datos { estado: Estado::Vacio }];
+    return match datos[0].estado { Estado::Codigo(codigo) => codigo, Estado::Vacio => 0, };
+}""")
+    matriz = compilar_programa("""enum Estado { Codigo(i32), Vacio }
+fn main() -> i32 {
+    let datos = [[Estado::Codigo(7), Estado::Vacio], [Estado::Vacio, Estado::Codigo(2)]];
+    return match datos[0][0] { Estado::Codigo(codigo) => codigo, Estado::Vacio => 0, };
+}""")
+    copia = compilar_programa("""struct Punto { x: i32 }
+enum Estado { Punto(Punto), Vacio }
+fn main() -> i32 {
+    let mut punto = Punto { x: 1 };
+    let datos = [Estado::Punto(punto), Estado::Vacio];
+    let copia = datos;
+    punto.x = 2;
+    return match copia[0] { Estado::Punto(valor) => valor.x, Estado::Vacio => 0, };
+}""")
+    move = compilar_programa("""struct Mensaje { texto: String }
+enum Resultado { Error(Mensaje), Vacio }
+fn identidad(resultado: Resultado) -> Resultado { return resultado; }
+fn main() -> i32 {
+    let resultado = identidad(Resultado::Error(Mensaje { texto: "fallo" }));
+    return match resultado { Resultado::Error(_) => 1, Resultado::Vacio => 0, };
+}""")
+    uso_despues = compilar_programa("""struct Mensaje { texto: String }
+enum Resultado { Error(Mensaje), Vacio }
+fn identidad(resultado: Resultado) -> Resultado { return resultado; }
+fn main() -> i32 {
+    let original = Resultado::Error(Mensaje { texto: "fallo" });
+    let movido = identidad(original);
+    return match original { Resultado::Error(_) => 1, Resultado::Vacio => 0, };
+}""")
+    recursivo = compilar_programa("""enum Nodo { Siguiente(Nodo), Vacio }
+fn main() -> i32 { return 0; }""")
+
+    for resultado in (contenedores, matriz, copia, move):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) in {1, 7}
+    assert not uso_despues["valido"]
+    assert uso_despues["wasm"] is None
+    assert not recursivo["valido"]
+    assert recursivo["wasm"] is None
+
+
+def test_reasignacion_desde_literal_de_arreglo():
+    resultado = compilar_programa("""fn main() -> i32 {
     let mut valores = [1, 2];
     valores = [3, 4];
     return valores[0];
-}""",
-    ]
-
-    for codigo in casos:
-        resultado = compilar_programa(codigo)
-        assert not resultado["valido"]
-        assert resultado["errores"][0]["fase"] == "generacion"
-        assert resultado["wasm"] is None
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 3
 
 
 def test_asignacion_simple_a_elemento_de_arreglo():
@@ -2766,3 +3167,314 @@ def test_asignador_monotonico_crece_memoria_en_un_ciclo():
     exportaciones = instancia.exports(almacen)
     assert exportaciones["main"](almacen) == 199990000
     assert exportaciones["memory"].size(almacen) == 2
+
+
+def test_compuestos_anidados_string_parametros_retorno_y_movimientos():
+    valido = compilar_programa("""struct Direccion { codigo: i32, texto: String }
+struct Persona { direccion: Direccion, datos: (i32, f64) }
+fn actualizar(persona: Persona) -> Persona {
+    let mut resultado = persona;
+    resultado.direccion.codigo += 2;
+    resultado.datos.0 += 3;
+    return resultado;
+}
+fn main() -> i32 {
+    let persona = Persona { direccion: Direccion { codigo: 10, texto: "hola" }, datos: (1, 2.5) };
+    let resultado = actualizar(persona);
+    if resultado.direccion.texto == "hola" { return resultado.direccion.codigo + resultado.datos.0; }
+    return 0;
+}""")
+    invalido = compilar_programa("""struct Texto { valor: String }
+fn identidad(valor: Texto) -> Texto { return valor; }
+fn main() -> i32 {
+    let texto = Texto { valor: "uno" };
+    let resultado = identidad(texto);
+    if texto.valor == "uno" { return 0; }
+    return 1;
+}""")
+    assert valido["valido"]
+    wasmtime.Module(wasmtime.Engine(), valido["wasm"])
+    assert ejecutar_modulo_wasm(valido["wasm"]) == 16
+    assert not invalido["valido"]
+    assert invalido["wasm"] is None
+
+
+def test_copias_copy_anidadas_no_comparten_memoria():
+    resultado = compilar_programa("""struct Punto { x: i32 }
+struct Caja { punto: Punto, datos: (i32, bool) }
+fn main() -> i32 {
+    let original = Caja { punto: Punto { x: 1 }, datos: (2, true) };
+    let mut copia = original;
+    copia.punto.x = 9;
+    copia.datos.0 += 3;
+    return original.punto.x + original.datos.0 + copia.punto.x + copia.datos.0;
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 17
+
+
+@pytest.mark.parametrize(
+    "codigo, esperado",
+    [
+        ('fn main() -> i32 { let datos = (1, "texto"); return datos.0; }', 1),
+        ('fn main() -> i32 { let datos = (1, (2, true)); return datos.0; }', 1),
+        ('struct P { x: String } fn main() -> i32 { let p = P { x: "a" }; if p.x == "a" { return 1; } return 0; }', 1),
+        ('struct P { x: i32 } struct Q { p: P } fn main() -> i32 { let q = Q { p: P { x: 1 } }; return q.p.x; }', 1),
+    ],
+)
+def test_compuestos_antes_rechazados_generan_wasm(codigo, esperado):
+    resultado = compilar_programa(codigo)
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_constructor_compuesto_copia_campos_copy_anidados():
+    resultado = compilar_programa("""struct Punto { x: i32 }
+struct Caja { punto: Punto }
+fn main() -> i32 {
+    let punto = Punto { x: 2 };
+    let mut caja = Caja { punto: punto };
+    caja.punto.x = 8;
+    return punto.x + caja.punto.x;
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 10
+
+
+def test_arreglos_y_matrices_copy_como_parametros_y_retorno():
+    arreglo = compilar_programa("""fn actualizar(datos: [i32; 2]) -> [i32; 2] {
+    let mut resultado = datos;
+    resultado[0] += 4;
+    return resultado;
+}
+fn main() -> i32 {
+    let original = [3, 7];
+    let resultado = actualizar(original);
+    return original[0] + resultado[0];
+}""")
+    matriz = compilar_programa("""fn identidad(datos: [[i32; 2]; 2]) -> [[i32; 2]; 2] {
+    return datos;
+}
+fn main() -> i32 {
+    let datos = [[1, 2], [3, 4]];
+    let resultado = identidad(datos);
+    return resultado[1][0];
+}""")
+    for resultado, esperado in ((arreglo, 10), (matriz, 3)):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_layout_recursivo_struct_con_arreglo_i32():
+    resultado = compilar_programa("""struct Datos { valores: [i32; 2] }
+fn main() -> i32 {
+    let mut datos = Datos { valores: [10, 20] };
+    datos.valores[1] += 5;
+    return datos.valores[0] + datos.valores[1];
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 35
+
+
+def test_arreglos_de_estructuras_y_tuplas_copy():
+    estructuras = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let mut puntos = [Punto { x: 1 }, Punto { x: 2 }];
+    puntos[1].x += 5;
+    return puntos[0].x + puntos[1].x;
+}""")
+    tuplas = compilar_programa("""fn main() -> i32 {
+    let mut datos = [(1, true), (2, false)];
+    datos[1].0 = 7;
+    return datos[0].0 + datos[1].0;
+}""")
+    for resultado, esperado in ((estructuras, 8), (tuplas, 8)):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+
+
+def test_copias_y_funciones_de_arreglos_compuestos_copy():
+    resultado = compilar_programa("""struct Punto { x: i32 }
+fn cambiar(datos: [Punto; 2]) -> [Punto; 2] {
+    let mut copia = datos;
+    copia[0].x = 9;
+    return copia;
+}
+fn main() -> i32 {
+    let original = [Punto { x: 1 }, Punto { x: 2 }];
+    let resultado = cambiar(original);
+    return original[0].x + resultado[0].x;
+}""")
+    assert resultado["valido"]
+    wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+    assert ejecutar_modulo_wasm(resultado["wasm"]) == 10
+
+
+def test_transferencia_move_de_arreglo_de_estructuras_con_string():
+    valido = compilar_programa("""struct Texto { valor: String }
+fn identidad(datos: [Texto; 1]) -> [Texto; 1] { return datos; }
+fn main() -> i32 {
+    let origen = [Texto { valor: "hola" }];
+    let destino = identidad(origen);
+    if destino[0].valor == "hola" { return 1; }
+    return 0;
+}""")
+    invalido = compilar_programa("""struct Texto { valor: String }
+fn main() -> i32 {
+    let origen = [Texto { valor: "hola" }];
+    let destino = origen;
+    if origen[0].valor == "hola" { return 0; }
+    return 1;
+}""")
+    assert valido["valido"]
+    wasmtime.Module(wasmtime.Engine(), valido["wasm"])
+    assert ejecutar_modulo_wasm(valido["wasm"]) == 1
+    assert not invalido["valido"]
+    assert invalido["wasm"] is None
+
+
+def test_transferencia_move_de_arreglo_de_tuplas_con_string():
+    valido = compilar_programa("""fn identidad(datos: [(String, i32); 1]) -> [(String, i32); 1] {
+    return datos;
+}
+fn main() -> i32 {
+    let origen = [("hola", 2)];
+    let destino = identidad(origen);
+    if destino[0].0 == "hola" { return destino[0].1; }
+    return 0;
+}""")
+    invalido = compilar_programa("""fn main() -> i32 {
+    let origen = [("hola", 2)];
+    let destino = origen;
+    if origen[0].0 == "hola" { return 0; }
+    return destino[0].1;
+}""")
+    assert valido["valido"]
+    wasmtime.Module(wasmtime.Engine(), valido["wasm"])
+    assert ejecutar_modulo_wasm(valido["wasm"]) == 2
+    assert not invalido["valido"]
+    assert invalido["wasm"] is None
+
+
+def test_prestamos_de_enums_y_compuestos_recursivos():
+    enum_compartido = compilar_programa("""enum Estado { Valor(i32), Vacio }
+fn leer(referencia: &Estado) -> i32 {
+    match *referencia { Estado::Valor(numero) => numero, Estado::Vacio => 0 }
+}
+fn main() -> i32 { let estado = Estado::Valor(7); leer(&estado) }""")
+    enum_mutable = compilar_programa("""enum Estado { Valor(i32), Vacio }
+fn vaciar(referencia: &mut Estado) { *referencia = Estado::Vacio; }
+fn main() -> i32 {
+    let mut estado = Estado::Valor(7); vaciar(&mut estado);
+    match estado { Estado::Valor(numero) => numero, Estado::Vacio => 9 }
+}""")
+    struct_arreglo = compilar_programa("""struct Datos { valores: [i32; 2] }
+fn cambiar(referencia: &mut Datos) { referencia.valores[1] += 5; }
+fn main() -> i32 {
+    let mut datos = Datos { valores: [3, 4] }; cambiar(&mut datos); datos.valores[1]
+}""")
+    arreglo_struct = compilar_programa("""struct Punto { x: i32 }
+fn cambiar(referencia: &mut [Punto; 2]) { referencia[1].x = 9; }
+fn main() -> i32 {
+    let mut puntos = [Punto { x: 3 }, Punto { x: 4 }]; cambiar(&mut puntos); puntos[1].x
+}""")
+    tupla_arreglo = compilar_programa("""fn cambiar(referencia: &mut ([i32; 2], bool)) {
+    referencia.0[1] += 5;
+}
+fn main() -> i32 {
+    let mut datos = ([3, 4], true); cambiar(&mut datos); datos.0[1]
+}""")
+    string_compartido = compilar_programa("""fn igual(referencia: &String) -> i32 {
+    if *referencia == "hola" { return 1; } return 0;
+}
+fn main() -> i32 { let texto = "hola"; igual(&texto) }""")
+    arreglo_string = compilar_programa("""fn main() -> i32 {
+    let textos = ["uno", "dos"]; let referencia = &textos;
+    if referencia[1] == "dos" { return 1; } return 0;
+}""")
+    string_mutable = compilar_programa("""fn main() -> i32 {
+    let mut texto = "uno"; { let referencia = &mut texto; *referencia = "dos"; }
+    if texto == "dos" { return 1; } return 0;
+}""")
+    conflicto = compilar_programa("""enum Estado { Valor(i32), Vacio }
+fn main() -> i32 {
+    let mut estado = Estado::Valor(1); let compartida = &estado;
+    let exclusiva = &mut estado; match *compartida { Estado::Valor(x) => x, Estado::Vacio => 0 }
+}""")
+
+    for resultado, esperado in (
+        (enum_compartido, 7), (enum_mutable, 9), (struct_arreglo, 9),
+        (arreglo_struct, 9), (tupla_arreglo, 9), (string_compartido, 1),
+        (arreglo_string, 1), (string_mutable, 1),
+    ):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado
+    assert not conflicto["valido"]
+    assert conflicto["wasm"] is None
+
+
+def test_desreferenciacion_copy_de_compuestos_copia_el_bloque():
+    estructura = compilar_programa("""struct Punto { x: i32 }
+fn main() -> i32 {
+    let original = Punto { x: 1 }; let referencia = &original;
+    let mut copia = *referencia; copia.x = 9; original.x + copia.x
+}""")
+    tupla = compilar_programa("""fn main() -> i32 {
+    let original = (1, true); let referencia = &original;
+    let mut copia = *referencia; copia.0 = 9; original.0 + copia.0
+}""")
+    arreglo = compilar_programa("""fn main() -> i32 {
+    let original = [1, 2]; let referencia = &original;
+    let mut copia = *referencia; copia[0] = 9; original[0] + copia[0]
+}""")
+    movimiento = compilar_programa("""fn main() -> i32 {
+    let original = ("texto", 1); let referencia = &original; let copia = *referencia; 0
+}""")
+    for resultado in (estructura, tupla, arreglo):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == 10
+    assert not movimiento["valido"]
+    assert movimiento["wasm"] is None
+
+
+def test_constantes_globales_compuestas_y_igualdad_estructural_enum():
+    constantes = compilar_programa("""struct Punto { x: i32 }
+enum Estado { Valor(i32), Vacio }
+const ARREGLO: [i32; 2] = [3, 4];
+const TUPLA: (i32, bool) = (5, true);
+const PUNTO: Punto = Punto { x: 6 };
+const ESTADO: Estado = Estado::Valor(7);
+fn main() -> i32 {
+    match ESTADO { Estado::Valor(valor) => ARREGLO[0] + TUPLA.0 + PUNTO.x + valor, Estado::Vacio => 0 }
+}""")
+    igualdad = compilar_programa("""struct Punto { x: i32, y: f64 }
+enum Estado { Punto(Punto), Texto(String), Vacio }
+fn main() -> i32 {
+    let uno = Estado::Punto(Punto { x: 2, y: 1.5 });
+    let dos = Estado::Punto(Punto { x: 2, y: 1.5 });
+    let texto = Estado::Texto("ñ");
+    if uno == dos && texto == Estado::Texto("ñ") && uno != Estado::Vacio { return 1; }
+    return 0;
+}""")
+    constante_move = compilar_programa("""struct Texto { valor: String }
+enum Estado { Error(String), Vacio }
+const TEXTO: Texto = Texto { valor: "hola" };
+const ESTADO: Estado = Estado::Error("fallo");
+fn main() -> i32 {
+    if TEXTO.valor == "hola" {
+        return match ESTADO { Estado::Error("fallo") => 1, Estado::Error(_) => 0, Estado::Vacio => 0 };
+    }
+    return 0;
+}""")
+    for resultado, esperado in ((constantes, 21), (igualdad, 1), (constante_move, 1)):
+        assert resultado["valido"]
+        wasmtime.Module(wasmtime.Engine(), resultado["wasm"])
+        assert ejecutar_modulo_wasm(resultado["wasm"]) == esperado

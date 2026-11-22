@@ -238,8 +238,11 @@ fn main() -> f64 {
 ```
 
 El ejemplo genera WASM y devuelve `4.0` con Wasmtime. El backend también
-admite accesos por referencia a tuplas planas, arreglos unidimensionales y
-matrices bidimensionales con elementos básicos. Se rechazan préstamos de
-`String`, enums completos, compuestos anidados, receptores `f64`, préstamos
-de parámetros normales, retornos y reasignaciones de referencias; `*r` sobre
-un compuesto sigue rechazado para no crear copias que compartan memoria.
+admite accesos por referencia a tuplas, arreglos, matrices, estructuras,
+enums y `String` dentro de los layouts recursivos admitidos. La
+desreferenciación de un compuesto Copy materializa una copia profunda
+independiente; la de un compuesto Move continúa rechazada para no extraer su
+propiedad desde una referencia. Se mantienen rechazados los receptores `f64`,
+los préstamos de parámetros normales, los retornos y las reasignaciones de
+referencias, además de représtamos y referencias anidadas definidos como
+límites del frontend.

@@ -10,6 +10,7 @@ from main import analizar_programa
 from flujo_control import salidas_control
 from tipos_compuestos import accesos_escritura, accesos_lectura, separar_tipo_tupla
 from tipos_referencias import separar_referencia
+from clasificacion_propiedad import clasificar_tipo
 
 
 TAMANO_PAGINA_WASM = 65536
@@ -119,27 +120,37 @@ def _tamano_y_alineacion_escalar(tipo):
     return tamano, tamano
 
 
-def _referencia_admitida(tipo, estructuras):
+def _tamano_y_alineacion_prestamo(tipo, enumeraciones):
+    tamano_alineacion = _tamano_y_alineacion_escalar(tipo)
+    if tamano_alineacion is not None:
+        return tamano_alineacion
+    if _info_enum(tipo, enumeraciones) is not None:
+        return 4, 4
+    if tipo == "String":
+        return 4, 4
+    return None
+
+
+def _referencia_admitida(tipo, estructuras, enumeraciones=None):
     """Comprueba si una referencia usa un layout que el generador ya conoce."""
     referencia = separar_referencia(tipo)
     if referencia is None:
         return False
-    return _escalar_prestable(referencia[1]) or _compuesto_prestable(
-        referencia[1], estructuras
+    return _escalar_prestable(referencia[1]) or referencia[1] == "String" or _info_enum(
+        referencia[1], enumeraciones
+    ) is not None or _compuesto_prestable(
+        referencia[1], estructuras, enumeraciones
     )
 
 
-def _compuesto_prestable(tipo, estructuras):
+def _compuesto_prestable(tipo, estructuras, enumeraciones=None):
     """Limita préstamos compuestos a layouts locales con elementos Copy básicos."""
-    if _distribucion_estructura(tipo, estructuras) is not None:
-        return True
-    if _distribucion_tupla(tipo) is not None:
-        return True
-    arreglo = _info_arreglo(tipo)
-    if arreglo is not None:
-        return _escalar_prestable(arreglo[0])
-    matriz = _info_matriz(tipo)
-    return matriz is not None and _escalar_prestable(matriz[0])
+    layout = _layout_recursivo(tipo, estructuras, enumeraciones)
+    return layout is not None and (
+        _distribucion_estructura(tipo, estructuras, enumeraciones) is not None
+        or _distribucion_tupla(tipo, estructuras, enumeraciones) is not None
+        or _info_arreglo(tipo) is not None
+    )
 
 
 def _carga_escalar_memoria(tipo):
@@ -158,7 +169,7 @@ def _info_arreglo(tipo):
     if ";" not in contenido:
         return None
     elemento, tamano = contenido.rsplit(";", 1)
-    if elemento not in {"i32", "bool", "char", "f64", "String"} or not tamano.isdigit():
+    if not elemento or not tamano.isdigit():
         return None
     return elemento, int(tamano)
 
@@ -180,14 +191,87 @@ def _info_matriz(tipo):
     return tipo_elemento, int(filas), columnas
 
 
+def _partes_arreglo_recursivo(tipo):
+    if not tipo.startswith("[") or not tipo.endswith("]"):
+        return None
+    profundidad = 0
+    for indice, caracter in enumerate(tipo[1:-1], 1):
+        if caracter == "[":
+            profundidad += 1
+        elif caracter == "]":
+            profundidad -= 1
+        elif caracter == ";" and profundidad == 0:
+            elemento, cantidad = tipo[1:indice], tipo[indice + 1:-1]
+            return (elemento, int(cantidad)) if cantidad.isdigit() else None
+    return None
+
+
+def _layout_recursivo(tipo, estructuras, enumeraciones=None, pila=()):
+    if tipo in {"i32", "bool", "char", "String"}:
+        return {"tipo": tipo, "tamano": 4, "alineacion": 4, "wasm": "i32"}
+    if tipo == "f64":
+        return {"tipo": tipo, "tamano": 8, "alineacion": 8, "wasm": "f64"}
+    if tipo in pila:
+        return None
+    arreglo = _partes_arreglo_recursivo(tipo)
+    if arreglo is not None:
+        elemento, cantidad = arreglo
+        interno = _layout_recursivo(elemento, estructuras, enumeraciones, pila)
+        if interno is None or cantidad > MAX_DIRECCION_I32 // max(1, interno["tamano"]):
+            return None
+        return {"tipo": tipo, "tamano": interno["tamano"] * cantidad, "alineacion": interno["alineacion"], "elemento": interno, "cantidad": cantidad, "wasm": "i32"}
+    campos = _info_tupla(tipo)
+    if campos is not None:
+        lista = [(str(indice), campo) for indice, campo in enumerate(campos)]
+    else:
+        estructura = _info_estructura(tipo, estructuras)
+        if estructura is None and _info_enum(tipo, enumeraciones) is not None:
+            return {"tipo": tipo, "tamano": 4, "alineacion": 4, "wasm": "i32"}
+        if estructura is None:
+            return None
+        lista = list(estructura.items())
+    desplazamiento = 0
+    alineacion = 4
+    resultado = {}
+    for nombre, campo in lista:
+        interno = _layout_recursivo(campo, estructuras, enumeraciones, (*pila, tipo))
+        if interno is None:
+            return None
+        paso = 4 if interno.get("elemento") is not None or _info_tupla(campo) is not None or _info_estructura(campo, estructuras) is not None else interno["tamano"]
+        campo_alineacion = 4 if paso == 4 and interno["tamano"] != 4 else interno["alineacion"]
+        desplazamiento = (desplazamiento + campo_alineacion - 1) & ~(campo_alineacion - 1)
+        resultado[nombre] = (campo, desplazamiento, interno)
+        desplazamiento += paso
+        alineacion = max(alineacion, campo_alineacion)
+    return {"tipo": tipo, "tamano": desplazamiento, "alineacion": alineacion, "campos": resultado, "wasm": "i32"}
+
+
 def _info_tupla(tipo):
     campos = separar_tipo_tupla(tipo)
-    if campos is None or len(campos) < 2 or any(campo not in {"i32", "f64", "bool", "char"} for campo in campos):
+    if campos is None or len(campos) < 2:
         return None
     return campos
 
 
-def _distribucion_tupla(tipo):
+def _tipo_compuesto_local(tipo, estructuras):
+    return _info_tupla(tipo) is not None or _info_estructura(tipo, estructuras) is not None
+
+
+def _tamano_y_alineacion_campo(tipo, estructuras, enumeraciones=None):
+    if tipo == "f64":
+        return 8, 8
+    if tipo in {"i32", "bool", "char", "String"}:
+        return 4, 4
+    if _tipo_compuesto_local(tipo, estructuras):
+        return 4, 4
+    if _partes_arreglo_recursivo(tipo) is not None:
+        return 4, 4
+    if _info_enum(tipo, enumeraciones) is not None:
+        return 4, 4
+    return None
+
+
+def _distribucion_tupla(tipo, estructuras=None, enumeraciones=None):
     """Calcula dónde empieza cada campo de una tupla dentro de memoria lineal."""
     campos = _info_tupla(tipo)
     if campos is None:
@@ -195,17 +279,18 @@ def _distribucion_tupla(tipo):
     desplazamiento = 0
     distribucion = []
     for campo in campos:
-        alineacion = 8 if campo == "f64" else 4
+        datos = _tamano_y_alineacion_campo(campo, estructuras, enumeraciones)
+        if datos is None:
+            return None
+        tamano_campo, alineacion = datos
         desplazamiento = (desplazamiento + alineacion - 1) & ~(alineacion - 1)
         distribucion.append((campo, desplazamiento))
-        desplazamiento += _tamano_elemento_arreglo(campo)
+        desplazamiento += tamano_campo
     return distribucion, desplazamiento, max(8 if campo == "f64" else 4 for campo in campos)
 
 
 def _info_estructura(tipo, estructuras):
     campos = (estructuras or {}).get(tipo)
-    if campos is None or any(campo not in {"i32", "f64", "bool", "char"} for campo in campos.values()):
-        return None
     return campos
 
 
@@ -218,7 +303,7 @@ def _enum_tiene_datos(tipo, enumeraciones):
     return enumeracion is not None and bool(enumeracion.get("datos_variantes"))
 
 
-def _distribucion_enum(tipo, enumeraciones):
+def _distribucion_enum(tipo, enumeraciones, estructuras=None):
     """Construye el layout común de las variantes con datos de una enumeración."""
     enumeracion = _info_enum(tipo, enumeraciones)
     if enumeracion is None:
@@ -233,19 +318,20 @@ def _distribucion_enum(tipo, enumeraciones):
         desplazamiento = 4
         campos = []
         for campo in datos.get(variante, []):
-            if campo not in {"i32", "bool", "char", "f64", "String"}:
+            datos_campo = _tamano_y_alineacion_campo(campo, estructuras, enumeraciones)
+            if datos_campo is None:
                 return None
-            alineacion = 8 if campo == "f64" else 4
+            tamano_campo, alineacion = datos_campo
             desplazamiento = (desplazamiento + alineacion - 1) & ~(alineacion - 1)
             campos.append((campo, desplazamiento))
-            desplazamiento += _tamano_elemento_arreglo(campo)
+            desplazamiento += tamano_campo
             alineacion_maxima = max(alineacion_maxima, alineacion)
         distribucion[variante] = (etiqueta, campos)
         tamano_maximo = max(tamano_maximo, desplazamiento)
     return distribucion, tamano_maximo, alineacion_maxima
 
 
-def _distribucion_estructura(tipo, estructuras):
+def _distribucion_estructura(tipo, estructuras, enumeraciones=None):
     """Respeta el orden de campos declarado por Kevin y alinea f64 a ocho bytes."""
     campos = _info_estructura(tipo, estructuras)
     if campos is None:
@@ -254,16 +340,33 @@ def _distribucion_estructura(tipo, estructuras):
     distribucion = {}
     alineacion_maxima = 4
     for nombre, campo in campos.items():
-        alineacion = 8 if campo == "f64" else 4
+        datos = _tamano_y_alineacion_campo(campo, estructuras, enumeraciones)
+        if datos is None:
+            return None
+        tamano_campo, alineacion = datos
         desplazamiento = (desplazamiento + alineacion - 1) & ~(alineacion - 1)
         distribucion[nombre] = (campo, desplazamiento)
-        desplazamiento += _tamano_elemento_arreglo(campo)
+        desplazamiento += tamano_campo
         alineacion_maxima = max(alineacion_maxima, alineacion)
     return distribucion, desplazamiento, alineacion_maxima
 
 
 def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
     """Indica cuánto se debe copiar para que un valor Copy no comparta su bloque."""
+    matriz = _info_matriz(tipo)
+    if matriz is not None and _partes_arreglo_recursivo(matriz[0]) is None:
+        elemento, filas, columnas = matriz
+        if elemento in {"i32", "f64", "bool", "char"}:
+            paso = _tamano_elemento_arreglo(elemento)
+            if columnas and filas <= MAX_DIRECCION_I32 // columnas and filas * columnas <= MAX_DIRECCION_I32 // paso:
+                return filas * columnas * paso, paso
+        if (clasificar_tipo(tipo, estructuras, enumeraciones) == "Copy"
+                and (_distribucion_tupla(elemento, estructuras, enumeraciones) is not None
+                     or _distribucion_estructura(elemento, estructuras, enumeraciones) is not None)
+                and columnas and filas <= MAX_DIRECCION_I32 // columnas
+                and filas * columnas <= MAX_DIRECCION_I32 // 4):
+            return filas * columnas * 4, 4
+        return None
     arreglo = _info_arreglo(tipo)
     if arreglo is not None:
         elemento, cantidad = arreglo
@@ -271,30 +374,27 @@ def _layout_copia_compuesta(tipo, estructuras, enumeraciones):
             paso = _tamano_elemento_arreglo(elemento)
             if cantidad <= MAX_DIRECCION_I32 // paso:
                 return cantidad * paso, paso
+        if (clasificar_tipo(tipo, estructuras, enumeraciones) == "Copy"
+                and _layout_copia_compuesta(elemento, estructuras, enumeraciones) is not None
+                and cantidad <= MAX_DIRECCION_I32 // 4):
+            return cantidad * 4, 4
         return None
-    matriz = _info_matriz(tipo)
-    if matriz is not None:
-        elemento, filas, columnas = matriz
-        if elemento in {"i32", "f64", "bool", "char"}:
-            paso = _tamano_elemento_arreglo(elemento)
-            if columnas and filas <= MAX_DIRECCION_I32 // columnas and filas * columnas <= MAX_DIRECCION_I32 // paso:
-                return filas * columnas * paso, paso
-        return None
-    tupla = _distribucion_tupla(tipo)
+    tupla = _distribucion_tupla(tipo, estructuras, enumeraciones)
     if tupla is not None:
+        if clasificar_tipo(tipo, estructuras, enumeraciones) != "Copy":
+            return None
         _, tamano, alineacion = tupla
         return tamano, alineacion
-    estructura = _distribucion_estructura(tipo, estructuras)
+    estructura = _distribucion_estructura(tipo, estructuras, enumeraciones)
     if estructura is not None:
+        if clasificar_tipo(tipo, estructuras, enumeraciones) != "Copy":
+            return None
         _, tamano, alineacion = estructura
         return tamano, alineacion
     enumeracion = _info_enum(tipo, enumeraciones)
-    if enumeracion is not None and all(
-        campo != "String"
-        for campos in enumeracion.get("datos_variantes", {}).values()
-        for campo in campos
-    ):
-        distribucion = _distribucion_enum(tipo, enumeraciones)
+    if (enumeracion is not None
+            and clasificar_tipo(tipo, estructuras, enumeraciones) == "Copy"):
+        distribucion = _distribucion_enum(tipo, enumeraciones, estructuras)
         if distribucion is None:
             return None
         _, tamano, alineacion = distribucion
@@ -350,6 +450,136 @@ def _valor_char(literal, contexto):
     return ord(contenido)
 
 
+def _nuevo_temporal(nombres_funcion):
+    temporal = f"enum_{nombres_funcion.siguiente_enum}"
+    nombres_funcion.siguiente_enum += 1
+    nombres_funcion.temporales_enum.append(temporal)
+    return temporal
+
+
+def _compilar_literal_compuesto(contexto, tipo, referencias, locales, funciones, nombres_funcion, tipos):
+    tupla = _distribucion_tupla(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+    estructura = _distribucion_estructura(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+    if tupla is None and estructura is None:
+        _error("El literal compuesto todavía no está implementado.", contexto)
+    campos, tamano, alineacion = tupla if tupla is not None else estructura
+    temporal = _nuevo_temporal(nombres_funcion)
+    instrucciones = [f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc", f"local.set ${temporal}"]
+    if tupla is not None:
+        literal = contexto.tupleLiteral() if hasattr(contexto, "tupleLiteral") else _obtener_literal_tupla(contexto)
+        if literal is None:
+            _error("El literal de tupla no está disponible para generar WASM.", contexto)
+        pares = zip(campos, literal.expression())
+    else:
+        literal = contexto.structLiteral() if hasattr(contexto, "structLiteral") else _obtener_literal_estructura(contexto)
+        if literal is None:
+            _error("El constructor de estructura no está disponible para generar WASM.", contexto)
+        pares = []
+        for inicializador in literal.fieldInit():
+            nombre = inicializador.IDENT().getText()
+            pares.append((campos[nombre], inicializador.expression()))
+    for (tipo_campo, desplazamiento), valor in pares:
+        instrucciones.append(f"local.get ${temporal}")
+        if _info_matriz(tipo_campo) is not None and _obtener_literal_arreglo(valor) is not None:
+            instrucciones.extend(_compilar_expresion(
+                valor, referencias, locales, funciones, nombres_funcion, tipos
+            ))
+        else:
+            instrucciones.extend(_compilar_valor_para_local(
+                valor, tipo_campo, referencias, locales, funciones, nombres_funcion, tipos
+            ))
+        instrucciones.append(_instruccion_almacenamiento_arreglo(tipo_campo, desplazamiento))
+    return [*instrucciones, f"local.get ${temporal}"]
+
+
+def _compilar_literal_arreglo_recursivo(literal, tipo, referencias, locales, funciones, nombres_funcion, tipos):
+    partes = _partes_arreglo_recursivo(tipo)
+    if partes is None:
+        _error("El literal de arreglo no tiene un layout disponible.", literal)
+    tipo_elemento, cantidad = partes
+    layout = _layout_recursivo(tipo_elemento, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+    valores = literal.expression()
+    if layout is None or len(valores) != cantidad:
+        _error("El literal de arreglo todavía no está implementado para este tipo.", literal)
+    temporal = _nuevo_temporal(nombres_funcion)
+    paso = 4 if layout.get("elemento") is not None or _distribucion_tupla(tipo_elemento, nombres_funcion.estructuras) is not None or _distribucion_estructura(tipo_elemento, nombres_funcion.estructuras) is not None else layout["tamano"]
+    instrucciones = [f"i32.const {paso * cantidad}", f"i32.const {4 if paso == 4 else layout['alineacion']}", "call $array_alloc", f"local.set ${temporal}"]
+    for indice, valor in enumerate(valores):
+        instrucciones.append(f"local.get ${temporal}")
+        instrucciones.extend(_compilar_valor_para_local(valor, tipo_elemento, referencias, locales, funciones, nombres_funcion, tipos))
+        instrucciones.append(_instruccion_almacenamiento_arreglo(tipo_elemento, indice * paso))
+    return [*instrucciones, f"local.get ${temporal}"]
+
+
+def _compilar_accesos_compuestos(instrucciones, tipo, accesos, estructuras, cargar_final=True):
+    for indice, (clase, acceso) in enumerate(accesos):
+        final = indice == len(accesos) - 1
+        if clase == "nombre":
+            datos = _distribucion_estructura(tipo, estructuras)
+            nombre = acceso.IDENT().getText()
+            if datos is None or nombre not in datos[0]:
+                _error("El campo de la estructura no está disponible para generar WASM.", acceso)
+            siguiente, desplazamiento = datos[0][nombre]
+        elif clase == "campo":
+            datos = _distribucion_tupla(tipo, estructuras)
+            posicion = int(acceso.getText()[1:])
+            if datos is None or posicion >= len(datos[0]):
+                _error("El campo de la tupla no está disponible para generar WASM.", acceso)
+            siguiente, desplazamiento = datos[0][posicion]
+        else:
+            _error("Este acceso compuesto todavía no está implementado.", acceso)
+        if desplazamiento:
+            instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        if not final:
+            instrucciones.append("i32.load")
+        elif cargar_final:
+            instrucciones.append(_instruccion_carga_arreglo(siguiente))
+        tipo = siguiente
+    return instrucciones, tipo
+
+
+def _resolver_accesos(instrucciones, tipo, accesos, referencias, locales, funciones, nombres_funcion, tipos, cargar_final=True):
+    for indice, (clase, acceso) in enumerate(accesos):
+        final = indice == len(accesos) - 1
+        if clase == "nombre":
+            datos = _distribucion_estructura(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+            nombre = acceso.IDENT().getText()
+            if datos is None or nombre not in datos[0]:
+                _error("El campo de la estructura no está disponible para generar WASM.", acceso)
+            siguiente, desplazamiento = datos[0][nombre]
+            if desplazamiento:
+                instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        elif clase == "campo":
+            datos = _distribucion_tupla(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+            posicion = int(acceso.getText()[1:])
+            if datos is None or posicion >= len(datos[0]):
+                _error("El campo de la tupla no está disponible para generar WASM.", acceso)
+            siguiente, desplazamiento = datos[0][posicion]
+            if desplazamiento:
+                instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        else:
+            partes = _partes_arreglo_recursivo(tipo)
+            if partes is None:
+                _error("El índice no corresponde a un arreglo disponible.", acceso)
+            siguiente, cantidad = partes
+            layout = _layout_recursivo(siguiente, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+            if layout is None:
+                _error("El elemento indexado no tiene layout disponible.", acceso)
+            paso = 4 if layout.get("elemento") is not None or _distribucion_tupla(siguiente, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None or _distribucion_estructura(siguiente, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None or _info_enum(siguiente, nombres_funcion.enumeraciones) is not None else layout["tamano"]
+            expresion_indice = acceso.expression() if hasattr(acceso, "expression") else acceso
+            instrucciones.extend(_compilar_expresion(expresion_indice, referencias, locales, funciones, nombres_funcion, tipos))
+            instrucciones.extend([f"i32.const {cantidad}", f"i32.const {paso}", "call $array_addr"])
+        representado_puntero = _partes_arreglo_recursivo(siguiente) is not None or _distribucion_tupla(siguiente, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None or _distribucion_estructura(siguiente, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None or _enum_tiene_datos(siguiente, nombres_funcion.enumeraciones)
+        if not final:
+            if not representado_puntero:
+                _error("No se puede continuar un acceso después de un valor escalar.", acceso)
+            instrucciones.append("i32.load")
+        elif cargar_final:
+            instrucciones.append(_instruccion_carga_arreglo(siguiente))
+        tipo = siguiente
+    return instrucciones, tipo
+
+
 def _compilar_constante(simbolo, estado, contexto):
     """Convierte el valor ya calculado por Kevin en su literal WebAssembly.
 
@@ -358,6 +588,10 @@ def _compilar_constante(simbolo, estado, contexto):
     """
     tipo = simbolo["tipo"]
     valor = simbolo["valor"]
+    return _compilar_valor_constante(tipo, valor, estado, contexto)
+
+
+def _compilar_valor_constante(tipo, valor, estado, contexto):
     if tipo == "i32":
         return [f"i32.const {valor}"]
     if tipo == "f64":
@@ -368,7 +602,77 @@ def _compilar_constante(simbolo, estado, contexto):
         return [f"i32.const {ord(valor)}"]
     if tipo == "String":
         return [f"i32.const {estado.memoria.agregar(valor, contexto)}"]
-    _error(f"Las constantes globales de tipo {tipo} todavía no están implementadas.", contexto)
+    enumeracion = _info_enum(tipo, estado.enumeraciones)
+    if enumeracion is not None:
+        distribucion = _distribucion_enum(tipo, estado.enumeraciones, estado.estructuras)
+        if distribucion is None:
+            return [f"i32.const {valor['etiqueta']}"]
+        variantes, tamano, alineacion = distribucion
+        etiqueta, campos = variantes[valor["variante"]]
+        temporal = _nuevo_temporal(estado)
+        instrucciones = [
+            f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+            f"local.set ${temporal}", f"local.get ${temporal}",
+            f"i32.const {etiqueta}", "i32.store",
+        ]
+        for (tipo_campo, desplazamiento), dato in zip(campos, valor["datos"]):
+            instrucciones.extend([f"local.get ${temporal}"])
+            instrucciones.extend(_compilar_valor_constante(tipo_campo, dato, estado, contexto))
+            instrucciones.append(_instruccion_almacenamiento_arreglo(tipo_campo, desplazamiento))
+        return [*instrucciones, f"local.get ${temporal}"]
+    matriz = _info_matriz(tipo)
+    if matriz is not None and matriz[0] in {"i32", "f64", "bool", "char", "String"}:
+        elemento, filas, columnas = matriz
+        paso = _tamano_elemento_arreglo(elemento)
+        temporal = _nuevo_temporal(estado)
+        instrucciones = [
+            f"i32.const {filas * columnas * paso}",
+            f"i32.const {paso}", "call $array_alloc", f"local.set ${temporal}",
+        ]
+        for fila, valores in enumerate(valor):
+            for columna, dato in enumerate(valores):
+                instrucciones.append(f"local.get ${temporal}")
+                instrucciones.extend(_compilar_valor_constante(elemento, dato, estado, contexto))
+                instrucciones.append(_instruccion_almacenamiento_arreglo(
+                    elemento, (fila * columnas + columna) * paso
+                ))
+        return [*instrucciones, f"local.get ${temporal}"]
+    arreglo = _partes_arreglo_recursivo(tipo)
+    if arreglo is not None:
+        elemento, cantidad = arreglo
+        layout = _layout_recursivo(elemento, estado.estructuras, estado.enumeraciones)
+        if layout is None or len(valor) != cantidad:
+            _error(f"La constante global de tipo {tipo} no tiene layout disponible.", contexto)
+        paso = 4 if layout.get("elemento") is not None or _distribucion_tupla(elemento, estado.estructuras, estado.enumeraciones) is not None or _distribucion_estructura(elemento, estado.estructuras, estado.enumeraciones) is not None or _info_enum(elemento, estado.enumeraciones) is not None else layout["tamano"]
+        temporal = _nuevo_temporal(estado)
+        instrucciones = [
+            f"i32.const {paso * cantidad}",
+            f"i32.const {4 if paso == 4 else layout['alineacion']}",
+            "call $array_alloc", f"local.set ${temporal}",
+        ]
+        for indice, dato in enumerate(valor):
+            instrucciones.append(f"local.get ${temporal}")
+            instrucciones.extend(_compilar_valor_constante(elemento, dato, estado, contexto))
+            instrucciones.append(_instruccion_almacenamiento_arreglo(elemento, indice * paso))
+        return [*instrucciones, f"local.get ${temporal}"]
+    tupla = _distribucion_tupla(tipo, estado.estructuras, estado.enumeraciones)
+    estructura = _distribucion_estructura(tipo, estado.estructuras, estado.enumeraciones)
+    if tupla is None and estructura is None:
+        _error(f"Las constantes globales de tipo {tipo} todavía no están implementadas.", contexto)
+    campos, tamano, alineacion = tupla if tupla is not None else estructura
+    temporal = _nuevo_temporal(estado)
+    instrucciones = [
+        f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc",
+        f"local.set ${temporal}",
+    ]
+    pares = zip(campos, valor) if tupla is not None else (
+        ((datos, valor["campos"][nombre]) for nombre, datos in campos.items())
+    )
+    for (tipo_campo, desplazamiento), dato in pares:
+        instrucciones.append(f"local.get ${temporal}")
+        instrucciones.extend(_compilar_valor_constante(tipo_campo, dato, estado, contexto))
+        instrucciones.append(_instruccion_almacenamiento_arreglo(tipo_campo, desplazamiento))
+    return [*instrucciones, f"local.get ${temporal}"]
 
 
 def _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion, tipos):
@@ -407,22 +711,28 @@ def _compilar_logical_and(contexto, referencias, locales, funciones, nombres_fun
 def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_funcion, tipos):
     """Emite comparaciones y deja un i32 0/1, que es el bool de WebAssembly."""
     operandos = contexto.additive()
-    instrucciones = _compilar_aditiva(
+    izquierda = _compilar_aditiva(
         operandos[0], referencias, locales, funciones, nombres_funcion, tipos
     )
     if len(operandos) == 1:
-        return instrucciones
+        return izquierda
     if "normal" not in salidas_control(operandos[0]):
-        return instrucciones
+        return izquierda
     operador = contexto.relOp().getText()
-    instrucciones.extend(
-        _compilar_aditiva(operandos[1], referencias, locales, funciones, nombres_funcion, tipos)
+    derecha = _compilar_aditiva(
+        operandos[1], referencias, locales, funciones, nombres_funcion, tipos
     )
     if "normal" not in salidas_control(operandos[1]):
-        return instrucciones
+        return [*izquierda, *derecha]
     tipo = tipos[operandos[0]]
     if _enum_tiene_datos(tipo, nombres_funcion.enumeraciones):
-        _error("La comparación de enumeraciones con datos todavía no está implementada.", contexto)
+        if operador not in {"==", "!="}:
+            _error("Las enumeraciones solo admiten == y !=.", contexto)
+        instrucciones = _comparar_valores(
+            tipo, izquierda, derecha, nombres_funcion
+        )
+        return [*instrucciones, "i32.eqz"] if operador == "!=" else instrucciones
+    instrucciones = [*izquierda, *derecha]
     if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None:
         _error("Las comparaciones entre arreglos todavía no están implementadas.", contexto)
     if tipo == "String":
@@ -445,6 +755,135 @@ def _compilar_comparacion(contexto, referencias, locales, funciones, nombres_fun
             "<=": "i32.le_s", ">": "i32.gt_s", ">=": "i32.ge_s",
         }[operador])
     return instrucciones
+
+
+def _nuevo_temporal_comparacion(nombres_funcion, tipo):
+    temporal = f"comparacion_{nombres_funcion.siguiente_match}"
+    nombres_funcion.siguiente_match += 1
+    nombres_funcion.temporales_match.append((
+        temporal,
+        _tipo_wasm(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones),
+    ))
+    return temporal
+
+
+def _cargar_valor_memoria(temporal, tipo, desplazamiento=0):
+    instrucciones = [f"local.get ${temporal}"]
+    if desplazamiento:
+        instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+    instrucciones.append(_instruccion_carga_arreglo(tipo))
+    return instrucciones
+
+
+def _combinar_igualdades(igualdades):
+    if not igualdades:
+        return ["i32.const 1"]
+    instrucciones = list(igualdades[0])
+    for igualdad in igualdades[1:]:
+        instrucciones.extend([*igualdad, "i32.and"])
+    return instrucciones
+
+
+def _comparar_valores(tipo, izquierda, derecha, nombres_funcion):
+    if tipo == "String":
+        return [*izquierda, *derecha, "call $string_eq"]
+    if tipo == "f64":
+        return [*izquierda, *derecha, "f64.eq"]
+    if tipo in {"i32", "bool", "char"}:
+        return [*izquierda, *derecha, "i32.eq"]
+    enumeracion = _info_enum(tipo, nombres_funcion.enumeraciones)
+    if enumeracion is not None:
+        if not _enum_tiene_datos(tipo, nombres_funcion.enumeraciones):
+            return [*izquierda, *derecha, "i32.eq"]
+        temporal_izquierdo = _nuevo_temporal_comparacion(nombres_funcion, tipo)
+        temporal_derecho = _nuevo_temporal_comparacion(nombres_funcion, tipo)
+        distribucion = _distribucion_enum(
+            tipo, nombres_funcion.enumeraciones, nombres_funcion.estructuras
+        )
+        variantes, _, _ = distribucion
+        ramas = ["i32.const 0"]
+        for nombre, (etiqueta, campos) in reversed(list(variantes.items())):
+            igualdades = [
+                _comparar_valores(
+                    tipo_campo,
+                    _cargar_valor_memoria(temporal_izquierdo, tipo_campo, desplazamiento),
+                    _cargar_valor_memoria(temporal_derecho, tipo_campo, desplazamiento),
+                    nombres_funcion,
+                )
+                for tipo_campo, desplazamiento in campos
+            ]
+            ramas = [
+                f"local.get ${temporal_izquierdo}", "i32.load",
+                f"i32.const {etiqueta}", "i32.eq",
+                _wat_condicional_resultado(
+                    _combinar_igualdades(igualdades), ramas, "i32"
+                ),
+            ]
+        return [
+            *izquierda, f"local.set ${temporal_izquierdo}",
+            *derecha, f"local.set ${temporal_derecho}",
+            f"local.get ${temporal_izquierdo}", "i32.load",
+            f"local.get ${temporal_derecho}", "i32.load", "i32.eq",
+            _wat_condicional_resultado(ramas, ["i32.const 0"], "i32"),
+        ]
+    temporal_izquierdo = _nuevo_temporal_comparacion(nombres_funcion, tipo)
+    temporal_derecho = _nuevo_temporal_comparacion(nombres_funcion, tipo)
+    matriz = _info_matriz(tipo)
+    if matriz is not None and matriz[0] in {"i32", "f64", "bool", "char", "String"}:
+        elemento, filas, columnas = matriz
+        paso = _tamano_elemento_arreglo(elemento)
+        igualdades = [
+            _comparar_valores(
+                elemento,
+                _cargar_valor_memoria(temporal_izquierdo, elemento, indice * paso),
+                _cargar_valor_memoria(temporal_derecho, elemento, indice * paso),
+                nombres_funcion,
+            )
+            for indice in range(filas * columnas)
+        ]
+    else:
+        arreglo = _partes_arreglo_recursivo(tipo)
+        if arreglo is not None:
+            elemento, cantidad = arreglo
+            layout = _layout_recursivo(
+                elemento, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+            )
+            paso = 4 if layout.get("elemento") is not None or _distribucion_tupla(elemento, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None or _distribucion_estructura(elemento, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None or _info_enum(elemento, nombres_funcion.enumeraciones) is not None else layout["tamano"]
+            igualdades = [
+                _comparar_valores(
+                    elemento,
+                    _cargar_valor_memoria(temporal_izquierdo, elemento, indice * paso),
+                    _cargar_valor_memoria(temporal_derecho, elemento, indice * paso),
+                    nombres_funcion,
+                )
+                for indice in range(cantidad)
+            ]
+        else:
+            distribucion = _distribucion_tupla(
+                tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+            )
+            if distribucion is None:
+                distribucion = _distribucion_estructura(
+                    tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+                )
+            if distribucion is None:
+                return [*izquierda, *derecha, "i32.eq"]
+            igualdades = [
+                _comparar_valores(
+                    tipo_campo,
+                    _cargar_valor_memoria(temporal_izquierdo, tipo_campo, desplazamiento),
+                    _cargar_valor_memoria(temporal_derecho, tipo_campo, desplazamiento),
+                    nombres_funcion,
+                )
+                for tipo_campo, desplazamiento in (
+                    distribucion[0] if isinstance(distribucion[0], list) else distribucion[0].values()
+                )
+            ]
+    return [
+        *izquierda, f"local.set ${temporal_izquierdo}",
+        *derecha, f"local.set ${temporal_derecho}",
+        *_combinar_igualdades(igualdades),
+    ]
 
 
 def _wat_condicional(rama_cierta, rama_falsa):
@@ -694,14 +1133,28 @@ def _compilar_unaria(contexto, referencias, locales, funciones, nombres_funcion,
         # Una referencia se guarda como i32, pero el load recupera su tipo RustiQ real.
         referencia = contexto.dereferenceExpr()
         tipo = tipos.get(referencia)
-        if not _escalar_prestable(tipo):
+        layout = _layout_copia_compuesta(
+            tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+        )
+        origen = _compilar_unaria(
+            referencia.unary(), referencias, locales, funciones, nombres_funcion, tipos
+        )
+        if layout is not None and clasificar_tipo(
+            tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+        ) == "Copy":
+            instrucciones = _copiar_compuesto(
+                tipo,
+                [*origen, "i32.load"] if _info_enum(
+                    tipo, nombres_funcion.enumeraciones
+                ) is not None else origen,
+                nombres_funcion,
+            )
+        elif _escalar_prestable(tipo) or tipo == "String" or _info_enum(
+            tipo, nombres_funcion.enumeraciones
+        ) is not None:
+            instrucciones = [*origen, _carga_escalar_memoria(tipo)]
+        else:
             _error("Solo se admite desreferenciar tipos escalares.", referencia)
-        instrucciones = [
-            *_compilar_unaria(
-                referencia.unary(), referencias, locales, funciones, nombres_funcion, tipos
-            ),
-            _carga_escalar_memoria(tipo),
-        ]
         tipo_operando = tipo
     else:
         instrucciones = None
@@ -763,33 +1216,62 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
     referencia = separar_referencia(tipo_base)
     if referencia is not None:
         # La referencia ya es el puntero del bloque original; los layouts calculan el offset.
-        if not _compuesto_prestable(referencia[1], nombres_funcion.estructuras):
+        if not _compuesto_prestable(
+            referencia[1], nombres_funcion.estructuras, nombres_funcion.enumeraciones
+        ) and _info_enum(referencia[1], nombres_funcion.enumeraciones) is None:
             _error("Solo se admiten accesos mediante referencias a compuestos locales compatibles.", contexto)
         tipo_base = referencia[1]
-    estructura = _distribucion_estructura(tipo_base, nombres_funcion.estructuras)
+    estructura = _distribucion_estructura(tipo_base, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
     if estructura is not None:
         accesos = list(accesos_lectura(contexto))
-        if len(accesos) != 1 or accesos[0][0] != "nombre":
-            _error("Solo se admite el acceso directo a campos de estructuras locales.", contexto)
-        nombre = accesos[0][1].IDENT().getText()
-        campos, _, _ = estructura
-        if nombre not in campos:
-            _error("El campo de la estructura no está disponible para generar WASM.", contexto)
-        tipo, desplazamiento = campos[nombre]
-        return [*instrucciones, _instruccion_carga_arreglo(tipo, desplazamiento)]
-    tupla = _distribucion_tupla(tipo_base)
+        if len(accesos) == 2 and accesos[0][0] == "nombre" and accesos[1][0] == "indice":
+            nombre = accesos[0][1].IDENT().getText()
+            campo, desplazamiento = estructura[0][nombre]
+            partes = _partes_arreglo_recursivo(campo)
+            if partes is not None:
+                tipo_elemento, cantidad = partes
+                if tipo_elemento in {"i32", "f64", "bool", "char", "String"}:
+                    instrucciones.extend([f"i32.const {desplazamiento}", "i32.add", "i32.load"])
+                    instrucciones.extend(_compilar_expresion(accesos[1][1], referencias, locales, funciones, nombres_funcion, tipos))
+                    instrucciones.extend([f"i32.const {cantidad}", f"i32.const {_tamano_elemento_arreglo(tipo_elemento)}", "call $array_addr", _instruccion_carga_arreglo(tipo_elemento)])
+                    return instrucciones
+        return _resolver_accesos(instrucciones, tipo_base, accesos, referencias, locales, funciones, nombres_funcion, tipos)[0]
+    tupla = _distribucion_tupla(tipo_base, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
     if tupla is not None:
         accesos = list(accesos_lectura(contexto))
-        if len(accesos) != 1 or accesos[0][0] != "campo":
-            _error("Solo se admite el acceso directo a campos de tuplas locales.", contexto)
-        indice = int(accesos[0][1].getText()[1:])
-        campos, _, _ = tupla
-        if indice >= len(campos):
-            _error("El campo de la tupla no está disponible para generar WASM.", contexto)
-        tipo, desplazamiento = tupla[0][indice]
-        return [*instrucciones, _instruccion_carga_arreglo(tipo, desplazamiento)]
+        return _resolver_accesos(instrucciones, tipo_base, accesos, referencias, locales, funciones, nombres_funcion, tipos)[0]
+    accesos = list(accesos_lectura(contexto))
+    if (_info_matriz(tipo_base) is None and _info_arreglo(tipo_base) is not None
+            and len(accesos) > 1):
+        return _resolver_accesos(
+            instrucciones, tipo_base, accesos, referencias, locales, funciones,
+            nombres_funcion, tipos,
+        )[0]
+    partes_anidadas = _partes_arreglo_recursivo(tipo_base)
+    if (partes_anidadas is not None
+        and _partes_arreglo_recursivo(partes_anidadas[0]) is not None
+        and _partes_arreglo_recursivo(_partes_arreglo_recursivo(partes_anidadas[0])[0]) is not None
+        and len(contexto.expression()) > 1):
+        tipo_actual = tipo_base
+        for indice, expresion_indice in enumerate(contexto.expression()):
+            partes = _partes_arreglo_recursivo(tipo_actual)
+            if partes is None:
+                _error("El acceso indexado excede el tipo del arreglo.", contexto)
+            elemento, cantidad = partes
+            layout = _layout_recursivo(elemento, nombres_funcion.estructuras)
+            if layout is None:
+                _error("El elemento del arreglo no tiene layout disponible.", contexto)
+            paso = 4 if layout.get("elemento") is not None or _distribucion_tupla(elemento, nombres_funcion.estructuras) is not None or _distribucion_estructura(elemento, nombres_funcion.estructuras) is not None else layout["tamano"]
+            instrucciones.extend(_compilar_expresion(expresion_indice, referencias, locales, funciones, nombres_funcion, tipos))
+            instrucciones.extend([f"i32.const {cantidad}", f"i32.const {paso}", "call $array_addr"])
+            if indice < len(contexto.expression()) - 1:
+                instrucciones.append("i32.load")
+            else:
+                instrucciones.append(_instruccion_carga_arreglo(elemento))
+            tipo_actual = elemento
+        return instrucciones
     matriz = _info_matriz(tipo_base)
-    if matriz is not None:
+    if matriz is not None and _partes_arreglo_recursivo(matriz[0]) is None:
         tipo_elemento, filas, columnas = matriz
         if len(contexto.expression()) != 2:
             _error("Las matrices locales requieren exactamente dos índices.", contexto)
@@ -811,14 +1293,29 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
                 contexto.expression(1), referencias, locales, funciones, nombres_funcion, tipos
             )
         )
-        instrucciones.extend(
-            [
-                f"i32.const {columnas}",
-                f"i32.const {bytes_elemento}",
-                "call $array_addr",
-                _instruccion_carga_arreglo(tipo_elemento),
-            ]
-        )
+        instrucciones.extend([f"i32.const {columnas}", f"i32.const {bytes_elemento}", "call $array_addr"])
+        if contexto.fieldAccess():
+            estructura = _distribucion_estructura(tipo_elemento, nombres_funcion.estructuras)
+            if estructura is None:
+                _error("El elemento de la matriz no tiene el campo solicitado.", contexto)
+            nombre = contexto.fieldAccess(0).IDENT().getText()
+            tipo_campo, desplazamiento = estructura[0][nombre]
+            instrucciones.append("i32.load")
+            if desplazamiento:
+                instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+            instrucciones.append(_instruccion_carga_arreglo(tipo_campo))
+        elif contexto.tupleAccess():
+            tupla = _distribucion_tupla(tipo_elemento, nombres_funcion.estructuras)
+            if tupla is None:
+                _error("El elemento de la matriz no es una tupla disponible.", contexto)
+            posicion = int(contexto.tupleAccess(0).getText()[1:])
+            tipo_campo, desplazamiento = tupla[0][posicion]
+            instrucciones.append("i32.load")
+            if desplazamiento:
+                instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+            instrucciones.append(_instruccion_carga_arreglo(tipo_campo))
+        else:
+            instrucciones.append(_instruccion_carga_arreglo(tipo_elemento))
         return instrucciones
     arreglo = _info_arreglo(tipo_base)
     if arreglo is None or len(contexto.expression()) != 1:
@@ -834,13 +1331,36 @@ def _compilar_postfija(contexto, referencias, locales, funciones, nombres_funcio
             f"i32.const {tamano}",
             f"i32.const {_tamano_elemento_arreglo(tipo_elemento)}",
             "call $array_addr",
-            _instruccion_carga_arreglo(tipo_elemento),
         ]
     )
+    accesos = list(accesos_lectura(contexto))
+    if len(accesos) == 2 and accesos[1][0] == "nombre":
+        estructura = _distribucion_estructura(tipo_elemento, nombres_funcion.estructuras)
+        if estructura is None:
+            _error("El elemento del arreglo no tiene el campo solicitado.", contexto)
+        nombre = accesos[1][1].IDENT().getText()
+        tipo_campo, desplazamiento = estructura[0][nombre]
+        instrucciones.append("i32.load")
+        if desplazamiento:
+            instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        instrucciones.append(_instruccion_carga_arreglo(tipo_campo))
+        return instrucciones
+    if len(accesos) == 2 and accesos[1][0] == "campo":
+        tupla = _distribucion_tupla(tipo_elemento, nombres_funcion.estructuras)
+        if tupla is None:
+            _error("El elemento del arreglo no es una tupla disponible.", contexto)
+        posicion = int(accesos[1][1].getText()[1:])
+        tipo_campo, desplazamiento = tupla[0][posicion]
+        instrucciones.append("i32.load")
+        if desplazamiento:
+            instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        instrucciones.append(_instruccion_carga_arreglo(tipo_campo))
+        return instrucciones
+    instrucciones.append(_instruccion_carga_arreglo(tipo_elemento))
     return instrucciones
 
 
-def _literal_patron(contexto, tipo, enumeraciones):
+def _literal_patron(contexto, tipo, enumeraciones, nombres_funcion=None):
     if contexto.DOUBLE_COLON() is not None:
         enumeracion = _info_enum(tipo, enumeraciones)
         nombres = contexto.IDENT()
@@ -862,6 +1382,11 @@ def _literal_patron(contexto, tipo, enumeraciones):
             return "i32.const 0"
     if tipo == "char" and literal.CHAR_LITERAL() is not None:
         return f"i32.const {_valor_char(literal.CHAR_LITERAL().getText(), literal)}"
+    if tipo == "f64" and literal.FLOAT() is not None:
+        return f"f64.const {literal.getText()}"
+    if tipo == "String" and literal.STRING_LITERAL() is not None:
+        descriptor = nombres_funcion.memoria.agregar(_valor_string(literal.STRING_LITERAL().getText(), literal), literal)
+        return f"i32.const {descriptor}"
     _error("El patrón de match todavía no está implementado.", contexto)
 
 
@@ -869,7 +1394,9 @@ def _enlazar_receptor_patron(identificador, valor, tipo, nombres_funcion, contex
     """Guarda un receptor prestable en memoria antes de ejecutar su brazo match."""
     if identificador not in nombres_funcion.escalares_en_memoria:
         return [*valor, f"local.set $local_{identificador}"]
-    tamano_alineacion = _tamano_y_alineacion_escalar(tipo)
+    tamano_alineacion = _tamano_y_alineacion_prestamo(
+        tipo, nombres_funcion.enumeraciones
+    )
     if tamano_alineacion is None:
         _error("El receptor del patrón no tiene un tipo prestable en WASM.", contexto)
     tamano, alineacion = tamano_alineacion
@@ -908,6 +1435,23 @@ def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, 
             f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
             valor, "call $string_eq" if tipo == "String" else f"{tipo}.eq" if tipo == "f64" else "i32.eq",
         ], []
+    if patron.DOUBLE_COLON() is not None:
+        if _enum_tiene_datos(tipo, nombres_funcion.enumeraciones):
+            temporal_hijo = _nuevo_temporal(nombres_funcion)
+            condicion, enlaces = _compilar_patron_enum(
+                patron, temporal_hijo, tipo, referencias, locales, nombres_funcion
+            )
+            return [
+                f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+                f"local.set ${temporal_hijo}", *condicion,
+            ], enlaces
+        valor = _literal_patron(
+            patron, tipo, nombres_funcion.enumeraciones, nombres_funcion
+        )
+        return [
+            f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+            valor, "i32.eq",
+        ], []
     if patron.IDENT():
         identificador = nombres_funcion.declaraciones.get(patron)
         if identificador is None or identificador not in locales:
@@ -917,12 +1461,23 @@ def _condicion_patron_enum(patron, temporal, tipo, desplazamiento, referencias, 
             [f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento)],
             tipo, nombres_funcion, patron,
         )
+    if patron.LPAREN() is not None:
+        temporal_hijo = _nuevo_temporal(nombres_funcion)
+        condicion, enlaces = _compilar_patron_tupla(
+            patron, temporal_hijo, tipo, referencias, locales, nombres_funcion
+        )
+        return [
+            f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+            f"local.set ${temporal_hijo}", *condicion,
+        ], enlaces
     _error("El patrón de dato de enumeración todavía no está implementado.", patron)
 
 
 def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, nombres_funcion):
     """Comprueba etiqueta y datos de una variante antes de entrar a su brazo match."""
-    distribucion = _distribucion_enum(tipo_valor, nombres_funcion.enumeraciones)
+    distribucion = _distribucion_enum(
+        tipo_valor, nombres_funcion.enumeraciones, nombres_funcion.estructuras
+    )
     if distribucion is None or patron.DOUBLE_COLON() is None:
         _error("El patrón de enumeración todavía no está implementado.", patron)
     variantes, _, _ = distribucion
@@ -954,7 +1509,7 @@ def _compilar_patron_enum(patron, temporal, tipo_valor, referencias, locales, no
 
 def _compilar_patron_tupla(patron, temporal, tipo_valor, referencias, locales,
                            nombres_funcion):
-    distribucion = _distribucion_tupla(tipo_valor)
+    distribucion = _distribucion_tupla(tipo_valor, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
     patrones = patron.pattern()
     if distribucion is None or len(patrones) != len(distribucion[0]):
         _error("El patrón de tupla no está disponible para generar WASM.", patron)
@@ -964,35 +1519,39 @@ def _compilar_patron_tupla(patron, temporal, tipo_valor, referencias, locales,
         if hijo.UNDERSCORE() is not None:
             continue
         if hijo.patternLiteral() is not None:
-            literal = hijo.patternLiteral()
-            if tipo == "i32" and literal.INT() is not None:
-                valor = f"i32.const {int(literal.getText())}"
-            elif tipo == "bool" and literal.TRUE() is not None:
-                valor = "i32.const 1"
-            elif tipo == "bool" and literal.FALSE() is not None:
-                valor = "i32.const 0"
-            elif tipo == "char" and literal.CHAR_LITERAL() is not None:
-                valor = f"i32.const {_valor_char(literal.CHAR_LITERAL().getText(), literal)}"
-            elif tipo == "f64" and literal.FLOAT() is not None:
-                valor = f"f64.const {literal.getText()}"
-            else:
-                _error("El literal del patrón de tupla no está disponible para generar WASM.", hijo)
-            condiciones.extend([
+            valor = _literal_patron(hijo, tipo, nombres_funcion.enumeraciones, nombres_funcion)
+            condicion = [
                 f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
-                valor, "f64.eq" if tipo == "f64" else "i32.eq",
-            ])
-            if len(condiciones) > 4:
+                valor, "call $string_eq" if tipo == "String" else "f64.eq" if tipo == "f64" else "i32.eq",
+            ]
+            if condiciones:
+                condiciones.extend(condicion)
                 condiciones.append("i32.and")
+            else:
+                condiciones.extend(condicion)
             continue
-        if hijo.IDENT() is not None:
+        if hijo.IDENT():
             identificador = nombres_funcion.declaraciones.get(hijo)
-            if identificador is None or identificador not in locales:
+            if identificador is None:
                 _error("El receptor del patrón de tupla no está disponible para generar WASM.", hijo)
             enlaces.extend(_enlazar_receptor_patron(
                 identificador,
                 [f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento)],
                 tipo, nombres_funcion, hijo,
             ))
+            continue
+        if hijo.LPAREN() is not None:
+            temporal_hijo = _nuevo_temporal(nombres_funcion)
+            condicion, enlace = _compilar_patron_tupla(
+                hijo, temporal_hijo, tipo, referencias, locales, nombres_funcion
+            )
+            condiciones.extend([
+                f"local.get ${temporal}", _instruccion_carga_arreglo(tipo, desplazamiento),
+                f"local.set ${temporal_hijo}", *condicion,
+            ])
+            if len(condiciones) > len(condicion) + 3:
+                condiciones.append("i32.and")
+            enlaces.extend(enlace)
             continue
         _error("El patrón de tupla todavía no está implementado.", hijo)
     return condiciones or ["i32.const 1"], enlaces
@@ -1041,7 +1600,7 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
             ),
         ]
     if patron.DOUBLE_COLON() is not None:
-        literal = _literal_patron(patron, tipo_valor, nombres_funcion.enumeraciones)
+        literal = _literal_patron(patron, tipo_valor, nombres_funcion.enumeraciones, nombres_funcion)
     elif patron.IDENT():
         identificador = nombres_funcion.declaraciones.get(patron)
         if identificador is None or identificador not in locales:
@@ -1054,7 +1613,7 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
             *expresion,
         ]
     else:
-        literal = _literal_patron(patron, tipo_valor, nombres_funcion.enumeraciones)
+        literal = _literal_patron(patron, tipo_valor, nombres_funcion.enumeraciones, nombres_funcion)
     siguiente = _compilar_brazos_match(
         brazos, indice + 1, temporal, tipo_valor, tipo_resultado,
         referencias, locales, funciones, nombres_funcion, tipos,
@@ -1062,7 +1621,7 @@ def _compilar_brazos_match(brazos, indice, temporal, tipo_valor, tipo_resultado,
     return [
         f"local.get ${temporal}",
         literal,
-        "i32.eq",
+        "call $string_eq" if tipo_valor == "String" else "f64.eq" if tipo_valor == "f64" else "i32.eq",
         _wat_condicional_resultado(expresion, siguiente, _tipo_wasm(tipo_resultado, enumeraciones=nombres_funcion.enumeraciones)),
     ]
 
@@ -1071,18 +1630,18 @@ def _compilar_match(contexto, referencias, locales, funciones, nombres_funcion, 
     """Evalúa el valor una sola vez y lo conserva en un local temporal del match."""
     tipo_valor = tipos.get(contexto.expression())
     tipo_resultado = tipos.get(contexto)
-    if (tipo_valor not in {"i32", "bool", "char"}
-            and _distribucion_tupla(tipo_valor) is None
+    if (tipo_valor not in {"i32", "bool", "char", "f64", "String"}
+            and _distribucion_tupla(tipo_valor, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
             and _info_enum(tipo_valor, nombres_funcion.enumeraciones) is None):
         _error("Solo se admiten match de i32, bool, char, tuplas y enumeraciones.", contexto)
     if tipo_resultado not in {"i32", "f64", "bool", "char", "String"}:
         _error("El resultado de match todavía no está implementado.", contexto)
     temporal = f"valor_match_{nombres_funcion.siguiente_match}"
     nombres_funcion.siguiente_match += 1
-    nombres_funcion.temporales_match.append(temporal)
+    nombres_funcion.temporales_match.append((temporal, _tipo_wasm(tipo_valor, nombres_funcion.estructuras, nombres_funcion.enumeraciones)))
     literal_tupla = _obtener_literal_tupla(contexto.expression())
-    if literal_tupla is not None and _distribucion_tupla(tipo_valor) is not None:
-        campos, tamano, alineacion = _distribucion_tupla(tipo_valor)
+    if literal_tupla is not None and _distribucion_tupla(tipo_valor, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None:
+        campos, tamano, alineacion = _distribucion_tupla(tipo_valor, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
         expresiones = literal_tupla.expression()
         if len(expresiones) != len(campos):
             _error("El literal no coincide con los campos de la tupla.", literal_tupla)
@@ -1123,7 +1682,7 @@ def _compilar_enum_valor(contexto, referencias, locales, funciones, nombres_func
     variante = nombres[1].getText()
     if variante not in enumeracion["variantes"]:
         _error("La variante de enumeración no está disponible para generar WASM.", contexto)
-    distribucion = _distribucion_enum(tipo, nombres_funcion.enumeraciones)
+    distribucion = _distribucion_enum(tipo, nombres_funcion.enumeraciones, nombres_funcion.estructuras)
     if distribucion is None:
         if contexto.argumentList() is not None:
             _error("Esta variante de enumeración todavía no está implementada.", contexto)
@@ -1222,9 +1781,11 @@ def _compilar_primaria(contexto, referencias, locales, funciones, nombres_funcio
             _error("Una función unit no puede usarse como expresión.", contexto)
         return instrucciones
     if contexto.tupleLiteral() is not None:
-        _error("Los literales de tupla solo se admiten al inicializar una variable local.", contexto)
+        return _compilar_literal_compuesto(contexto, tipos[contexto], referencias, locales, funciones, nombres_funcion, tipos)
     if contexto.structLiteral() is not None:
-        _error("Los constructores de estructuras solo se admiten al inicializar una variable local.", contexto)
+        return _compilar_literal_compuesto(contexto, tipos[contexto], referencias, locales, funciones, nombres_funcion, tipos)
+    if contexto.arrayLiteral() is not None:
+        return _compilar_literal_arreglo_recursivo(contexto.arrayLiteral(), tipos[contexto], referencias, locales, funciones, nombres_funcion, tipos)
     _error(
         "Solo se admiten literales i32 y expresiones aritméticas entre paréntesis.",
         contexto,
@@ -1374,7 +1935,9 @@ def _compilar_declaracion(
     tipo_local = simbolos[identificador]["tipo"]
     if identificador in nombres_funcion.escalares_en_memoria:
         # Un escalar prestado deja de vivir sólo en un local para evitar copias desactualizadas.
-        tamano_alineacion = _tamano_y_alineacion_escalar(tipo_local)
+        tamano_alineacion = _tamano_y_alineacion_prestamo(
+            tipo_local, nombres_funcion.enumeraciones
+        )
         if tamano_alineacion is None:
             _error("Solo se admiten préstamos de variables escalares.", declaracion)
         tamano, alineacion = tamano_alineacion
@@ -1389,7 +1952,7 @@ def _compilar_declaracion(
             ))
             instrucciones.append(_almacenamiento_escalar_memoria(tipo_local))
         return instrucciones
-    estructura = _distribucion_estructura(tipo_local, nombres_funcion.estructuras)
+    estructura = _distribucion_estructura(tipo_local, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
     if estructura is not None:
         if expresion is None:
             _error("Una estructura local requiere un constructor para inicializarse.", declaracion)
@@ -1402,27 +1965,13 @@ def _compilar_declaracion(
                 ),
                 f"local.set $local_{identificador}",
             ]
-        campos, tamano, alineacion = estructura
-        instrucciones = [
-            f"i32.const {tamano}",
-            f"i32.const {alineacion}",
-            "call $array_alloc",
+        return [
+            *_compilar_literal_compuesto(
+                expresion, tipo_local, referencias, locales, funciones, nombres_funcion, tipos
+            ),
             f"local.set $local_{identificador}",
         ]
-        for inicializador in literal.fieldInit():
-            nombre = inicializador.IDENT().getText()
-            if nombre not in campos:
-                _error("El campo de la estructura no está disponible para generar WASM.", inicializador)
-            tipo, desplazamiento = campos[nombre]
-            instrucciones.append(f"local.get $local_{identificador}")
-            instrucciones.extend(
-                _compilar_expresion(
-                    inicializador.expression(), referencias, locales, funciones, nombres_funcion, tipos
-                )
-            )
-            instrucciones.append(_instruccion_almacenamiento_arreglo(tipo, desplazamiento))
-        return instrucciones
-    tupla = _distribucion_tupla(simbolos[identificador]["tipo"])
+    tupla = _distribucion_tupla(simbolos[identificador]["tipo"], nombres_funcion.estructuras, nombres_funcion.enumeraciones)
     if tupla is not None:
         if expresion is None:
             _error("Una tupla local requiere un literal para inicializarse.", declaracion)
@@ -1435,27 +1984,14 @@ def _compilar_declaracion(
                 ),
                 f"local.set $local_{identificador}",
             ]
-        campos, tamano, alineacion = tupla
-        expresiones = literal.expression()
-        if len(expresiones) != len(campos):
-            _error("El literal no coincide con los campos de la tupla.", literal)
-        instrucciones = [
-            f"i32.const {tamano}",
-            f"i32.const {alineacion}",
-            "call $array_alloc",
+        return [
+            *_compilar_literal_compuesto(
+                expresion, tipo_local, referencias, locales, funciones, nombres_funcion, tipos
+            ),
             f"local.set $local_{identificador}",
         ]
-        for (tipo, desplazamiento), valor in zip(campos, expresiones):
-            instrucciones.append(f"local.get $local_{identificador}")
-            instrucciones.extend(
-                _compilar_expresion(
-                    valor, referencias, locales, funciones, nombres_funcion, tipos
-                )
-            )
-            instrucciones.append(_instruccion_almacenamiento_arreglo(tipo, desplazamiento))
-        return instrucciones
     matriz = _info_matriz(simbolos[identificador]["tipo"])
-    if matriz is not None:
+    if matriz is not None and _partes_arreglo_recursivo(matriz[0]) is None:
         tipo_elemento, filas, columnas = matriz
         if expresion is None:
             _error("Una matriz local requiere un literal para inicializarse.", declaracion)
@@ -1465,7 +2001,12 @@ def _compilar_declaracion(
                 simbolos[identificador]["tipo"], nombres_funcion.estructuras,
                 nombres_funcion.enumeraciones,
             ) is None:
-                _error("La copia de esta matriz todavía no está implementada.", expresion)
+                return [
+                    *_compilar_expresion(
+                        expresion, referencias, locales, funciones, nombres_funcion, tipos
+                    ),
+                    f"local.set $local_{identificador}",
+                ]
             return [
                 *_compilar_valor_para_local(
                     expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
@@ -1509,11 +2050,6 @@ def _compilar_declaracion(
             _error("Un arreglo local requiere un literal para inicializarse.", declaracion)
         literal = _obtener_literal_arreglo(expresion)
         if literal is None:
-            if _layout_copia_compuesta(
-                simbolos[identificador]["tipo"], nombres_funcion.estructuras,
-                nombres_funcion.enumeraciones,
-            ) is None:
-                _error("La copia de este arreglo todavía no está implementada.", expresion)
             return [
                 *_compilar_valor_para_local(
                     expresion, simbolos[identificador]["tipo"], referencias, locales, funciones,
@@ -1565,6 +2101,18 @@ def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, fu
         return _compilar_expresion(
             expresion, referencias, locales, funciones, nombres_funcion, tipos
         )
+    arreglo = _info_arreglo(tipo_destino)
+    matriz = _info_matriz(tipo_destino)
+    if (_distribucion_tupla(tipo_destino, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None
+        or _distribucion_estructura(tipo_destino, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None
+        or _info_enum(tipo_destino, nombres_funcion.enumeraciones) is not None
+        or (matriz is not None and _partes_arreglo_recursivo(matriz[0]) is None
+            and (_distribucion_tupla(matriz[0], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None
+                 or _distribucion_estructura(matriz[0], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None))
+        or (arreglo is not None and (_distribucion_tupla(arreglo[0], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None
+                                    or _distribucion_estructura(arreglo[0], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None
+                                    or _layout_copia_compuesta(arreglo[0], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None))):
+        return _copiar_compuesto(tipo_destino, _compilar_expresion(expresion, referencias, locales, funciones, nombres_funcion, tipos), nombres_funcion)
     tamano, alineacion = layout
     temporal = f"enum_{nombres_funcion.siguiente_enum}"
     nombres_funcion.siguiente_enum += 1
@@ -1581,6 +2129,110 @@ def _compilar_valor_para_local(expresion, tipo_destino, referencias, locales, fu
     ]
 
 
+def _copiar_compuesto(tipo, origen, nombres_funcion, filas_punteros=False):
+    layout = _layout_copia_compuesta(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+    if layout is None:
+        return origen
+    tamano, alineacion = layout
+    matriz_actual = _info_matriz(tipo)
+    if filas_punteros and matriz_actual is not None:
+        tamano, alineacion = matriz_actual[1] * 4, 4
+    origen_temporal = _nuevo_temporal(nombres_funcion)
+    destino_temporal = _nuevo_temporal(nombres_funcion)
+    instrucciones = [*origen, f"local.set ${origen_temporal}", f"i32.const {tamano}", f"i32.const {alineacion}", "call $array_alloc", f"local.set ${destino_temporal}", f"local.get ${destino_temporal}", f"local.get ${origen_temporal}", f"i32.const {tamano}", "memory.copy"]
+    enumeracion = _distribucion_enum(
+        tipo, nombres_funcion.enumeraciones, nombres_funcion.estructuras
+    )
+    if enumeracion is not None:
+        variantes, _, _ = enumeracion
+        for etiqueta, campos in variantes.values():
+            campos_compuestos = [
+                (tipo_campo, desplazamiento)
+                for tipo_campo, desplazamiento in campos
+                if _layout_copia_compuesta(
+                    tipo_campo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+                ) is not None
+            ]
+            if not campos_compuestos:
+                continue
+            instrucciones.extend([
+                f"local.get ${origen_temporal}", "i32.load",
+                f"i32.const {etiqueta}", "i32.eq", "if",
+            ])
+            for tipo_campo, desplazamiento in campos_compuestos:
+                instrucciones.append(f"local.get ${destino_temporal}")
+                fuente = [f"local.get ${origen_temporal}"]
+                if desplazamiento:
+                    fuente.extend([f"i32.const {desplazamiento}", "i32.add"])
+                fuente.append("i32.load")
+                instrucciones.extend(_copiar_compuesto(
+                    tipo_campo, fuente, nombres_funcion,
+                    _info_matriz(tipo_campo) is not None,
+                ))
+                instrucciones.append(_instruccion_almacenamiento_arreglo(tipo_campo, desplazamiento))
+            instrucciones.append("end")
+        return [*instrucciones, f"local.get ${destino_temporal}"]
+    matriz = _info_matriz(tipo)
+    if (matriz is not None and not filas_punteros
+            and _partes_arreglo_recursivo(matriz[0]) is None):
+        elemento, filas, columnas = matriz
+        for indice in range(filas * columnas):
+            if _layout_copia_compuesta(
+                elemento, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+            ) is None:
+                continue
+            instrucciones.extend([f"local.get ${destino_temporal}"])
+            if indice:
+                instrucciones.extend([f"i32.const {indice * 4}", "i32.add"])
+            fuente = [f"local.get ${origen_temporal}"]
+            if indice:
+                fuente.extend([f"i32.const {indice * 4}", "i32.add"])
+            fuente.append("i32.load")
+            instrucciones.extend(_copiar_compuesto(
+                elemento, fuente, nombres_funcion,
+                _info_matriz(elemento) is not None,
+            ))
+            instrucciones.append("i32.store")
+        return [*instrucciones, f"local.get ${destino_temporal}"]
+    arreglo = _info_arreglo(tipo)
+    if arreglo is not None:
+        elemento, cantidad = arreglo
+        for indice in range(cantidad):
+            if _layout_copia_compuesta(elemento, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None:
+                continue
+            instrucciones.extend([f"local.get ${destino_temporal}"])
+            if indice:
+                instrucciones.extend([f"i32.const {indice * 4}", "i32.add"])
+            fuente = [f"local.get ${origen_temporal}"]
+            if indice:
+                fuente.extend([f"i32.const {indice * 4}", "i32.add"])
+            fuente.append("i32.load")
+            instrucciones.extend(_copiar_compuesto(
+                elemento, fuente, nombres_funcion,
+                _info_matriz(elemento) is not None,
+            ))
+            instrucciones.append("i32.store")
+        return [*instrucciones, f"local.get ${destino_temporal}"]
+    tupla = _distribucion_tupla(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)
+    campos = tupla[0] if tupla is not None else _distribucion_estructura(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones)[0].values()
+    for tipo_campo, desplazamiento in campos:
+        if _layout_copia_compuesta(tipo_campo, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None:
+            continue
+        instrucciones.extend([f"local.get ${destino_temporal}"])
+        if desplazamiento:
+            instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        fuente = [f"local.get ${origen_temporal}"]
+        if desplazamiento:
+            fuente.extend([f"i32.const {desplazamiento}", "i32.add"])
+        fuente.append("i32.load")
+        instrucciones.extend(_copiar_compuesto(
+            tipo_campo, fuente, nombres_funcion,
+            _info_matriz(tipo_campo) is not None,
+        ))
+        instrucciones.append("i32.store")
+    return [*instrucciones, f"local.get ${destino_temporal}"]
+
+
 def _compilar_asignacion(
     asignacion, referencias, simbolos, locales, funciones, nombres_funcion, tipos
 ):
@@ -1593,7 +2245,11 @@ def _compilar_asignacion(
     if asignacion.dereferenceTarget() is not None:
         # La referencia guarda una dirección: store modifica al origen, no al binding r.
         referencia = separar_referencia(tipo_variable)
-        if referencia is None or not _escalar_prestable(referencia[1]):
+        if referencia is None or (
+            not _escalar_prestable(referencia[1])
+            and referencia[1] != "String"
+            and _info_enum(referencia[1], nombres_funcion.enumeraciones) is None
+        ):
             _error("Solo se admite escribir referencias escalares.", asignacion)
         tipo = referencia[1]
         expresion = _compilar_expresion(
@@ -1663,6 +2319,45 @@ def _compilar_asignacion(
     )
     if "normal" not in salidas_control(asignacion.expression()):
         return expresion
+    tipo_base = separar_referencia(tipo_variable)
+    tipo_base = tipo_variable if tipo_base is None else tipo_base[1]
+    accesos = list(accesos_escritura(asignacion))
+    usa_resolvedor = (
+        _distribucion_estructura(tipo_base, nombres_funcion.estructuras) is not None
+        or _distribucion_tupla(tipo_base, nombres_funcion.estructuras) is not None
+        or (_info_matriz(tipo_base) is None and _info_arreglo(tipo_base) is not None and len(accesos) > 1)
+    )
+    if usa_resolvedor and accesos:
+        direccion, tipo = _resolver_accesos(
+            [f"local.get $local_{identificador}"], tipo_base, accesos,
+            referencias, locales, funciones, nombres_funcion, tipos, False,
+        )
+        if operador == "=":
+            return [*direccion, *expresion, _instruccion_almacenamiento_arreglo(tipo, 0)]
+        if tipo not in {"i32", "f64"}:
+            _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
+        instruccion = {
+            "+=": f"{tipo}.add", "-=": f"{tipo}.sub", "*=": f"{tipo}.mul",
+            "/=": "i32.div_s" if tipo == "i32" else "f64.div",
+        }[operador]
+        return [
+            *direccion, "local.tee $direccion_asignacion",
+            _instruccion_carga_arreglo(tipo), *expresion, instruccion,
+            f"local.set $valor_asignacion_{tipo}", "local.get $direccion_asignacion",
+            f"local.get $valor_asignacion_{tipo}",
+            _instruccion_almacenamiento_arreglo(tipo, 0),
+        ]
+    if asignacion.indexAccess():
+        direccion, tipo = _compilar_direccion_asignacion(
+            asignacion, identificador, referencias, simbolos, locales, funciones,
+            nombres_funcion, tipos,
+        )
+        if operador == "=":
+            return [*direccion, *expresion, _instruccion_almacenamiento_arreglo(tipo, 0)]
+        if tipo not in {"i32", "f64"}:
+            _error("Las asignaciones compuestas solo admiten i32 y f64.", asignacion)
+        instruccion = {"+=": f"{tipo}.add", "-=": f"{tipo}.sub", "*=": f"{tipo}.mul", "/=": "i32.div_s" if tipo == "i32" else "f64.div"}[operador]
+        return [*direccion, "local.tee $direccion_asignacion", _instruccion_carga_arreglo(tipo), *expresion, instruccion, f"local.set $valor_asignacion_{tipo}", "local.get $direccion_asignacion", f"local.get $valor_asignacion_{tipo}", _instruccion_almacenamiento_arreglo(tipo, 0)]
     if asignacion.fieldAccess():
         direccion, tipo = _compilar_direccion_estructura(
             asignacion, identificador, simbolos, nombres_funcion.estructuras
@@ -1693,7 +2388,7 @@ def _compilar_asignacion(
             _instruccion_almacenamiento_arreglo(tipo, 0),
         ]
     if asignacion.tupleAccess():
-        direccion, tipo = _compilar_direccion_tupla(asignacion, identificador, simbolos)
+        direccion, tipo = _compilar_direccion_tupla(asignacion, identificador, simbolos, nombres_funcion.estructuras)
         if operador == "=":
             return [
                 *direccion,
@@ -1768,34 +2463,23 @@ def _compilar_asignacion(
     return instrucciones
 
 
-def _compilar_direccion_tupla(asignacion, identificador, simbolos):
+def _compilar_direccion_tupla(asignacion, identificador, simbolos, estructuras):
     """Obtiene la dirección del campo local sin compartir almacenamiento entre tuplas."""
     accesos = list(accesos_escritura(asignacion))
-    if len(accesos) != 1 or accesos[0][0] != "campo":
-        _error("Solo se admite la asignación directa a campos de tuplas locales.", asignacion)
     tipo_base = simbolos[identificador]["tipo"]
     referencia = separar_referencia(tipo_base)
     if referencia is not None:
         tipo_base = referencia[1]
-    tupla = _distribucion_tupla(tipo_base)
+    tupla = _distribucion_tupla(tipo_base, estructuras)
     if tupla is None:
         _error("La asignación no corresponde a una tupla local admitida.", asignacion)
-    indice = int(accesos[0][1].getText()[1:])
-    campos, _, _ = tupla
-    if indice >= len(campos):
-        _error("El campo de la tupla no está disponible para generar WASM.", asignacion)
-    tipo, desplazamiento = campos[indice]
     instrucciones = [f"local.get $local_{identificador}"]
-    if desplazamiento:
-        instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
-    return instrucciones, tipo
+    return _compilar_accesos_compuestos(instrucciones, tipo_base, accesos, estructuras, False)
 
 
 def _compilar_direccion_estructura(asignacion, identificador, simbolos, estructuras):
     """Calcula la dirección de un campo, incluso cuando la base es una &Estructura."""
     accesos = list(accesos_escritura(asignacion))
-    if len(accesos) != 1 or accesos[0][0] != "nombre":
-        _error("Solo se admite la asignación directa a campos de estructuras locales.", asignacion)
     tipo_base = simbolos[identificador]["tipo"]
     referencia = separar_referencia(tipo_base)
     if referencia is not None:
@@ -1803,15 +2487,8 @@ def _compilar_direccion_estructura(asignacion, identificador, simbolos, estructu
     estructura = _distribucion_estructura(tipo_base, estructuras)
     if estructura is None:
         _error("La asignación no corresponde a una estructura local admitida.", asignacion)
-    nombre = accesos[0][1].IDENT().getText()
-    campos, _, _ = estructura
-    if nombre not in campos:
-        _error("El campo de la estructura no está disponible para generar WASM.", asignacion)
-    tipo, desplazamiento = campos[nombre]
     instrucciones = [f"local.get $local_{identificador}"]
-    if desplazamiento:
-        instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
-    return instrucciones, tipo
+    return _compilar_accesos_compuestos(instrucciones, tipo_base, accesos, estructuras, False)
 
 
 def _compilar_direccion_asignacion(
@@ -1824,6 +2501,39 @@ def _compilar_direccion_asignacion(
         tipo_base = referencia[1]
     accesos = asignacion.indexAccess()
     instrucciones = [f"local.get $local_{identificador}"]
+    partes_anidadas = _partes_arreglo_recursivo(tipo_base)
+    if (partes_anidadas is not None
+        and _partes_arreglo_recursivo(partes_anidadas[0]) is not None
+        and _partes_arreglo_recursivo(_partes_arreglo_recursivo(partes_anidadas[0])[0]) is not None
+        and len(accesos) > 1):
+        tipo_actual = tipo_base
+        for indice, acceso in enumerate(accesos):
+            partes = _partes_arreglo_recursivo(tipo_actual)
+            if partes is None:
+                _error("El acceso indexado excede el tipo del arreglo.", asignacion)
+            elemento, cantidad = partes
+            layout = _layout_recursivo(elemento, nombres_funcion.estructuras)
+            if layout is None:
+                _error("El elemento del arreglo no tiene layout disponible.", asignacion)
+            paso = 4 if layout.get("elemento") is not None or _distribucion_tupla(elemento, nombres_funcion.estructuras) is not None or _distribucion_estructura(elemento, nombres_funcion.estructuras) is not None else layout["tamano"]
+            instrucciones.extend(_compilar_expresion(acceso.expression(), referencias, locales, funciones, nombres_funcion, tipos))
+            instrucciones.extend([f"i32.const {cantidad}", f"i32.const {paso}", "call $array_addr"])
+            if indice < len(accesos) - 1:
+                instrucciones.append("i32.load")
+            tipo_actual = elemento
+        return instrucciones, tipo_actual
+    estructura = _distribucion_estructura(tipo_base, nombres_funcion.estructuras)
+    if estructura is not None and asignacion.fieldAccess():
+        nombre = asignacion.fieldAccess(0).IDENT().getText()
+        tipo_campo, desplazamiento = estructura[0][nombre]
+        partes = _partes_arreglo_recursivo(tipo_campo)
+        if partes is None or len(accesos) != 1:
+            _error("El acceso indexado al campo no está disponible para generar WASM.", asignacion)
+        tipo_elemento, cantidad = partes
+        instrucciones.extend([f"i32.const {desplazamiento}", "i32.add", "i32.load"])
+        instrucciones.extend(_compilar_expresion(accesos[0].expression(), referencias, locales, funciones, nombres_funcion, tipos))
+        instrucciones.extend([f"i32.const {cantidad}", f"i32.const {_tamano_elemento_arreglo(tipo_elemento)}", "call $array_addr"])
+        return instrucciones, tipo_elemento
     matriz = _info_matriz(tipo_base)
     if matriz is not None:
         tipo_elemento, filas, columnas = matriz
@@ -1850,6 +2560,26 @@ def _compilar_direccion_asignacion(
             f"i32.const {bytes_elemento}",
             "call $array_addr",
         ])
+        if asignacion.fieldAccess():
+            estructura = _distribucion_estructura(tipo_elemento, nombres_funcion.estructuras)
+            if estructura is None:
+                _error("El elemento de la matriz no tiene el campo solicitado.", asignacion)
+            nombre = asignacion.fieldAccess(0).IDENT().getText()
+            tipo_campo, desplazamiento = estructura[0][nombre]
+            instrucciones.append("i32.load")
+            if desplazamiento:
+                instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+            return instrucciones, tipo_campo
+        if asignacion.tupleAccess():
+            tupla = _distribucion_tupla(tipo_elemento, nombres_funcion.estructuras)
+            if tupla is None:
+                _error("El elemento de la matriz no es una tupla disponible.", asignacion)
+            posicion = int(asignacion.tupleAccess(0).getText()[1:])
+            tipo_campo, desplazamiento = tupla[0][posicion]
+            instrucciones.append("i32.load")
+            if desplazamiento:
+                instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+            return instrucciones, tipo_campo
         return instrucciones, tipo_elemento
 
     arreglo = _info_arreglo(tipo_base)
@@ -1866,6 +2596,26 @@ def _compilar_direccion_asignacion(
         f"i32.const {_tamano_elemento_arreglo(tipo_elemento)}",
         "call $array_addr",
     ])
+    if asignacion.fieldAccess():
+        estructura = _distribucion_estructura(tipo_elemento, nombres_funcion.estructuras)
+        if estructura is None:
+            _error("El elemento del arreglo no tiene el campo solicitado.", asignacion)
+        nombre = asignacion.fieldAccess(0).IDENT().getText()
+        tipo_campo, desplazamiento = estructura[0][nombre]
+        instrucciones.append("i32.load")
+        if desplazamiento:
+            instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        return instrucciones, tipo_campo
+    if asignacion.tupleAccess():
+        tupla = _distribucion_tupla(tipo_elemento, nombres_funcion.estructuras)
+        if tupla is None:
+            _error("El elemento del arreglo no es una tupla disponible.", asignacion)
+        posicion = int(asignacion.tupleAccess(0).getText()[1:])
+        tipo_campo, desplazamiento = tupla[0][posicion]
+        instrucciones.append("i32.load")
+        if desplazamiento:
+            instrucciones.extend([f"i32.const {desplazamiento}", "i32.add"])
+        return instrucciones, tipo_campo
     return instrucciones, tipo_elemento
 
 
@@ -1890,13 +2640,23 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
         _error(f"La función '{nombre}' no está disponible para generar WASM.", llamada)
     if any(
         tipo not in {"i32", "bool", "f64", "char", "String"}
-        and not _referencia_admitida(tipo, nombres_funcion.estructuras)
+        and not _referencia_admitida(
+            tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+        )
+        and _info_arreglo(tipo) is None
+        and _info_matriz(tipo) is None
+        and _distribucion_tupla(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
+        and _distribucion_estructura(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
         and _info_enum(tipo, nombres_funcion.enumeraciones) is None
         for tipo in firma["parametros"]
     ):
         _error(f"La función '{nombre}' usa parámetros no soportados.", llamada)
     if (
         firma["retorno"] not in {"i32", "bool", "f64", "char", "String", "unit"}
+        and _info_arreglo(firma["retorno"]) is None
+        and _info_matriz(firma["retorno"]) is None
+        and _distribucion_tupla(firma["retorno"], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
+        and _distribucion_estructura(firma["retorno"], nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
         and _info_enum(firma["retorno"], nombres_funcion.enumeraciones) is None
     ):
         _error(f"La función '{nombre}' tiene un retorno no soportado.", llamada)
@@ -1908,7 +2668,11 @@ def _compilar_llamada(llamada, referencias, locales, funciones, nombres_funcion,
     instrucciones = []
     for argumento, tipo_parametro in zip(argumentos, firma["parametros"]):
         # Cada argumento se deja en la pila antes de call, como exige la firma WASM.
-        if _info_enum(tipo_parametro, nombres_funcion.enumeraciones) is not None:
+        if (_info_arreglo(tipo_parametro) is not None
+            or _info_matriz(tipo_parametro) is not None
+            or _info_enum(tipo_parametro, nombres_funcion.enumeraciones) is not None
+            or _distribucion_tupla(tipo_parametro, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None
+            or _distribucion_estructura(tipo_parametro, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is not None):
             instrucciones.extend(
                 _compilar_valor_para_local(
                     argumento, tipo_parametro, referencias, locales, funciones,
@@ -2113,6 +2877,10 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
     tipo_retorno = funcion.type_().getText() if funcion.type_() is not None else "unit"
     if (
         tipo_retorno not in {"i32", "bool", "f64", "char", "String", "unit"}
+        and _info_arreglo(tipo_retorno) is None
+        and _info_matriz(tipo_retorno) is None
+        and _distribucion_tupla(tipo_retorno, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
+        and _distribucion_estructura(tipo_retorno, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None
         and _info_enum(tipo_retorno, nombres_funcion.enumeraciones) is None
     ):
         _error(f"La función '{nombre}' tiene un retorno no soportado.", funcion)
@@ -2132,17 +2900,19 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         tipo = analisis["simbolos"][identificador]["tipo"]
         referencia = separar_referencia(tipo)
         if referencia is not None:
-            if not _referencia_admitida(tipo, nombres_funcion.estructuras):
+            if not _referencia_admitida(
+                tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+            ):
                 _error("Solo se admiten parámetros referencia con layouts locales compatibles.", funcion)
             continue
-        if _info_arreglo(tipo) is not None or _info_matriz(tipo) is not None or _info_tupla(tipo) is not None or _info_estructura(tipo, nombres_funcion.estructuras) is not None:
-            _error("Los parámetros de valores compuestos todavía no están implementados.", funcion)
     for identificador in variables:
         tipo = analisis["simbolos"][identificador]["tipo"]
         referencia = separar_referencia(tipo)
-        if referencia is not None and not _referencia_admitida(tipo, nombres_funcion.estructuras):
+        if referencia is not None and not _referencia_admitida(
+            tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+        ):
             _error("Solo se admiten referencias con layouts locales compatibles.", funcion)
-        if tipo not in {"i32", "bool", "f64", "char", "String"} and referencia is None and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _info_tupla(tipo) is None and _info_estructura(tipo, nombres_funcion.estructuras) is None and _info_enum(tipo, nombres_funcion.enumeraciones) is None:
+        if tipo not in {"i32", "bool", "f64", "char", "String"} and referencia is None and _info_arreglo(tipo) is None and _info_matriz(tipo) is None and _distribucion_tupla(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None and _distribucion_estructura(tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones) is None and _info_enum(tipo, nombres_funcion.enumeraciones) is None:
             _error("El tipo de parámetro o variable no está implementado.", funcion)
     origenes_prestados = {
         prestamo["simbolo_id"]
@@ -2165,9 +2935,15 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
             continue
         if identificador in parametros:
             _error("Solo se admiten préstamos de variables locales con layouts compatibles.", funcion)
-        if _escalar_prestable(tipo):
+        if (
+            _escalar_prestable(tipo)
+            or tipo == "String"
+            or _info_enum(tipo, nombres_funcion.enumeraciones) is not None
+        ):
             escalares_en_memoria.add(identificador)
-        elif not _compuesto_prestable(tipo, nombres_funcion.estructuras):
+        elif not _compuesto_prestable(
+            tipo, nombres_funcion.estructuras, nombres_funcion.enumeraciones
+        ):
             _error("Solo se admiten préstamos de variables locales con layouts compatibles.", funcion)
     parametros_wat = " ".join(
         f"(param $local_{identificador} "
@@ -2243,7 +3019,7 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
         instrucciones.append("unreachable")
     cuerpo = "\n    ".join(instrucciones)
     temporales_match = "\n".join(
-        f"    (local ${temporal} i32)" for temporal in nombres_funcion.temporales_match
+        f"    (local ${temporal} {tipo})" for temporal, tipo in nombres_funcion.temporales_match
     )
     temporales_enum = "\n".join(
         f"    (local ${temporal} i32)" for temporal in nombres_funcion.temporales_enum
@@ -2262,22 +3038,15 @@ def _compilar_funcion(funcion, analisis, indice, nombres_funcion):
 
 
 def _validar_constantes_globales(arbol, declaraciones, constantes):
-    """Rechaza controladamente tipos globales sin representación Wasm actual."""
-    tipos_admitidos = {"i32", "f64", "bool", "char", "String"}
-    for declaracion in arbol.constDecl():
-        constante = constantes[declaraciones[declaracion]]
-        if constante["tipo"] not in tipos_admitidos:
-            _error(
-                f"Las constantes globales de tipo {constante['tipo']} todavía no están implementadas.",
-                declaracion,
-            )
+    return None
 
 
-def _validar_enumeraciones(arbol, enumeraciones):
+def _validar_enumeraciones(arbol, enumeraciones, estructuras):
     for declaracion in arbol.enumDecl():
         tipo = declaracion.IDENT().getText()
         enumeracion = enumeraciones[tipo]
-        if enumeracion.get("datos_variantes") and _distribucion_enum(tipo, enumeraciones) is None:
+        if (enumeracion.get("datos_variantes")
+                and _distribucion_enum(tipo, enumeraciones, estructuras) is None):
             _error("Los datos asociados de esta enumeración todavía no están implementados.", declaracion)
 
 
@@ -2312,7 +3081,7 @@ def compilar_programa(codigo):
             if simbolo["es_constante"]
         }
         _validar_constantes_globales(arbol, analisis["declaraciones"], constantes)
-        _validar_enumeraciones(arbol, analisis["enumeraciones"])
+        _validar_enumeraciones(arbol, analisis["enumeraciones"], analisis["estructuras"])
         estado = EstadoModulo(
             {
                 funcion.IDENT().getText(): indice

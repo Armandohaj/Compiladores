@@ -3,7 +3,7 @@
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 from tkinter.scrolledtext import ScrolledText
 
 from ejecutar_wasm import (
@@ -47,30 +47,137 @@ class VisorWasm:
         self.entradas = tk.StringVar()
 
         ventana.title("RustiQ - Ejecutor de escritorio")
-        ventana.minsize(560, 300)
+        ventana.minsize(640, 440)
+        ventana.configure(background="#f4f6f8")
 
-        marco = tk.Frame(ventana, padx=16, pady=16)
-        marco.pack(fill="both", expand=True)
-
-        self.boton_abrir = tk.Button(marco, text="Abrir archivo", command=self.abrir_archivo)
-        self.boton_abrir.pack(anchor="w")
-        tk.Label(marco, textvariable=self.ruta, anchor="w", justify="left", wraplength=520).pack(
-            fill="x", pady=(8, 12)
+        estilo = ttk.Style(ventana)
+        estilo.theme_use("clam")
+        estilo.configure(
+            "Archivo.TButton",
+            background="#e8eef5",
+            foreground="#1f2937",
+            borderwidth=0,
+            padding=(14, 9),
+            font=("Segoe UI", 10, "bold"),
         )
-        tk.Label(marco, text="Entradas i32 (separadas por espacios o comas)").pack(anchor="w")
-        self.campo_entradas = tk.Entry(marco, textvariable=self.entradas)
-        self.campo_entradas.pack(fill="x", pady=(4, 12))
-        self.boton_ejecutar = tk.Button(
-            marco,
+        estilo.map("Archivo.TButton", background=[("active", "#d9e4f0")])
+        estilo.configure(
+            "Ejecutar.TButton",
+            background="#2563eb",
+            foreground="white",
+            borderwidth=0,
+            padding=(18, 9),
+            font=("Segoe UI", 10, "bold"),
+        )
+        estilo.map(
+            "Ejecutar.TButton",
+            background=[("active", "#1d4ed8"), ("disabled", "#a8b8d8")],
+            foreground=[("disabled", "#eef3ff")],
+        )
+
+        marco = tk.Frame(ventana, background="#f4f6f8", padx=28, pady=24)
+        marco.pack(fill="both", expand=True)
+        marco.columnconfigure(0, weight=1)
+        marco.rowconfigure(1, weight=1)
+
+        encabezado = tk.Frame(marco, background="#f4f6f8")
+        encabezado.grid(row=0, column=0, sticky="ew", pady=(0, 18))
+        tk.Label(
+            encabezado,
+            text="RustiQ",
+            background="#f4f6f8",
+            foreground="#172033",
+            font=("Segoe UI", 22, "bold"),
+        ).pack(anchor="w")
+        tk.Label(
+            encabezado,
+            text="Ejecutor de WebAssembly",
+            background="#f4f6f8",
+            foreground="#64748b",
+            font=("Segoe UI", 10),
+        ).pack(anchor="w", pady=(2, 0))
+
+        contenido = tk.Frame(marco, background="white", padx=24, pady=22, highlightthickness=1,
+                             highlightbackground="#e2e8f0")
+        contenido.grid(row=1, column=0, sticky="nsew")
+        contenido.columnconfigure(0, weight=1)
+        contenido.rowconfigure(8, weight=1)
+
+        tk.Label(
+            contenido,
+            text="Archivo WebAssembly",
+            background="white",
+            foreground="#334155",
+            font=("Segoe UI", 10, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        self.boton_abrir = ttk.Button(
+            contenido,
+            text="Seleccionar archivo .wasm",
+            command=self.abrir_archivo,
+            style="Archivo.TButton",
+        )
+        self.boton_abrir.grid(row=1, column=0, sticky="w", pady=(8, 10))
+        tk.Label(
+            contenido,
+            textvariable=self.ruta,
+            anchor="w",
+            justify="left",
+            wraplength=560,
+            background="#f8fafc",
+            foreground="#475569",
+            font=("Segoe UI", 9),
+            padx=12,
+            pady=10,
+            relief="solid",
+            borderwidth=1,
+        ).grid(row=2, column=0, sticky="ew", pady=(0, 18))
+
+        tk.Label(
+            contenido,
+            text="Entradas i32",
+            background="white",
+            foreground="#334155",
+            font=("Segoe UI", 10, "bold"),
+        ).grid(row=3, column=0, sticky="w")
+        tk.Label(
+            contenido,
+            text="Separá los valores con espacios o comas.",
+            background="white",
+            foreground="#64748b",
+            font=("Segoe UI", 9),
+        ).grid(row=4, column=0, sticky="w", pady=(2, 6))
+        self.campo_entradas = ttk.Entry(contenido, textvariable=self.entradas, font=("Segoe UI", 10))
+        self.campo_entradas.grid(row=5, column=0, sticky="ew", pady=(0, 14), ipady=5)
+        self.boton_ejecutar = ttk.Button(
+            contenido,
             text="Ejecutar",
             command=self.ejecutar,
             state="disabled",
+            style="Ejecutar.TButton",
         )
-        self.boton_ejecutar.pack(anchor="w")
+        self.boton_ejecutar.grid(row=6, column=0, sticky="w", pady=(0, 18))
 
-        tk.Label(marco, text="Resultados").pack(anchor="w", pady=(14, 4))
-        self.resultados = ScrolledText(marco, height=10, state="disabled", wrap="word")
-        self.resultados.pack(fill="both", expand=True)
+        tk.Label(
+            contenido,
+            text="Resultados",
+            background="white",
+            foreground="#334155",
+            font=("Segoe UI", 10, "bold"),
+        ).grid(row=7, column=0, sticky="w", pady=(0, 7))
+        self.resultados = ScrolledText(
+            contenido,
+            height=9,
+            state="disabled",
+            wrap="word",
+            background="#f8fafc",
+            foreground="#1e293b",
+            borderwidth=1,
+            relief="solid",
+            font=("Consolas", 10),
+            padx=10,
+            pady=9,
+        )
+        self.resultados.grid(row=8, column=0, sticky="nsew")
 
     def mostrar_mensaje(self, mensaje):
         """Actualiza el área de salida de forma legible para la demostración."""
